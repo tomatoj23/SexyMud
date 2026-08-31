@@ -118,10 +118,13 @@ TerminalView 实现                   style-guide.md（文风约束）
 
 | 部分 | 状态 |
 |---|---|
-| monorepo、`content:check`、引擎纯度测试、存档迁移链骨架 | ✅ 可用（**与领域无关，应保留**） |
-| `apps/web` React 壳 | ✅ 可用 |
-| 引擎领域模型（`content/types.ts`、`engine/`、存档状态） | ⚠️ **放置游戏遗留，抽象错误，待清零** |
+| monorepo、`content:check`、引擎纯度测试、存档迁移链骨架 | ✅ 可用 |
+| `apps/web` React 壳 | ✅ 可用（占位，等待命令层） |
+| 引擎领域模型（放置遗留） | ✅ **已清零**（`6a36674`） |
+| **端口与契约**（Clock/Rng/SaveStore/Authority、Command、GameEvent、三类失败） | ✅ **已落**（`packages/core/src/types.ts`） |
 | 命令层、世界模型、MUD 状态模型、输出管线、中文层 | ❌ 未实现（规格已定，见各文件） |
-| 16 个 schema | ⚠️ 放置期设计，需随本规格重估 |
+| 14 个 schema | ⚠️ 放置期设计，需随本规格重估 |
 
-**下一步**：先完成「换内容演练」（审计 `content/` 与引擎的耦合），确认第 2 条验收的缺口，再清领域代码。
+**下一步**：按§文档地图，从 `02-command-layer.md` 开始生长。每完成一个子系统，跑该文件末尾的自检清单。
+
+> 引擎目前只有三个源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`save/migrations.ts`（迁移链骨架），加两个测试文件。这是刻意的——**先定契约，再长能力**。

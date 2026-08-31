@@ -118,7 +118,9 @@
 - ✅ **ADR-0025 已定案（2026-09-01）**：Evennia 第三轮（源码 + 完整示例游戏 EvAdventure）——**不能后补的地基**：命令携带 `actorId`、事件侧 `seq` 与三类失败、**不需要 attribute handler**、调度六原语（含「观察时补偿结算」）、游戏内时间是 tick 纯函数、**实体 hook 九项**、输入加固用私有码位、测试权重压边界、配置三分法
 - ✅ **ADR-0026 已定案（2026-09-01）· 定位升级**：**我们做的是引擎**——中文优先的确定性文字 MUD 引擎 + 武侠内容包。三条硬标准从「纪律」升级为「产品定义」；确立取长补短分工（Evennia 给架构、xkx100 给中文叙事、我们补确定性/JSON 门禁/多端结构化输出）
 - ✅ **`docs/chinese-mud-concerns.md` 已落**：中文 MUD 特有问题全景（A 输入／B 输出／C 叙事／D 检索／E 编码／F 中立性），26 条，**6 条待定**（避头尾折行与中文排序最贵）
-- 🚧 **待验证（引擎验收第 2 条）**：换一套非武侠内容，引擎不改一行代码——尚未演练（ADR-0026 §4）
+- ✅ **换内容演练已完成（2026-09-01）**：结论是「通过词汇检验、未通过领域检验」——引擎读的是放置模型（`cycleSeconds`/`offlineCapHours`）且 `Clock` 是墙钟毫秒。五处耦合见 `docs/engine-purity-audit.md`
+- ✅ **领域模型已清零（2026-09-01）**：删除放置遗留的配置面、引擎门面与内容绑定加载器；**保留**纯度测试、`content:check`、迁移链。同时把 `docs/spec/01` 的端口与契约落成 `packages/core/src/types.ts`（Clock 改 tick 计数、命令带 `actorId`、事件带 `seq`、三类失败）
+- 🚧 **下一步 M1**：命令测试骨架 → 中文解析器 → `commands/` `rooms/` `npcs/` 三个集合。起点见 `docs/spec/02-command-layer.md`
 - 🚧 **下一步 M1**：**先搭命令测试骨架（ADR-0023 §1）**，再做 `commands/` `rooms/` `npcs/` 三个集合 + schema 三处同步（core 类型／编辑器／`content.md`）+ 命令解析管线 + 双时钟拆分（`tick()` ／ `settleOffline()`）
 - ✅ **术语清理已完成（2026-09-01）**：`CONTEXT.md` 删除「境界／修为／突破／闭关／突破丹」，新增「实战经验／武功等级／练功／潜能／造诣」，改写「显示档位／兽／内力／intent／离线结算／疗伤丹」；`style-guide.md` 改「静修／造诣档位」；HANDBOOK 与 10 个 schema 全表去放置语汇（波次／DPS／挂机／Melvor／断链 BRIEF 引用 ×33）
 - ✅ **境界已从代码删除（2026-09-01）**：`packages/core` 去掉 `realmId` / `currentRealm()` / `progress()` / `content.realm()` / `RealmConfig` / `RealmProgressSettings`；删除 `content/config/realms.json` 与 `config.realms.schema.json`；`settings.json` 去掉 `realmProgress`；`martial` schema 的 `realmIndexMin` → `martialLevelMin`，`dungeon` 的 `recommendedRealmIndex` → `recommendedPower` 区间，`pill` 去掉 `isBreakthrough`；活动 `act-seclusion`（闭关）→ `act-practice`（练功），资源 `res-cultivation`（修为）→ `res-experience`（实战经验）。**测试 24 全过、typecheck 通过、content:check 通过、build 通过**
