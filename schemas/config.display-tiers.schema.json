@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.display-tiers.schema.json",
   "title": "显示档位（content/config/display-tiers.json）",
-  "description": "显示档位 = 由数值推导出的造诣描述（CONTEXT.md 显示档位词条）。映射方式 = 数值区间表，非\"等级 ÷ 步长\"（BRIEF §10.2）。完整 50 档列表见 docs/design-spec-BRIEF.md §10.2；其中「超凡入圣」「天人合一」经定案豁免禁修仙词规则（content/style-guide.md）。",
+  "description": "显示档位 = 由数值推导出的造诣描述（CONTEXT.md 显示档位词条）。映射方式 = 数值区间表，非\"等级 ÷ 步长\"。完整 50 档列表见 docs/research/xkx100-kungfu-combat.md §5.1；其中「超凡入圣」「天人合一」经定案豁免禁修仙词规则（content/style-guide.md）。",
   "type": "object",
   "required": ["tiers"],
   "properties": {
@@ -23,7 +23,7 @@
         "label": {
           "type": "string",
           "minLength": 1,
-          "description": "档位词（50 档完整列表见 BRIEF §10.2）"
+          "description": "档位词（50 档完整列表见）"
         },
         "presentation": {
           "type": "object",

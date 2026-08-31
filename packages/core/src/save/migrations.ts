@@ -3,7 +3,6 @@ import type { Snapshot } from "../types.js";
 export const SAVE_VERSION = 1;
 
 export interface GameStateV1 {
-  realmId: string;
   resources: Record<string, number>;
   activeActivityId: string | null;
   /** Last time accrual was settled (ms epoch). */

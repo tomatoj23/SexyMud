@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "event.schema.json",
   "title": "奇遇事件（content/event/，每条目一文件）",
-  "description": "⚠️ 形态未定：CONTEXT.md 无「奇遇」词条，docs/design-spec-BRIEF.md 亦无奇遇章节（BRIEF §12.5 列为未讨论方向）。本 schema 只留**最小骨架**，保证集合存在且可被校验；形态确定后再扩充字段。叙事长度 3~6 句（style-guide.md）。",
+  "description": "⚠️ 形态未定：CONTEXT.md 无「奇遇」词条（形态未定的概念不进术语表）。本 schema 只留**最小骨架**，保证集合存在且可被校验；形态确定后再扩充字段。叙事长度 3~6 句（style-guide.md）。",
   "type": "object",
   "required": ["id", "text"],
   "properties": {
@@ -19,7 +19,7 @@
     },
     "conditions": {
       "type": "object",
-      "description": "触发条件（所在区域 / 境界序号 / 已学武功等）。取值键可扩展，引擎只做键取值与求交。",
+      "description": "触发条件（所在区域 / 造诣档位 / 已学武功等）。取值键可扩展，引擎只做键取值与求交（ADR-0019：原「境界序号」已废）。",
       "additionalProperties": {}
     },
     "options": {

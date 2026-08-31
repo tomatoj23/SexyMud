@@ -5,8 +5,6 @@ import type { Clock, GameEvent, GameListener, Rng, SaveStore, Snapshot } from ".
 export interface Game {
   /** Subscribe to the engine event stream. Returns an unsubscribe function. */
   subscribe(listener: GameListener): () => void;
-  currentRealm(): { id: string; index: number; name: string };
-  progress(): { resourceId: string; current: number; required: number };
   resourceAmount(resourceId: string): number;
   activeActivity(): { id: string; name: string } | null;
   startActivity(activityId: string): void;
@@ -47,7 +45,6 @@ function buildGame(options: EngineOptions, state: GameStateV1): Game {
   const listeners = new Set<GameListener>();
 
   // Restored states must reference entries that still exist in content.
-  content.realm(state.realmId);
   if (state.activeActivityId != null) content.activity(state.activeActivityId);
 
   function emit(event: GameEvent): void {
@@ -113,24 +110,6 @@ function buildGame(options: EngineOptions, state: GameStateV1): Game {
       return () => listeners.delete(listener);
     },
 
-    // Realm advancement (spending the accumulated progression resource to
-    // move to the next realm) lands with the progression slice; until then
-    // accrual may exceed the current requirement.
-    currentRealm() {
-      const realm = content.realm(state.realmId);
-      return { id: realm.id, index: realm.index, name: realm.name };
-    },
-
-    progress() {
-      const realm = content.realm(state.realmId);
-      const resourceId = content.realmProgressResourceId;
-      return {
-        resourceId,
-        current: round6(state.resources[resourceId] ?? 0),
-        required: realm.cultivationRequired,
-      };
-    },
-
     resourceAmount(resourceId: string): number {
       return round6(state.resources[resourceId] ?? 0);
     },
@@ -177,7 +156,6 @@ export async function createGame(options: CreateGameOptions): Promise<Game> {
   let state: GameStateV1;
   if (snapshot == null) {
     state = {
-      realmId: options.content.startingRealmId,
       resources: {},
       activeActivityId: null,
       lastSettleTimestamp: options.clock.now(),

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "effects.schema.json",
   "title": "效果定义（content/effects/，每条目一文件）",
-  "description": "效果 = primitive 组合条目（content.md）。武功 / 怪物 / 层主通过 effects:[...] 引用同一批效果定义。primitive 类型需 id 化（BRIEF §10.5），但类型可扩充——schema 不写死枚举，引擎按 id 找实现（ADR-0004 扩展留白）。",
+  "description": "效果 = primitive 组合条目（content.md）。武功 / 怪物 / 层主通过 effects:[...] 引用同一批效果定义。primitive 类型需 id 化，但类型可扩充——schema 不写死枚举，引擎按 id 找实现（ADR-0004 扩展留白）。",
   "type": "object",
   "required": ["id", "primitives"],
   "properties": {
@@ -37,15 +37,15 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "primitive 类型 id（引擎按 id 找实现）。当前候选 13 项 = BRIEF §11.3 的 16 项穷举排除 连击 / 护盾 / 位移；MVP 先用 9 个 + 注册 2 个（BRIEF §13）。类型可扩充，schema 不写死。"
+          "description": "primitive 类型 id（引擎按 id 找实现）。当前候选 13 项 = 16 项穷举排除 连击 / 护盾 / 位移；MVP 先用 9 个 + 注册 2 个。类型可扩充，schema 不写死。"
         },
         "targetSelector": {
           "type": "string",
-          "description": "单体 / 全体 / 相邻 / 随机 N 个 / 除主目标外（BRIEF §11.2）。取值可扩充；引擎只做目标集合选择，不按具体值分支（ADR-0009 第 11 条）。"
+          "description": "单体 / 全体 / 相邻 / 随机 N 个 / 除主目标外。取值可扩充；引擎只做目标集合选择，不按具体值分支（ADR-0009 第 11 条）。"
         },
         "condition": {
           "type": "object",
-          "description": "条件维度：element / source / moveId / moveTier / targetState / sectId / lineageId / equippedTag / equippedSet（BRIEF §11.1）。引擎只做键取值 + 集合求交，永不 parse 字符串。",
+          "description": "条件维度：element / source / moveId / moveTier / targetState / sectId / lineageId / equippedTag / equippedSet。引擎只做键取值 + 集合求交，永不 parse 字符串。",
           "additionalProperties": {}
         },
         "stat": {
@@ -63,12 +63,12 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "概率触发（BRIEF §5.4：primitive 支持 chance 参数）"
+          "description": "概率触发"
         },
         "cooldownMs": {
           "type": "integer",
           "minimum": 0,
-          "description": "效果实例自带 CD 状态；CD 是运行时数据，进存档（BRIEF §5.4 形状清单 #9）"
+          "description": "效果实例自带 CD 状态；CD 是运行时数据，进存档"
         },
         "narrative": {
           "type": "string",

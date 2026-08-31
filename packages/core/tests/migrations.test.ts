@@ -4,7 +4,6 @@ import type { GameStateV1 } from "../src/save/migrations.js";
 import type { Snapshot } from "../src/types.js";
 
 const currentData: GameStateV1 = {
-  realmId: "realm-01",
   resources: { "res-a": 1.5 },
   activeActivityId: null,
   lastSettleTimestamp: 5,

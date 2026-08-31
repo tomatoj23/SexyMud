@@ -34,14 +34,14 @@
       "type": "string",
       "description": "系别性质（七系 + 无属性）。取值来自 dimensions 的 element 维度；引擎不按具体值分支。"
     },
-    "sectId": { "type": "string", "description": "门派归属（获取来源，不是所有权——已学武功与门派解耦，BRIEF §6.3 #2）" },
-    "lineageId": { "type": "string", "description": "脉归属：武功池的细分标签，不是玩家身份选择（BRIEF §6.1）" },
+    "sectId": { "type": "string", "description": "门派归属（获取来源，不是所有权——已学武功与门派解耦 #2）" },
+    "lineageId": { "type": "string", "description": "脉归属：武功池的细分标签，不是玩家身份选择" },
     "prerequisites": {
       "type": "object",
       "description": "先修武功与等级要求（content.md 通用字段）",
       "properties": {
         "martialIds": { "type": "array", "items": { "type": "string" } },
-        "realmIndexMin": { "type": "integer", "minimum": 1 },
+        "martialLevelMin": { "type": "integer", "minimum": 0 },
         "sectIds": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": false
@@ -57,7 +57,7 @@
     "cooldownMs": {
       "type": "integer",
       "minimum": 0,
-      "description": "冷却（招式按冷却自动释放；冷却中出招权重归零，BRIEF §3.11）"
+      "description": "冷却（招式按冷却自动释放；冷却中出招权重归零）"
     },
     "effects": {
       "type": "array",

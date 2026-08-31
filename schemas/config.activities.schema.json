@@ -17,16 +17,17 @@
     "activity": {
       "type": "object",
       "required": ["id", "name", "progression"],
+      "dependencies": { "rates": ["cycleSeconds"] },
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^act-[a-z0-9-]+$",
-          "description": "如 act-seclusion / act-herb-gather / act-alchemy"
+          "description": "如 act-practice / act-herb-gather / act-alchemy"
         },
         "name": {
           "type": "string",
           "minLength": 1,
-          "description": "活动名（闭关 / 采集 / 炼丹）"
+          "description": "活动名（练功 / 采集 / 炼丹）"
         },
         "progression": {
           "type": "object",
@@ -60,13 +61,13 @@
         "offlineCapHours": {
           "type": "integer",
           "minimum": 0,
-          "description": "离线收益上限（小时）。超时不计——制造回归动机（CONTEXT.md 闭关词条）。"
+          "description": "离线结算上限（小时）。超时不计——制造回归动机（CONTEXT.md 离线结算词条）。"
         },
         "requires": {
           "type": "object",
-          "description": "进入门槛：境界序号下限与/或生产活动等级下限（等级与境界门槛共同决定可进入的采集区，content.md）。",
+          "description": "进入门槛：推荐战力下限与/或生产活动等级下限（ADR-0019：境界已废，改用 recommendedPower / powerMin 区间）。",
           "properties": {
-            "realmIndexMin": { "type": "integer", "minimum": 1 },
+            "powerMin": { "type": "integer", "minimum": 0 },
             "activityLevelMin": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": false

@@ -1,5 +1,5 @@
 {
   "resources": [
-    { "id": "res-cultivation", "name": "修为", "kind": "progress" }
+    { "id": "res-experience", "name": "实战经验", "kind": "progress" }
   ]
 }

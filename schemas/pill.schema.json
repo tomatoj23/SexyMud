@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "pill.schema.json",
   "title": "丹方与丹药（content/pill/，每条目一文件）",
-  "description": "丹方 = 需解锁后才能炼制的配方；丹药分突破丹（境界突破硬门槛）与增益丹（临时 buff）。生产链：采集 → 药材 → 炼丹（CONTEXT.md 丹方/突破丹/增益丹词条）。由 oneOf 分流。",
+  "description": "丹方 = 需解锁后才能炼制的配方；丹药分疗伤丹（回复气血/内力）与增益丹（临时 buff）。生产链：采集 → 药材 → 炼丹（CONTEXT.md 丹方/疗伤丹/增益丹词条）。由 oneOf 分流。⚠️ 原「突破丹」随境界一并取消（ADR-0019）。",
   "type": "object",
   "oneOf": [
     { "$ref": "#/definitions/recipe" },
@@ -64,18 +64,14 @@
         "name": { "type": "string", "minLength": 1 },
         "category": {
           "type": "string",
-          "description": "突破丹 | 增益丹（CONTEXT.md）。取值可扩充，schema 不写死。"
-        },
-        "isBreakthrough": {
-          "type": "boolean",
-          "description": "是否突破丹：境界突破的硬门槛材料之一，是炼丹链与境界主轴的焊接点（CONTEXT.md 突破丹词条）"
+          "description": "疗伤丹 | 增益丹（CONTEXT.md）。取值可扩充，schema 不写死。"
         },
         "modifiers": {
           "type": "array",
           "description": "增益丹的临时加成，走修饰符聚合管线（ADR-0005），禁止直改属性",
           "items": { "type": "object" }
         },
-        "durationMs": { "type": "integer", "minimum": 0, "description": "增益持续时间（战斗或闭关效率加成）" },
+        "durationMs": { "type": "integer", "minimum": 0, "description": "增益持续时间（战斗或练功效率加成）" },
         "art": { "type": "string" },
         "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" }
       },

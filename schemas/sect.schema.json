@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "sect.schema.json",
   "title": "门派（content/sect/，每条目一文件）",
-  "description": "门派 = 武功池 + 缺省系别 + 生产加成（外加贡献货币、脉、师父）（BRIEF §6.1）。同一时间只属一个门派；已学武功必须与当前门派解耦（BRIEF §6.3 #2）。",
+  "description": "门派 = 武功池 + 缺省系别 + 生产加成（外加贡献货币、脉、师父）。同一时间只属一个门派；已学武功必须与当前门派解耦。",
   "type": "object",
   "required": ["id", "name"],
   "properties": {
@@ -14,12 +14,12 @@
     "name": { "type": "string", "minLength": 1 },
     "defaultElements": {
       "type": "array",
-      "description": "缺省系别（如丐帮 火/雷、武当 水/土、唐门 木/金）。取值来自 dimensions 的 element 维度（BRIEF §6.2）。",
+      "description": "缺省系别（如丐帮 火/雷、武当 水/土、唐门 木/金）。取值来自 dimensions 的 element 维度。",
       "items": { "type": "string" }
     },
     "tempo": {
       "type": "string",
-      "description": "节奏差异：爆发型 / 持久型 / 累积型（BRIEF §6.2）。叙事与文案用，引擎不读。"
+      "description": "节奏差异：爆发型 / 持久型 / 累积型。叙事与文案用，引擎不读。"
     },
     "martialPool": {
       "type": "array",
@@ -28,7 +28,7 @@
     },
     "lineages": {
       "type": "array",
-      "description": "脉（lineageId）：武功池的细分标签，不是玩家的身份选择——可同时拥有多个，由装配（招式 4 / 心法 3）来\"选\"（BRIEF §6.1）。",
+      "description": "脉（lineageId）：武功池的细分标签，不是玩家的身份选择——可同时拥有多个，由装配（招式 4 / 心法 3）来\"选\"。",
       "items": {
         "type": "object",
         "required": ["id", "name"],
@@ -77,7 +77,7 @@
     },
     "relations": {
       "type": "array",
-      "description": "门派间关系是一张内容表（正派/魔教、同盟/敌对将来会变），引擎只查表（BRIEF §6.3 #4）",
+      "description": "门派间关系是一张内容表（正派/魔教、同盟/敌对将来会变），引擎只查表",
       "items": {
         "type": "object",
         "properties": {
@@ -89,7 +89,7 @@
     },
     "entryCondition": {
       "type": "object",
-      "description": "入门条件。MVP 条件恒真，但\"学习武功\"流程带条件检查点（BRIEF §6.4）",
+      "description": "入门条件。MVP 条件恒真，但\"学习武功\"流程带条件检查点",
       "additionalProperties": {}
     },
     "art": { "type": "string" },

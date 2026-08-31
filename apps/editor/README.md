@@ -1,4 +1,4 @@
-# @idlerpg/editor
+# @sexymud/editor
 
 内容编辑器占位包。编辑器**不进 MVP**：内容生产走 agent 管线（`docs/agents/content.md`）+ `content:check` 硬门禁；本包仅保留 workspace 位置。
 

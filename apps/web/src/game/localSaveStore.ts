@@ -1,4 +1,4 @@
-import type { SaveStore, Snapshot } from "@idlerpg/core";
+import type { SaveStore, Snapshot } from "@sexymud/core";
 
 /** Browser-local SaveStore implementation. CloudBase arrives with ticket #18. */
 export class LocalSaveStore implements SaveStore {

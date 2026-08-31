@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "dungeon.schema.json",
   "title": "秘境（content/dungeon/，每秘境一文件，层为子结构）",
-  "description": "秘境 = 战斗场景，分多层（CONTEXT.md 秘境词条）。层内模型 = 定时波次，难度涌现于清怪速度与生成速度的比值（ADR-0012 / BRIEF §8）。四参数全在本集合，引擎零写死。",
+  "description": "秘境 = 战斗场景，由房间构成、分多层（CONTEXT.md 秘境词条）。四参数全在本集合，引擎零写死。⚠️ ADR-0012 的「层内定时波次」是放置期模型，MUD 转向后待重估为「驻守 + 定时刷新」。",
   "type": "object",
   "required": ["id", "name", "floors"],
   "properties": {
@@ -15,7 +15,7 @@
     "regionId": { "type": "string", "description": "区域归属（content.md 通用字段）" },
     "affinities": {
       "type": "object",
-      "description": "秘境级系别亲和度（如 { fire: -30 }）；与怪物亲和度同族，复用同一套（BRIEF §8.3 / ADR-0009）",
+      "description": "秘境级系别亲和度（如 { fire: -30 }）；与怪物亲和度同族，复用同一套（ADR-0009）",
       "additionalProperties": { "type": "number" }
     },
     "floors": {
@@ -33,13 +33,13 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "层 id（如 dun-blaze-cavern-f02）。unlocks 指向它，供校验器检查连通性闭环（BRIEF §8.6）。"
+          "description": "层 id（如 dun-blaze-cavern-f02）。unlocks 指向它，供校验器检查连通性闭环。"
         },
-        "index": { "type": "integer", "minimum": 1, "description": "层数（深度 = 装备有多强，不是境界门槛）" },
+        "index": { "type": "integer", "minimum": 1, "description": "层数（深度 = 装备有多强，不是造诣门槛）" },
         "waveCount": { "type": "integer", "minimum": 1, "description": "本层几波" },
         "waveInterval": {
           "type": "object",
-          "description": "波间隔：固定值 / 区间随机 / 逐波递减。随机化两层之一（间隔 T ± 20%），随机性放在节奏与搭配上，不放在难度上（BRIEF §8.2）。",
+          "description": "波间隔：固定值 / 区间随机 / 逐波递减。随机化两层之一（间隔 T ± 20%），随机性放在节奏与搭配上，不放在难度上。",
           "required": ["baseMs"],
           "properties": {
             "baseMs": { "type": "integer", "minimum": 1 },
@@ -64,7 +64,7 @@
         "maxConcurrent": {
           "type": "integer",
           "minimum": 1,
-          "description": "场上怪物上限。⚠️ 技术护栏（默认 12–20），非难度调节；超出延后而非丢弃（BRIEF §8.2）。"
+          "description": "场上怪物上限。⚠️ 技术护栏（默认 12–20），非难度调节；超出延后而非丢弃。"
         },
         "modifiers": {
           "type": "array",
@@ -77,12 +77,14 @@
         },
         "unlocks": {
           "type": ["string", "null"],
-          "description": "下一层 id（末层为 null）。解锁混合式：前几个链式引导，之后按推荐境界并列开放（BRIEF §8.3）。"
+          "description": "下一层 id（末层为 null）。解锁混合式：前几个链式引导，之后按推荐战力区间并列开放（ADR-0019：原「推荐境界」已废）。"
         },
-        "recommendedRealmIndex": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "推荐境界序号 = 软提示，非硬门槛；硬门槛只用于\"未通关前一层\"（BRIEF §8.3）"
+        "recommendedPower": {
+          "type": "array",
+          "description": "推荐战力区间 [min, max] = 软提示，非硬门槛；硬门槛只用于\"未通关前一层\"。ADR-0019：原 recommendedRealmIndex（境界序号）已废，改用战力区间。",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 0 }
         }
       },
       "additionalProperties": false

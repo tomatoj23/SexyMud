@@ -19,10 +19,6 @@ const fixedRng: Rng = { next: () => 0.5 };
 
 function makeContent(overrides: Partial<GameContentConfig> = {}): GameContentConfig {
   return {
-    realms: [
-      { id: "realm-01", index: 1, name: "Realm One", cultivationRequired: 100, next: "realm-02" },
-      { id: "realm-02", index: 2, name: "Realm Two", cultivationRequired: 300, next: null },
-    ],
     activities: [
       {
         id: "act-alpha",
@@ -34,7 +30,6 @@ function makeContent(overrides: Partial<GameContentConfig> = {}): GameContentCon
       },
     ],
     resources: [{ id: "res-a", name: "Resource A", kind: "progress" }],
-    realmProgress: { resourceId: "res-a" },
     ...overrides,
   };
 }
@@ -59,22 +54,11 @@ function makeGame(overrides: Partial<GameContentConfig> = {}, clock = new FakeCl
 }
 
 describe("createGame (facade behavior seam)", () => {
-  it("creates a fresh state at the starting realm", async () => {
+  it("creates a fresh state with no resources and no active activity", async () => {
     const clock = new FakeClock(1_000_000);
     const game = await makeGame({}, clock);
-    expect(game.currentRealm()).toEqual({ id: "realm-01", index: 1, name: "Realm One" });
     expect(game.resourceAmount("res-a")).toBe(0);
     expect(game.activeActivity()).toBeNull();
-  });
-
-  it("picks the starting realm by index, not by array order", async () => {
-    const game = await makeGame({
-      realms: [
-        { id: "realm-02", index: 2, name: "Realm Two", cultivationRequired: 300, next: null },
-        { id: "realm-01", index: 1, name: "Realm One", cultivationRequired: 100, next: "realm-02" },
-      ],
-    });
-    expect(game.currentRealm()).toEqual({ id: "realm-01", index: 1, name: "Realm One" });
   });
 
   it("accrues per completed cycle and carries partial cycles over", async () => {
@@ -125,15 +109,6 @@ describe("createGame (facade behavior seam)", () => {
     clock.advance(4);
     game.sync();
     expect(game.resourceAmount("res-a")).toBe(1802);
-  });
-
-  it("reports progress against the current realm requirement", async () => {
-    const clock = new FakeClock(0);
-    const game = await makeGame({}, clock);
-    game.startActivity("act-alpha");
-    clock.advance(50);
-    game.sync();
-    expect(game.progress()).toEqual({ resourceId: "res-a", current: 25, required: 100 });
   });
 
   it("emits context-rich events for activity changes and accrual", async () => {
@@ -212,14 +187,12 @@ describe("createGame (facade behavior seam)", () => {
     restored.sync();
     expect(restored.resourceAmount("res-a")).toBe(25); // 10 + 15 cycles
     expect(restored.activeActivity()).toEqual({ id: "act-alpha", name: "Alpha Activity" });
-    expect(restored.currentRealm()).toEqual({ id: "realm-01", index: 1, name: "Realm One" });
   });
 
   it("keeps the settle timestamp in the past from a travelling save", async () => {
     const clock = new FakeClock(1_000_000);
     const store = new MemorySaveStore();
     const futureState: GameStateV1 = {
-      realmId: "realm-01",
       resources: {},
       activeActivityId: null,
       lastSettleTimestamp: 99_000_000, // ahead of the current clock
@@ -239,16 +212,9 @@ describe("createGame (facade behavior seam)", () => {
     const store = new MemorySaveStore();
     await store.save({
       version: SAVE_VERSION,
-      data: { realmId: "realm-404", resources: {}, activeActivityId: null, lastSettleTimestamp: 0 },
+      data: { resources: {}, activeActivityId: "act-ghost", lastSettleTimestamp: 0 },
     });
-    await expect(makeGameWithStore(store)).rejects.toThrow(/unknown realm/);
-
-    const store2 = new MemorySaveStore();
-    await store2.save({
-      version: SAVE_VERSION,
-      data: { realmId: "realm-01", resources: {}, activeActivityId: "act-ghost", lastSettleTimestamp: 0 },
-    });
-    await expect(makeGameWithStore(store2)).rejects.toThrow(/unknown activity/);
+    await expect(makeGameWithStore(store)).rejects.toThrow(/unknown activity/);
   });
 });
 
@@ -257,22 +223,18 @@ function makeGameWithStore(store: SaveStore, clock = new FakeClock(1_000_000)) {
 }
 
 describe("ContentRegistry integrity", () => {
-  it("rejects duplicate realm ids", () => {
-    const content = makeContent({
-      realms: [
-        { id: "realm-01", index: 1, name: "A", cultivationRequired: 10, next: "realm-01b" },
-        { id: "realm-01", index: 2, name: "B", cultivationRequired: 20, next: null },
-        { id: "realm-01b", index: 3, name: "C", cultivationRequired: 30, next: null },
-      ],
-    });
-    expect(() => ContentRegistry.from(content)).toThrow(/duplicate realm id/);
-  });
-
   it("rejects duplicate activity ids", () => {
     const activity = makeContent().activities[0];
     if (!activity) throw new Error("fixture activity missing");
     const content = makeContent({ activities: [activity, activity] });
     expect(() => ContentRegistry.from(content)).toThrow(/duplicate activity id/);
+  });
+
+  it("rejects duplicate resource ids", () => {
+    const resource = makeContent().resources[0];
+    if (!resource) throw new Error("fixture resource missing");
+    const content = makeContent({ resources: [resource, resource] });
+    expect(() => ContentRegistry.from(content)).toThrow(/duplicate resource id/);
   });
 
   it("rejects unknown resource references in rates", () => {
@@ -290,26 +252,6 @@ describe("ContentRegistry integrity", () => {
     expect(() => ContentRegistry.from(content)).toThrow(/unknown resource/);
   });
 
-  it("rejects an unknown progression resource", () => {
-    const content = makeContent({ realmProgress: { resourceId: "res-ghost" } });
-    expect(() => ContentRegistry.from(content)).toThrow(/realmProgress\.resourceId references unknown resource/);
-  });
-
-  it("rejects a missing realm progress link", () => {
-    const content = makeContent({ realmProgress: undefined });
-    expect(() => ContentRegistry.from(content)).toThrow(/realmProgress\.resourceId references unknown resource/);
-  });
-
-  it("rejects non-consecutive realm indexes", () => {
-    const content = makeContent({
-      realms: [
-        { id: "realm-01", index: 1, name: "A", cultivationRequired: 10, next: "realm-03" },
-        { id: "realm-03", index: 3, name: "C", cultivationRequired: 30, next: null },
-      ],
-    });
-    expect(() => ContentRegistry.from(content)).toThrow(/consecutive/);
-  });
-
   it("rejects rates without a cycle length", () => {
     const content = makeContent({
       activities: [
@@ -322,12 +264,5 @@ describe("ContentRegistry integrity", () => {
       ],
     });
     expect(() => ContentRegistry.from(content)).toThrow(/cycleSeconds/);
-  });
-
-  it("rejects an unknown next realm", () => {
-    const content = makeContent({
-      realms: [{ id: "realm-01", index: 1, name: "A", cultivationRequired: 10, next: "realm-404" }],
-    });
-    expect(() => ContentRegistry.from(content)).toThrow(/unknown next realm/);
   });
 });

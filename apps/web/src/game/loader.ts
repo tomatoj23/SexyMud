@@ -1,8 +1,6 @@
-import { ContentRegistry, createGame, type Game, type SaveStore } from "@idlerpg/core";
+import { ContentRegistry, createGame, type Game, type SaveStore } from "@sexymud/core";
 import activitiesData from "../../../../content/config/activities.json";
-import realmsData from "../../../../content/config/realms.json";
 import resourcesData from "../../../../content/config/resources.json";
-import settingsData from "../../../../content/config/settings.json";
 import { LocalSaveStore } from "./localSaveStore.js";
 
 /**
@@ -12,21 +10,19 @@ import { LocalSaveStore } from "./localSaveStore.js";
  */
 export function buildContentRegistry(): ContentRegistry {
   return ContentRegistry.from({
-    realms: realmsData.realms,
     activities: activitiesData.activities,
     resources: resourcesData.resources,
-    realmProgress: { resourceId: settingsData.realmProgress.resourceId },
   });
 }
 
-const SAVE_KEY = "idlerpg-save";
+const SAVE_KEY = "sexymud-save";
 
 export interface BootResult {
   game: Game;
   saveStore: SaveStore;
   /** Content-derived bits the UI renders verbatim (host copy stays generic). */
   content: {
-    progressResourceName: string;
+    resources: { id: string; name: string }[];
     activities: { id: string; name: string }[];
   };
 }
@@ -41,7 +37,7 @@ export async function loadGame(): Promise<BootResult> {
     game,
     saveStore,
     content: {
-      progressResourceName: content.resource(content.realmProgressResourceId).name,
+      resources: content.resources.map((resource) => ({ id: resource.id, name: resource.name })),
       activities: content.activities.map((activity) => ({ id: activity.id, name: activity.name })),
     },
   };

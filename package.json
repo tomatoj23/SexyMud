@@ -1,15 +1,15 @@
 {
-  "name": "idlerpg",
+  "name": "sexymud",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "content:check": "node scripts/check-content.mjs",
-    "test": "corepack pnpm --filter @idlerpg/core test",
+    "test": "corepack pnpm --filter @sexymud/core test",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
-    "dev:web": "corepack pnpm --filter @idlerpg/web dev",
-    "build:web": "corepack pnpm --filter @idlerpg/web build",
-    "preview:web": "corepack pnpm --filter @idlerpg/web preview"
+    "dev:web": "corepack pnpm --filter @sexymud/web dev",
+    "build:web": "corepack pnpm --filter @sexymud/web build",
+    "preview:web": "corepack pnpm --filter @sexymud/web preview"
   },
   "devDependencies": {
     "ajv": "^8.17.0"

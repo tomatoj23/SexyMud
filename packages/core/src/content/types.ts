@@ -1,19 +1,12 @@
 /**
  * Shape of the structural game configuration (content/config/, ADR-0004).
- * All of this is data: the engine never hardcodes realm lists, cycle
+ * All of this is data: the engine never hardcodes progression tiers, cycle
  * lengths, caps or any other quantity — it only reads what content declares.
+ *
+ * A discrete progression-tier ladder used to live here; it was removed with
+ * ADR-0019 because tiers gate on waiting rather than on player action. The
+ * per-entry level curve lands with the M1 state model.
  */
-
-export interface RealmConfig {
-  id: string;
-  /** 1-based position in the progression sequence. */
-  index: number;
-  name: string;
-  /** Amount of the progression resource required to advance past this realm. */
-  cultivationRequired: number;
-  /** Id of the next realm; null (or absent) on the final realm. */
-  next?: string | null;
-}
 
 export interface ActivityRate {
   resourceId: string;
@@ -51,14 +44,7 @@ export interface ResourceConfig {
   kind: string;
 }
 
-export interface RealmProgressSettings {
-  /** Resource whose amount measures realm progression. */
-  resourceId: string;
-}
-
 export interface GameContentConfig {
-  realms: RealmConfig[];
   activities: ActivityConfig[];
   resources: ResourceConfig[];
-  realmProgress: RealmProgressSettings;
 }

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "equipment.schema.json",
   "title": "装备：底材与词缀（content/equipment/，每条目一文件）",
-  "description": "底材 = 分层条目（高层掉另一个底材，不是同一条目加 itemLevel）；词缀条目内含 3 阶数值表（对「每条目一文件」的有意例外，BRIEF §9.7）。由 oneOf 分流。依据 ADR-0012、BRIEF §9。",
+  "description": "底材 = 分层条目（高层掉另一个底材，不是同一条目加 itemLevel）；词缀条目内含 3 阶数值表（对「每条目一文件」的有意例外）。由 oneOf 分流。依据 ADR-0012、。",
   "type": "object",
   "oneOf": [
     { "$ref": "#/definitions/base" },
@@ -27,7 +27,7 @@
         },
         "floorRange": {
           "type": "object",
-          "description": "层数区间（哪个秘境层数段会掉落）。⚠️ 层数 = 装备有多强（深度），与境界（gating 广度）不可混（BRIEF §9.7）。",
+          "description": "层数区间（哪个秘境层数段会掉落）。⚠️ 层数 = 装备有多强（深度），与造诣（人物深浅）不可混。",
           "required": ["min", "max"],
           "properties": {
             "min": { "type": "integer", "minimum": 1 },
@@ -37,7 +37,7 @@
         },
         "tierRange": {
           "type": "object",
-          "description": "品阶范围（能出哪些阶位的词缀）。在数据上锁死洗练天花板——洗练再多次也出不了更高阶（BRIEF §9.5）。",
+          "description": "品阶范围（能出哪些阶位的词缀）。在数据上锁死洗练天花板——洗练再多次也出不了更高阶。",
           "required": ["min", "max"],
           "properties": {
             "min": { "type": "integer", "minimum": 1 },
@@ -47,7 +47,7 @@
         },
         "preferredTags": {
           "type": "array",
-          "description": "底材只声明偏好标签；词缀自带 tags，权重 = 基础 × (1 + 匹配标签数 × 加成)（BRIEF §9.3）",
+          "description": "底材只声明偏好标签；词缀自带 tags，权重 = 基础 × (1 + 匹配标签数 × 加成)",
           "items": { "type": "string" }
         },
         "inherentModifiers": {
@@ -74,7 +74,7 @@
         "name": { "type": "string", "minLength": 1 },
         "tags": {
           "type": "array",
-          "description": "词缀自带标签（力量/破防/火系…）。新增词缀带上 tags 即自动被所有偏好该标签的底材青睐，零改动（BRIEF §9.3）",
+          "description": "词缀自带标签（力量/破防/火系…）。新增词缀带上 tags 即自动被所有偏好该标签的底材青睐，零改动",
           "items": { "type": "string" }
         },
         "tiers": {
@@ -93,7 +93,7 @@
         },
         "feature": {
           "type": "boolean",
-          "description": "是否特色词缀：不是数值，是改变机制（如\"你的中毒会传染\"）；绝世（5~6 词缀）含一条。复用 condition + primitive 表达，引擎零新增（BRIEF §9.4）"
+          "description": "是否特色词缀：不是数值，是改变机制（如\"你的中毒会传染\"）；绝世（5~6 词缀）含一条。复用 condition + primitive 表达，引擎零新增"
         },
         "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" }
       },

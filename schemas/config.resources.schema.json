@@ -21,7 +21,7 @@
         "id": {
           "type": "string",
           "pattern": "^res-[a-z0-9-]+$",
-          "description": "如 res-cultivation（修为）、res-contribution（门派贡献）"
+          "description": "如 res-experience（实战经验）、res-contribution（门派贡献）"
         },
         "name": { "type": "string", "minLength": 1 },
         "kind": {

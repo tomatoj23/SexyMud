@@ -16,7 +16,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@idlerpg/core':
+      '@sexymud/core':
         specifier: workspace:*
         version: link:../../packages/core
       react:

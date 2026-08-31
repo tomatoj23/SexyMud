@@ -19,7 +19,7 @@
     "regionId": { "type": "string", "description": "区域归属，校验器据此检查覆盖与连通（content.md）" },
     "role": {
       "type": "string",
-      "description": "普通 | 精英 | 层主。层主 = 秘境每波主怪，带机制用现有 primitive 组合，不新增引擎能力（content.md）；精英与层主不进随机池（BRIEF §8.2）。"
+      "description": "普通 | 精英 | 层主。层主 = 秘境每波主怪，带机制用现有 primitive 组合，不新增引擎能力（content.md）；精英与层主不进随机池。"
     },
     "source": {
       "type": "string",
@@ -32,7 +32,7 @@
     },
     "stats": {
       "type": "object",
-      "description": "基础数值（可由境界/层数缩放的参数在 config，不写死在条目）",
+      "description": "基础数值（可由造诣/层数缩放的参数在 config，不写死在条目）",
       "required": ["maxHp"],
       "properties": {
         "maxHp": { "type": "number", "minimum": 1 },

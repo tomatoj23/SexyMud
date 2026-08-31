@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { Game } from "@idlerpg/core";
+import type { Game } from "@sexymud/core";
 import { loadGame, resetSave } from "./game/loader.js";
 
 interface View {
-  realmName: string;
-  progressResourceName: string;
-  current: number;
-  required: number;
+  resources: { id: string; name: string; amount: number }[];
   activityName: string | null;
 }
 
@@ -36,14 +33,13 @@ export default function App() {
         };
 
         const render = () => {
-          const realm = game.currentRealm();
-          const progress = game.progress();
           const activity = game.activeActivity();
           setView({
-            realmName: realm.name,
-            progressResourceName: content.progressResourceName,
-            current: progress.current,
-            required: progress.required,
+            resources: content.resources.map((resource) => ({
+              id: resource.id,
+              name: resource.name,
+              amount: game.resourceAmount(resource.id),
+            })),
             activityName: activity?.name ?? null,
           });
         };
@@ -101,16 +97,15 @@ export default function App() {
     );
   }
 
-  const percent = view.required > 0 ? Math.min(100, (view.current / view.required) * 100).toFixed(1) : "0";
-
   return (
     <main style={pageStyle}>
-      <h1 style={{ fontSize: 24, margin: 0 }}>IdleRPG</h1>
+      <h1 style={{ fontSize: 24, margin: 0 }}>SexyMUD</h1>
       <section style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16, display: "grid", gap: 8 }}>
-        <p style={{ margin: 0, fontSize: 20 }}>{view.realmName}</p>
-        <p style={{ margin: 0 }}>
-          {view.progressResourceName}：{view.current} / {view.required}（{percent}%）
-        </p>
+        {view.resources.map((resource) => (
+          <p key={resource.id} style={{ margin: 0 }}>
+            {resource.name}：{resource.amount}
+          </p>
+        ))}
         <button onClick={toggleActivity} style={buttonStyle}>
           {view.activityName ? "停止" : (firstActivityRef.current?.name ?? "开始")}
         </button>

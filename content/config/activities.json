@@ -1,10 +1,10 @@
 {
   "activities": [
     {
-      "id": "act-seclusion",
-      "name": "闭关",
+      "id": "act-practice",
+      "name": "练功",
       "progression": { "maxLevel": 1, "xpPerCycle": 0 },
-      "rates": [{ "resourceId": "res-cultivation", "amountPerCycle": 1 }],
+      "rates": [{ "resourceId": "res-experience", "amountPerCycle": 1 }],
       "cycleSeconds": 1,
       "offlineCapHours": 16
     }
