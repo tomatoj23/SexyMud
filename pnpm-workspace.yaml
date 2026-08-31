@@ -1,0 +1,12 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Fully self-contained dependency environment (ADR-0007, hard standard #3):
+# the package store lives inside the project, not on the drive root.
+storeDir: .pnpm-store
+
+# Build-script approvals (pnpm v11 `allowBuilds`, reviewed one by one):
+# esbuild ships its binary via a postinstall step — required by vite/vitest.
+allowBuilds:
+  esbuild: true

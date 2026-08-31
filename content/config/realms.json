@@ -1,0 +1,10 @@
+{
+  "realms": [
+    { "id": "realm-01", "index": 1, "name": "不入流", "cultivationRequired": 100, "next": "realm-02" },
+    { "id": "realm-02", "index": 2, "name": "三流", "cultivationRequired": 300, "next": "realm-03" },
+    { "id": "realm-03", "index": 3, "name": "二流", "cultivationRequired": 800, "next": "realm-04" },
+    { "id": "realm-04", "index": 4, "name": "一流", "cultivationRequired": 2000, "next": "realm-05" },
+    { "id": "realm-05", "index": 5, "name": "绝顶", "cultivationRequired": 5000, "next": "realm-06" },
+    { "id": "realm-06", "index": 6, "name": "宗师", "cultivationRequired": 12500, "next": null }
+  ]
+}

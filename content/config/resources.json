@@ -1,0 +1,5 @@
+{
+  "resources": [
+    { "id": "res-cultivation", "name": "修为", "kind": "progress" }
+  ]
+}

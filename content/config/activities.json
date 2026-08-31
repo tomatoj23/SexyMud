@@ -1,0 +1,12 @@
+{
+  "activities": [
+    {
+      "id": "act-seclusion",
+      "name": "闭关",
+      "progression": { "maxLevel": 1, "xpPerCycle": 0 },
+      "rates": [{ "resourceId": "res-cultivation", "amountPerCycle": 1 }],
+      "cycleSeconds": 1,
+      "offlineCapHours": 16
+    }
+  ]
+}

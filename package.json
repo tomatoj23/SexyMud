@@ -1,0 +1,17 @@
+{
+  "name": "idlerpg",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "scripts": {
+    "content:check": "node scripts/check-content.mjs",
+    "test": "corepack pnpm --filter @idlerpg/core test",
+    "typecheck": "corepack pnpm -r --if-present run typecheck",
+    "dev:web": "corepack pnpm --filter @idlerpg/web dev",
+    "build:web": "corepack pnpm --filter @idlerpg/web build",
+    "preview:web": "corepack pnpm --filter @idlerpg/web preview"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.0"
+  }
+}

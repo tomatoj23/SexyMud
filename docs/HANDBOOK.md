@@ -15,7 +15,7 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema 草案（现有 2 个：`combat-text`、`config.dimensions`） | 🚧 其余待补 |
+| `schemas/` | JSON Schema（17 个，13 集合全覆盖）；`content:check` 已实际执行其中 config 4 类 | 🚧 其余集合随内容落地启用 |
 | `docs/research/` | 竞品研究与生图提示词 | 参考 |
 | `docs/design/`、`docs/archive/` | ⚠️ 废弃 / 归档，不作依据 | — |
 
@@ -56,6 +56,7 @@
 - ✅ 术语词典、文风指南、内容管线约定、**15 个 ADR**、BRIEF 审计遗留清零（§12.6）
 - ✅ **Schema 17 个**：13 个集合全覆盖（`config` 拆 6 类 + effects / martial / equipment / beast / monster / dungeon / herb / pill / sect / event / combat-text）；`lore/` 是 Markdown，由 `style-guide.md` 约束，无 JSON schema
 - ✅ 兽数据归属已定：独立 `beast/` 集合（第 13 集合），获取走 sect `exchange` 贡献兑换（ADR-0013）
-- 🚧 `content/` 条目填充（建议从 `config/` 结构性配置入手：realms / dimensions / settings / activities / resources）
-- 🚧 `content:check` 脚本随 monorepo 工程落地（当前纯文档阶段，Schema 为草案）
+- 🚧 `content/` 条目填充：config 已有 realms / resources / activities / settings 四个最小文件（dimensions、display-tiers 待补），其余 12 集合待生产（见 issue #17）
+- ✅ **Monorepo tracer bullet 已落地（issue #2）**：`packages/core`（纯 TS 引擎门面 `createGame`，注入 content/save/clock/rng）+ `apps/web`（React + Vite 壳，本地存档、刷新不丢）+ `apps/editor` 占位；三测试套件（门面行为 / 存档迁移 / 引擎纯度）；版本化存档 v1 + 迁移链骨架
+- ✅ **`content:check` 最小形态已落地**：`scripts/check-content.mjs` 自动发现 `content/` 下全部 JSON 并按目录约定映射 Schema 校验，退出码即结果（当前覆盖 config 4 文件）；完整化（交叉引用 / 连通性）见 issue #3
 - ⏸ 待决：奇遇形态未定（`event/` 仅有最小骨架；形态未定的概念不进术语表）
