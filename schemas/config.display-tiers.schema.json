@@ -2,13 +2,19 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.display-tiers.schema.json",
   "title": "显示档位（content/config/display-tiers.json）",
-  "description": "显示档位 = 由数值推导出的造诣描述（CONTEXT.md 显示档位词条）。映射方式 = 数值区间表，非\"等级 ÷ 步长\"。完整 50 档列表见 docs/research/xkx100-kungfu-combat.md §5.1；其中「超凡入圣」「天人合一」经定案豁免禁修仙词规则（content/style-guide.md）。",
+  "description": "显示档位 = 数值区间 → 中文档位词的映射表（CONTEXT.md 显示档位词条）。映射方式是**显式区间表**，不是「等级 ÷ 步长」——区间宽度可逐档调整。\n\n本作有**两套表**：\n- `martialTiers` 造诣（人物深浅，**50 档**）——纯显示层，**不产生任何门槛**（ADR-0019）\n- `professionTiers` 生产称谓（16 档）——🚧 **待补**：xkx100 原表在调研记录中被省略（仅存首尾「新学乍用 → … → 空前绝后」），**中间项不得杜撰**\n\n造诣 50 档完整列表见 `docs/research/xkx100-kungfu-combat.md` §5.1（**逐档照抄，不得杜撰**）；「超凡入圣」「天人合一」经定案豁免禁修仙词规则（content/style-guide.md）。",
   "type": "object",
-  "required": ["tiers"],
+  "required": ["martialTiers"],
   "properties": {
-    "tiers": {
+    "martialTiers": {
       "type": "array",
       "minItems": 1,
+      "description": "造诣 50 档，按 min 升序，区间互不重叠",
+      "items": { "$ref": "#/definitions/tier" }
+    },
+    "professionTiers": {
+      "type": "array",
+      "description": "生产称谓 16 档。🚧 待补（原表被调研记录省略）。",
       "items": { "$ref": "#/definitions/tier" }
     }
   },
@@ -23,17 +29,16 @@
         "label": {
           "type": "string",
           "minLength": 1,
-          "description": "档位词（50 档完整列表见）"
+          "description": "档位词。必须出自 `docs/research/xkx100-kungfu-combat.md` §5.1 原表，**不得杜撰**"
         },
         "presentation": {
           "type": "object",
-          "description": "呈现参数（配色／字重等），由 UI 层消费，引擎不读。⚠️ 原含「飘字大小／屏震强度」，已随 ADR-0006 配比定调（视觉层作废）移除",
+          "description": "呈现参数（配色／字重），由 UI 层消费，引擎不读。⚠️ 原含「飘字大小／屏震强度」，已随 ADR-0006 配比定调（对峙式视觉层作废）移除",
           "properties": {
             "color": { "type": "string" },
-            "fontScale": { "type": "number", "minimum": 0 },
-            "shake": { "type": "number", "minimum": 0 }
+            "fontScale": { "type": "number", "minimum": 0 }
           },
-          "additionalProperties": true
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

@@ -2,60 +2,67 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.settings.schema.json",
   "title": "全局阈值与公式常数（content/config/settings.json）",
-  "description": "引擎通过内容注册表取参数，零写死。本集合是各类公式常数、上限、倍率、默认策略的唯一载体：改动它就能调平衡，不动引擎。⚠️ 原 realmProgress（境界进度资源链接）已随 ADR-0019 删除——境界不是门槛，造诣由武功等级 + 实战经验推导，是纯显示层。",
+  "description": "引擎通过内容注册表取参数，零写死。本集合是各类**公式常数、上限、倍率**的唯一载体：改动它就能调平衡，不动引擎。\n\n**配置三分法（docs/spec/06 §6）**——本文件只收 TUNING（数字）：\n- **STRUCTURE**（装配图：模块路径 / typeclass / cmdset）**不进这里**，用 `$ref` 指向内容；\n- **POLICY**（决策：权限层级、多会话模式、默认策略）另开 `content/config/policy.json`；\n- **TUNING**（数字）才放本文件。\n\n**三条硬规则**：\n1. **禁止用 `null` 表示「无限／无」** —— 用显式形态（如 `{\"unlimited\": true}`）或直接省略字段；\n2. **时间相关键名必须带单位**，且引擎内一律用 **tick**（如 `regenPerTick`、`cooldownTicks`），不用毫秒；\n3. 每组可带 **`formula`** 字段记录该组数值的计算公式，让**数值与公式同处一地**。\n\n⚠️ 原 `realmProgress`（境界进度资源链接）已随 ADR-0019 删除——境界不是门槛，造诣由武功等级 + 实战经验推导，是纯显示层。",
   "type": "object",
   "required": ["id"],
   "properties": {
     "id": { "type": "string", "const": "settings" },
-    "defense": {
+    "combat": {
       "type": "object",
-      "description": "减伤 = 防御 / (防御 + K)（外功防御词条）",
-      "properties": { "k": { "type": "number", "minimum": 0 } },
-      "additionalProperties": false
-    },
-    "dodge": {
-      "type": "object",
-      "description": "闪避基础 5-10%、上限约 40%、递减 闪避/(闪避+K)",
+      "description": "战斗：减伤／闪避／抗性／内力／暴击的常数与倍率",
       "properties": {
-        "base": { "type": "number", "minimum": 0, "maximum": 1 },
-        "cap": { "type": "number", "minimum": 0, "maximum": 1 },
-        "k": { "type": "number", "minimum": 0 }
-      },
-      "additionalProperties": false
-    },
-    "resistance": {
-      "type": "object",
-      "description": "玩家抗性上限（-75%，走乘法区递减）。抗性 = 条件修饰符，不是属性（ADR-0009）。",
-      "properties": { "cap": { "type": "number", "maximum": 0 } },
-      "additionalProperties": false
-    },
-    "internalForce": {
-      "type": "object",
-      "description": "内力：按秒持续回复；耗尽转零消耗基础攻击（ADR-0010。⚠️ 原「稳态 DPS 离线结算」随 ADR-0016 失效——离线不自动战斗）",
-      "properties": {
-        "regenPerSecond": { "type": "number", "minimum": 0 },
-        "baseMax": { "type": "number", "minimum": 0 },
-        "zeroCostAttackRatio": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "内力耗尽后零消耗基础攻击相对正常输出的系数（输出下降但不归零）"
+        "formula": { "$ref": "#/definitions/formula" },
+        "defenseK": { "type": "number", "minimum": 0, "description": "减伤 = 防御 / (防御 + defenseK)（外功防御词条）" },
+        "dodge": {
+          "type": "object",
+          "description": "闪避：基础 5-10%、上限约 40%、递减 闪避/(闪避+K)",
+          "properties": {
+            "base": { "type": "number", "minimum": 0, "maximum": 1 },
+            "cap": { "type": "number", "minimum": 0, "maximum": 1 },
+            "k": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "resistanceCap": { "type": "number", "maximum": 0, "description": "玩家抗性上限（-75%）。抗性 = 条件修饰符，不是属性（ADR-0009）" },
+        "internalForce": {
+          "type": "object",
+          "description": "内力：按 **tick** 持续回复；耗尽转零消耗基础攻击。⚠️ 原「稳态 DPS 离线结算」随 ADR-0016 失效——离线不自动战斗。",
+          "properties": {
+            "regenPerTick": { "type": "number", "minimum": 0 },
+            "baseMax": { "type": "number", "minimum": 0 },
+            "zeroCostAttackRatio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "内力耗尽后零消耗基础攻击相对正常输出的系数（输出下降但不归零）"
+            }
+          },
+          "additionalProperties": false
+        },
+        "crit": {
+          "type": "object",
+          "properties": {
+            "baseRate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "multiplier": { "type": "number", "minimum": 1 }
+          },
+          "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": { "$ref": "#/definitions/noNull" }
     },
-    "crit": {
-      "type": "object",
-      "properties": {
-        "baseRate": { "type": "number", "minimum": 0, "maximum": 1 },
-        "multiplier": { "type": "number", "minimum": 1 }
-      },
-      "additionalProperties": false
+    "progression": {
+      "$ref": "#/definitions/parameterGroup",
+      "description": "成长：经验曲线系数、等级上限、属性／技能点投放速率。ADR-0019 之后进度主轴 = 武功等级 + 实战经验，**不是境界**。"
     },
-    "loot": {
+    "derivedStats": {
+      "$ref": "#/definitions/parameterGroup",
+      "description": "派生数值：气血／内力／攻防的换算系数，根骨等资质加成"
+    },
+    "economy": {
       "type": "object",
       "description": "掉落链参数（ADR-0012）：8 步管线中第①④⑦步的取值",
       "properties": {
+        "formula": { "$ref": "#/definitions/formula" },
         "dropChance": { "type": "number", "minimum": 0, "maximum": 1 },
         "rarityWeights": {
           "type": "array",
@@ -78,34 +85,53 @@
           "type": "number",
           "description": "底材偏好标签加成：权重 = 基础 × (1 + 匹配标签数 × tagBonus)，多标签温和叠加不相乘"
         },
-        "postProcess": {
-          "type": "string",
-          "description": "⚠️ **已作废**：原「离线掉落后处理策略」（keepBest | allMaterials | lootBox | keepAll）—— ADR-0016 定案**离线不自动战斗、不产掉落**，故本字段不再有语义，保留仅为向后兼容，勿在新内容中使用"
-        },
-        "keepN": { "type": "integer", "minimum": 1 }
+        "keepN": { "type": "integer", "minimum": 1, "description": "保留件数（配合后处理策略）" }
       },
-      "additionalProperties": false
+      "additionalProperties": { "$ref": "#/definitions/noNull" }
     },
-    "dungeon": {
-      "type": "object",
-      "description": "秘境默认值；maxConcurrent 是技术护栏 12-20，非难度调节",
-      "properties": {
-        "maxConcurrentDefault": { "type": "integer", "minimum": 1 },
-        "maxConcurrentHardCap": { "type": "integer", "minimum": 1 },
-        "intervalJitter": { "type": "number", "minimum": 0, "maximum": 1 }
-      },
-      "additionalProperties": false
+    "rng": {
+      "$ref": "#/definitions/parameterGroup",
+      "description": "判定分布、保底与连败补偿、暴击浮动区间。⚠️ 引擎自身不产生随机数——随机一律由注入的 `Rng` 提供，种子进存档（ADR-0017、docs/spec/04 §2）"
     },
-    "display": {
+    "caps": {
       "type": "object",
-      "description": "显示档位映射方式 = 数值区间表；完整 50 档见 config/display-tiers.json",
+      "description": "上限：背包、每日次数、状态叠加、场上怪物数。⚠️ `maxConcurrent*` 是**技术护栏**（默认 12–20），非难度调节。",
       "properties": {
-        "tierSource": { "type": "string" }
+        "formula": { "$ref": "#/definitions/formula" },
+        "dungeonMaxConcurrentDefault": { "type": "integer", "minimum": 1 },
+        "dungeonMaxConcurrentHardCap": { "type": "integer", "minimum": 1 },
+        "dungeonRespawnJitter": { "type": "number", "minimum": 0, "maximum": 1, "description": "驻守补位间隔抖动（对齐 dungeon.schema.json 的 respawn.jitter）" }
       },
-      "additionalProperties": false
+      "additionalProperties": { "$ref": "#/definitions/noNull" }
+    },
+    "time": {
+      "$ref": "#/definitions/parameterGroup",
+      "description": "时间：tick 时长、气血／内力回复速率、离线回复、buff 时长。**引擎内时间一律是 tick 计数**，游戏内时辰／刻／季节由 `nowTick` 纯函数推导，不存储（docs/spec/04 §3）"
+    },
+    "newPlayerDefaults": {
+      "$ref": "#/definitions/parameterGroup",
+      "description": "新玩家：初始属性、起始门派、默认难度、死亡惩罚"
+    },
+    "throttles": {
+      "$ref": "#/definitions/parameterGroup",
+      "description": "节流：命令节流、移动冷却、防刷怪窗口"
     }
   },
-  "additionalProperties": {
-    "description": "允许扩展新的参数组（加参数 = 加 config 键，不动引擎）"
+  "additionalProperties": { "$ref": "#/definitions/parameterGroup" },
+  "definitions": {
+    "formula": {
+      "type": "string",
+      "description": "该组数值的计算公式（人可读）。数值与公式同处一地，避免散落在代码调用点。"
+    },
+    "noNull": {
+      "not": { "type": "null" },
+      "description": "禁止 null 值（表示「无限／无」用显式形态或省略字段）"
+    },
+    "parameterGroup": {
+      "type": "object",
+      "description": "参数组。加参数 = 加 config 键，不动引擎。可带 `formula`。**禁止 null 值。**",
+      "properties": { "formula": { "$ref": "#/definitions/formula" } },
+      "additionalProperties": { "$ref": "#/definitions/noNull" }
+    }
   }
 }

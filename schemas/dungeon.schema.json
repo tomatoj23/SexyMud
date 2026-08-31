@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "dungeon.schema.json",
   "title": "秘境（content/dungeon/，每秘境一文件，层为子结构）",
-  "description": "秘境 = 战斗场景，由房间构成、分多层（CONTEXT.md 秘境词条）。四参数全在本集合，引擎零写死。⚠️ ADR-0012 的「层内定时波次」是放置期模型，MUD 转向后待重估为「驻守 + 定时刷新」。",
+  "description": "秘境 = **规则层**（分层 / 驻守 / 产出），与房间（`rooms/`，空间层）靠 `zoneId` 关联，两者不是同一集合（ADR-0016 §3、docs/spec/03 §1）。四参数全在本集合，引擎零写死。\n\n⚠️ **已完成「波次 → 驻守」重构（2026-09-01）**：ADR-0012 的「层内定时波次」是放置期模型，MUD 下改为**驻守 + 定时刷新**——怪是房间的驻守者，被清后按 tick 补位，不是按波次推进。时间单位一律用 **tick**，不用毫秒（ADR-0022 §5、docs/spec/04）。",
   "type": "object",
   "required": ["id", "name", "floors"],
   "properties": {
@@ -13,6 +13,7 @@
     },
     "name": { "type": "string", "minLength": 1 },
     "regionId": { "type": "string", "description": "区域归属（content.md 通用字段）" },
+    "zoneId": { "type": "string", "description": "与 rooms/ 的空间层关联：本秘境对应的区域（ADR-0016 §3）" },
     "affinities": {
       "type": "object",
       "description": "秘境级系别亲和度（如 { fire: -30 }）；与怪物亲和度同族，复用同一套（ADR-0009）",
@@ -29,35 +30,33 @@
   "definitions": {
     "floor": {
       "type": "object",
-      "required": ["id", "index", "waveCount", "waveInterval", "waveComposition", "maxConcurrent"],
+      "required": ["id", "index", "guards", "respawn", "maxConcurrent"],
       "properties": {
         "id": {
           "type": "string",
           "description": "层 id（如 dun-blaze-cavern-f02）。unlocks 指向它，供校验器检查连通性闭环。"
         },
         "index": { "type": "integer", "minimum": 1, "description": "层数（深度 = 装备有多强，不是造诣门槛）" },
-        "waveCount": { "type": "integer", "minimum": 1, "description": "本层几波" },
-        "waveInterval": {
+        "guards": {
           "type": "object",
-          "description": "波间隔：固定值 / 区间随机 / 逐波递减。随机化两层之一（间隔 T ± 20%），随机性放在节奏与搭配上，不放在难度上。",
-          "required": ["baseMs"],
+          "description": "驻守配置：本层房间里站着哪些怪。`fixed` 用 `monsters` 固定表；`pool` 从 `pool` 随机并叠加 `guaranteed` 保底。⚠️ 精英与层主不进随机池。原 `waveCount` / `waveComposition` 已随波次模型废弃。",
+          "required": ["mode"],
           "properties": {
-            "baseMs": { "type": "integer", "minimum": 1 },
-            "mode": { "type": "string", "description": "fixed | random | decay" },
-            "jitter": { "type": "number", "minimum": 0, "maximum": 1 },
-            "decayPerWave": { "type": "number" }
+            "mode": { "type": "string", "enum": ["fixed", "pool"], "description": "fixed = 固定表；pool = 从池随机 + 保底" },
+            "monsters": { "type": "array", "items": { "type": "string" }, "description": "mode=fixed 时的怪物 id 表" },
+            "pool": { "type": "array", "items": { "type": "string" }, "description": "mode=pool 时的随机池（精英与层主不进池）" },
+            "guaranteed": { "type": "array", "items": { "type": "string" }, "description": "mode=pool 时的保底固定怪" }
           },
           "additionalProperties": false
         },
-        "waveComposition": {
+        "respawn": {
           "type": "object",
-          "description": "每波什么怪：固定表 / 从池随机（本层池随机 + 保底固定；精英与层主不进随机池）",
-          "required": ["mode"],
+          "description": "定时刷新：驻守被清后，隔多少 **tick** 补位。⚠️ 时间一律用 tick 而非毫秒——引擎必须保持确定性（ADR-0022 §5、docs/spec/04 §2）。实现上是「观察时补偿」或区域 tick，不是 per-object 定时器。",
+          "required": ["baseTicks"],
           "properties": {
-            "mode": { "type": "string", "description": "fixed | pool" },
-            "monsters": { "type": "array", "items": { "type": "string" } },
-            "pool": { "type": "array", "items": { "type": "string" } },
-            "guaranteed": { "type": "array", "items": { "type": "string" }, "description": "保底固定怪" }
+            "baseTicks": { "type": "integer", "minimum": 1, "description": "基础补位间隔（引擎 tick 数）" },
+            "mode": { "type": "string", "enum": ["fixed", "random"], "description": "fixed = 固定间隔；random = 间隔带抖动" },
+            "jitter": { "type": "number", "minimum": 0, "maximum": 1, "description": "mode=random 时的抖动比例（如 0.2 = ±20%）。随机性只放节奏，不放难度。" }
           },
           "additionalProperties": false
         },
@@ -73,11 +72,11 @@
         },
         "boss": {
           "type": "string",
-          "description": "层主怪物 id（每 N 层一个，非每层都有；层主带机制 = 用现有 primitive 组合，引擎零新增）"
+          "description": "层主怪物 id（每 N 层一个，非每层都有；层主 = 本层驻守主怪，带机制 = 用现有 primitive 组合，引擎零新增）"
         },
         "unlocks": {
-          "type": ["string", "null"],
-          "description": "下一层 id（末层为 null）。解锁混合式：前几个链式引导，之后按推荐战力区间并列开放（ADR-0019：原「推荐境界」已废）。"
+          "type": "string",
+          "description": "下一层 id。**末层直接省略本字段**——不得用 `null`（docs/spec/06 §6.2：禁止用 null 表示「无」）。"
         },
         "recommendedPower": {
           "type": "array",

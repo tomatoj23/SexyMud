@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.dimensions.schema.json",
   "title": "维度表（content/config/dimensions.json）",
-  "description": "维度表 = 各维度的可取值集合。condition.dimension 与条目 tags 对象键的取值均来自这里；引擎只做键取值 + 集合求交，绝不按具体值分支（ADR-0004 扩展留白）。加维度 / 加取值 = 加本表条目，不动引擎。",
+  "description": "维度表 = 各维度的可取值集合。condition.dimension 与条目 tags 对象键的取值均来自这里；引擎只做键取值 + 集合求交，绝不按具体值分支（ADR-0004 扩展留白）。加维度 / 加取值 = 加本表条目，不动引擎。\n\n取值一律为**小写 ASCII id**（中文名由 CONTEXT.md 与内容层映射承担）。维度**键名**用 lowerCamelCase（如 `damageBand`）——注意这与**条目 id** 规则不同：条目 id 只用小写字母、数字、连字符（见 `docs/agents/content.md`）。\n\n必填维度语义：\n- damageBand 伤害档（轻/中/重/濒死）、lifeBand 剩余生命档（满/多/半/少/危）：战斗文本后果词库分池的两条轴\n- source 作用方式（外功/内功）、element 系别（金木水火土风雷 + 无属性）：2×8 正交\n- motion 动作画面（刺/扫/劈/拿）：动词的属性，不是招式的属性\n- moveTag 招式标签、elementTag 系别标签：条目 tags 对象形态的键\n- quality 品阶（下乘/中乘/上乘/绝学）、slot 装备槽（7 槽）、style 语义样式名（供输出层消费，不是 ANSI/HTML）",
   "type": "object",
   "required": [
     "damageBand",
@@ -11,7 +11,10 @@
     "motion",
     "element",
     "moveTag",
-    "elementTag"
+    "elementTag",
+    "quality",
+    "slot",
+    "style"
   ],
   "propertyNames": {
     "pattern": "^[a-z][a-zA-Z0-9]*$"

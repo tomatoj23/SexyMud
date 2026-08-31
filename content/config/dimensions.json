@@ -1,0 +1,12 @@
+{
+  "damageBand": ["light", "medium", "heavy", "nearDeath"],
+  "lifeBand": ["full", "high", "half", "low", "critical"],
+  "source": ["external", "internal"],
+  "motion": ["thrust", "sweep", "chop", "grapple"],
+  "element": ["metal", "wood", "water", "fire", "earth", "wind", "thunder", "none"],
+  "moveTag": ["sword", "blade", "staff", "fist", "palm", "hidden"],
+  "elementTag": ["metal", "wood", "water", "fire", "earth", "wind", "thunder"],
+  "quality": ["low", "mid", "high", "ultimate"],
+  "slot": ["weapon", "head", "armor", "wrist", "waist", "legs", "boots"],
+  "style": ["dim", "strong", "emphasis", "danger", "good", "roomName", "npcName", "itemName", "commandHint"]
+}

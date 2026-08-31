@@ -22,7 +22,7 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema（**14 个**；`config` 拆 3 类：dimensions / display-tiers / settings）；`content/` 现仅 `config/settings.json`，故实际只校验 1 个文件 | 🚧 `commands` / `rooms` / `npcs` 的 schema 待 M1 补；其余集合随内容落地启用 |
+| `schemas/` | JSON Schema（**14 个**；`config` 拆 3 类：dimensions / display-tiers / settings）；`content/` 现有 **3 个 config JSON**，均通过校验 | 🚧 `commands` / `rooms` / `npcs` 的 schema 待 M1 补；其余 11 个集合随内容落地启用 |
 | `docs/research/xkx100-*.md` | **一手调研**：房间/NPC/物品/任务结构、武功体系、**战斗文本模板与 50 档造诣完整列表** | 参考（高价值） |
 
 **冲突处置顺序**：**`docs/spec/`（活规格，最高）** > `CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/`（决策历史）> `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
@@ -110,7 +110,9 @@
 - ✅ 术语词典、文风指南、内容管线约定、**27 个 ADR**
 - ✅ **Schema 14 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ beast / combat-text / dungeon / effects / equipment / event / herb / martial / monster / pill / sect。**`commands` / `rooms` / `npcs` 的 schema 待 M1 补**。⚠️ `config.activities` 与 `config.resources` 两个 schema 已随放置领域模型一并删除
 - ✅ 兽数据归属已定：独立 `beast/` 集合，获取走 sect `exchange` 贡献兑换（ADR-0013）
-- 🚧 `content/` 条目填充：**目前只有 `config/settings.json` 一个 JSON**；`dimensions` / `display-tiers` 待补（**注意：这两个文件被 CONTEXT.md、ADR-0011/0018/0019、spec/05 与多个 schema 引用，但尚未创建**）；其余集合待生产（见 issue #17）
+- ✅ **schema 与已定决策的冲突已修（2026-09-01）**：`dungeon` 完成「**波次 → 驻守**」重构（`waveCount`/`waveInterval`/`waveComposition` → `guards`/`respawn`，时间单位 `baseMs` → **`baseTicks`**，`unlocks` 末层改省略而非 `null`）；`config.settings` 按 `spec/06 §6` 的三分法重写（9 组、可带 `formula`、**禁 `null`**、时间键名带单位且用 tick）；`monster`/`event` 移除**造诣越权**；`equipment` 修正品阶/阶位混用
+- ✅ **`content/config/` 三个文件已建**：`dimensions.json`（10 个维度：伤害档/生命档/方式/motion/系别/招式标签/系别标签/品阶/槽位/**语义样式名**）与 `display-tiers.json`（**造诣 50 档，逐项比对 xkx100 §5.1 原表无误**，区间非均匀）。此前约 12 处文档引用指向这两个尚不存在的文件
+- 🚧 `content/` 其余集合待生产（见 issue #17）；`display-tiers.json` 的 **生产称谓 16 档待补**（xkx100 原表在调研记录中被省略，**不得杜撰中间项**）
 - ✅ **Monorepo 工程骨架**：`packages/core`（**三个源文件**：`types.ts` 端口与契约 / `index.ts` / `save/migrations.ts` 迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor` 占位；**两个测试文件**（引擎纯度 / 存档迁移），9 个用例通过
 - ✅ **`content:check` 已落地**：`scripts/check-content.mjs` 按目录约定映射 Schema 校验，退出码即结果（当前仅校验 `config/settings.json`）；**已含反向扫描**，会列出无内容可映射的 schema。待补：交叉引用 / 连通性校验（issue #3）
 - ✅ **MUD 转向已定案（2026-09-01）**：ADR-0016 交互模型 ／ ADR-0017 权威端抽象 ／ ADR-0018 客户端矩阵；ADR-0008 部分翻案（任务体系、NPC 集合）；`CONTEXT.md` 新增「世界与交互」术语段 7 条，`intent` 改判为 manual-source 优先
@@ -120,7 +122,7 @@
 - ✅ **ADR-0024 已定案（2026-09-01）**：Evennia 源码级第二轮——**中文解析器必须自研**（Evennia 按空格分词，中文无空格）、确定性检查清单、`.call()` 三处缺陷不照抄、CJK 范围扩大、原型与条件表达式的边界修正
 - ✅ **ADR-0025 已定案（2026-09-01）**：Evennia 第三轮（源码 + 完整示例游戏 EvAdventure）——**不能后补的地基**：命令携带 `actorId`、事件侧 `seq` 与三类失败、**不需要 attribute handler**、调度六原语（含「观察时补偿结算」）、游戏内时间是 tick 纯函数、**实体 hook 九项**、输入加固用私有码位、测试权重压边界、配置三分法
 - ✅ **ADR-0026 已定案（2026-09-01）· 定位升级**：**我们做的是引擎**——中文优先的确定性文字 MUD 引擎 + 武侠内容包。三条硬标准从「纪律」升级为「产品定义」；确立取长补短分工（Evennia 给架构、xkx100 给中文叙事、我们补确定性/JSON 门禁/多端结构化输出）
-- ✅ **`docs/chinese-mud-concerns.md` 已落**：中文 MUD 特有问题全景（A 输入／B 输出／C 叙事／D 检索／E 编码／F 中立性），**35 条**，**5 条待定**（A6 全角标点归一化 / B8 避头尾折行 / B9 中英空格 / D1 中文排序 / D4 模糊命令建议）。E3（UTF-8 存档往返）已完成。B8 与 D1 会在内容量上来后变贵，建议 M1 结束前定掉
+- ✅ **`docs/chinese-mud-concerns.md`**：中文 MUD 特有问题全景，**43 条**（A–G 七域），**6 条待定**（A6 / B8 / B9 / C5 / D1 / D4）+ **8 条新增待评估**（G 组，含 **IME 合成事件**）。E3 已实现（CJK 往返测试）。B8 与 D1 建议 M1 结束前定掉；G3（IME）建议在做 Web 输入时就处理；G8（竖排）已明确否掉
 - ✅ **换内容演练已完成（2026-09-01）**：结论是「通过词汇检验、未通过领域检验」——引擎读的是放置模型（`cycleSeconds`/`offlineCapHours`）且 `Clock` 是墙钟毫秒。五处耦合见 `docs/engine-purity-audit.md`
 - ✅ **领域模型已清零（2026-09-01）**：删除放置遗留的配置面、引擎门面与内容绑定加载器；**保留**纯度测试、`content:check`、迁移链。同时把 `docs/spec/01` 的端口与契约落成 `packages/core/src/types.ts`（Clock 改 tick 计数、命令带 `actorId`、事件带 `seq`、三类失败）
 - 🚧 **下一步 M1**：**先搭命令测试骨架（ADR-0023 §1）**，再自研中文解析器（最长动词匹配），然后 `commands/` `rooms/` `npcs/` 三个集合 + schema 三处同步（core 类型／编辑器／`content.md`）。起点见 `docs/spec/02-command-layer.md`
