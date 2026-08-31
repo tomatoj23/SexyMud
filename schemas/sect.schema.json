@@ -42,7 +42,7 @@
     },
     "productionBonus": {
       "type": "array",
-      "description": "生产加成（采 Collection/炼丹效率等），走修饰符管线",
+      "description": "生产加成（采集／炼丹效率等），走修饰符管线",
       "items": { "type": "object" }
     },
     "contributionResourceId": {

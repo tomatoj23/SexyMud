@@ -61,7 +61,7 @@ Evennia 自己承认它的默认状态就是最小端——「empty but fully fu
 
 **战斗模块不需要 import 技能模块**：技能通过「效果契约」影响战斗数值，战斗通过「事件契约」通知技能（"命中了" → 加熟练度）。两者都不知道对方存在。
 
-六条契约见 `01-engine-contract.md` §8。
+六条契约见 `01-engine-contract.md` §7。
 
 ### 现在不做插件系统
 
@@ -109,8 +109,8 @@ TerminalView 实现                   style-guide.md（文风约束）
 | **`08-non-goals.md`** | **明确不做的事** | **每次做设计决策前，必读** |
 
 配套（非本目录）：
-- `docs/adr/` — 决策历史（26 篇）
-- `docs/chinese-mud-concerns.md` — 中文特有问题全景（26 条，6 条待定）
+- `docs/adr/` — 决策历史（27 篇）
+- `docs/chinese-mud-concerns.md` — 中文特有问题全景（35 条，5 条待定）
 - `CONTEXT.md` — **武侠内容包**术语词典（作用域：内容层，不是引擎）
 - `content/style-guide.md` — 叙事文风约束
 

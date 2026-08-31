@@ -1,11 +1,11 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**；16 个 schema **需随本规格重估**（放置期设计）。
+> **状态**：`content:check` 管线**已实现**；**14 个** schema **需随本规格重估**（放置期设计）。`content/` 目前只有 `config/settings.json` 一个 JSON。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合
 
-`content/` 下 16 个集合 + `config/`。**每个条目一个 JSON 文件**。
+`content/` 下 **15 个条目集合**（见下表）+ `config/`（结构性配置）+ `lore/`（纯 Markdown，由 style-guide 约束，无 schema）。**每个条目一个 JSON 文件**。
 
 | | | |
 |---|---|---|
@@ -46,7 +46,7 @@ corepack pnpm content:check
 
 ### 3.1 已知缺口
 
-- **只从 content 侧枚举，从不遍历 schemas/** —— 13 个 schema 永远不被校验（孤儿 schema 静默通过）
+- ~~只从 content 侧枚举，从不遍历 schemas/~~ —— **已修**：现会反向扫描并打印无内容可映射的 schema（报 NOTE，不失败）。**但这些 schema 仍不会被 compile**，所以其中的 draft-07 违规在补齐内容前仍不会暴露
 - `config.settings.schema.json` 的 `additionalProperties: {}` 无约束，写错键名不会被拦
 
 依据：ADR-0003、第三轮子代理审计
@@ -91,7 +91,7 @@ corepack pnpm content:check
 
 ## 7. 引擎预留清单
 
-`condition` 维度、`targetSelector`、效果 primitive 穷举（13 项）、装备影响穷举 —— 见 `docs/engine-reservations.md`。
+`condition` 维度、`targetSelector`、效果 primitive **穷举 16 项**（其中 **MVP 候选 13 项** —— 排除连击 / 护盾 / 位移）、装备影响穷举 —— 见 `docs/engine-reservations.md`。⚠️ 别把「候选 13」误写成「穷举 13」。
 
 **原则**：清单里每一项都是**枚举池的一个取值**，加一项 = 加内容，不动引擎。
 

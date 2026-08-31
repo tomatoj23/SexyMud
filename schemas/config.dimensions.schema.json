@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.dimensions.schema.json",
   "title": "维度表（content/config/dimensions.json）",
-  "description": "维度表 = 各维度的可取值集合。condition.dimension 与条目 tags 对象键的取值均来自这里；引擎只做键取值 + 集合求交，绝不按具体值分支（形状清单 #11）。加维度 / 加取值 = 加本表条目，不动引擎。",
+  "description": "维度表 = 各维度的可取值集合。condition.dimension 与条目 tags 对象键的取值均来自这里；引擎只做键取值 + 集合求交，绝不按具体值分支（ADR-0004 扩展留白）。加维度 / 加取值 = 加本表条目，不动引擎。",
   "type": "object",
   "required": [
     "damageBand",

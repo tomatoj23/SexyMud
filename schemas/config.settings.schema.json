@@ -80,7 +80,7 @@
         },
         "postProcess": {
           "type": "string",
-          "description": "离线掉落后处理策略：keepBest | allMaterials | lootBox | keepAll"
+          "description": "⚠️ **已作废**：原「离线掉落后处理策略」（keepBest | allMaterials | lootBox | keepAll）—— ADR-0016 定案**离线不自动战斗、不产掉落**，故本字段不再有语义，保留仅为向后兼容，勿在新内容中使用"
         },
         "keepN": { "type": "integer", "minimum": 1 }
       },

@@ -11,7 +11,7 @@
 
 | 文件 | 作用 | 状态 |
 |---|---|---|
-| **`docs/spec/`** | **活规格**（8 份：总览／引擎契约／命令层／世界模型／状态与时间／输出管线／内容 Schema／中文层／**non-goals**） | ✅ **开工先读** |
+| **`docs/spec/`** | **活规格**（9 份：总览／引擎契约／命令层／世界模型／状态与时间／输出管线／内容 Schema／中文层／**non-goals**） | ✅ **开工先读** |
 | `CONTEXT.md` | 术语词典（**武侠内容包**作用域，非引擎） | ✅ 权威（最高） |
 | `docs/agents/content.md` | `content/` 目录、id 规则、字段约定、批量工作流 | ✅ 权威 |
 | `docs/adr/0001`–`0027` | 27 个架构决策（0016–0027 = MUD 转向与引擎定位） | ✅ 权威 |
@@ -22,10 +22,12 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema（**16 个**；`config` 拆 5 类）；`content:check` 实际执行其中 config 3 类 | 🚧 `commands` / `rooms` / `npcs` 的 schema 待 M1 补；其余集合随内容落地启用 |
+| `schemas/` | JSON Schema（**14 个**；`config` 拆 3 类：dimensions / display-tiers / settings）；`content/` 现仅 `config/settings.json`，故实际只校验 1 个文件 | 🚧 `commands` / `rooms` / `npcs` 的 schema 待 M1 补；其余集合随内容落地启用 |
 | `docs/research/xkx100-*.md` | **一手调研**：房间/NPC/物品/任务结构、武功体系、**战斗文本模板与 50 档造诣完整列表** | 参考（高价值） |
 
-**冲突处置顺序**：`CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/` > `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
+**冲突处置顺序**：**`docs/spec/`（活规格，最高）** > `CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/`（决策历史）> `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
+
+> ⚠️ **ADR 是决策日志，不是当前规格。** ADR 之间有网状覆盖关系（0025 修订 0017、0024 修正 0022 与 0023）。**冲突时一律以 `docs/spec/` 为准。**
 
 > 🧹 放置游戏时期的 `docs/design-spec-BRIEF.md`（1000+ 行规格，MUD 转向后已失准）、`docs/archive/`（设计会话记录）、`docs/design/`（废弃稿）**已于 2026-09-01 删除**；BRIEF §11 的引擎预留清单已提取至 `docs/engine-reservations.md`，50 档造诣表在 `docs/research/xkx100-kungfu-combat.md` §5.1。如需回溯：`git checkout 79bd991 -- docs/design-spec-BRIEF.md docs/archive/`。
 
@@ -39,21 +41,22 @@
 
 | 域 | 定案 | 出处 |
 |---|---|---|
-| 造诣 / 显示档位 | **50 档**区间表（非「等级 ÷ 步长」），由武功等级 + 实战经验推导，**纯显示不设门槛**；另有生产称谓 16 档。完整列表见 `docs/research/xkx100-kungfu-combat.md` §5.1；「超凡入圣」「天人合一」豁免禁修仙词 | `CONTEXT.md` |
+| **造诣**（人物深浅） | **50 档**区间表（非「等级 ÷ 步长」），由武功等级 + 实战经验推导，**纯显示不设门槛**；同时驱动 NPC 敬称。代表性档位：不堪一击 → 初窥门径 → 驾轻就熟 → 炉火纯青 → 出神入化 → 返璞归真。完整列表见 `docs/research/xkx100-kungfu-combat.md` §5.1；「超凡入圣」「天人合一」豁免禁修仙词。**档位名不得杜撰** | `CONTEXT.md`／ADR-0019 |
+| **显示档位**（通用机制） | 数值区间 → 中文档位描述的**通用机制**。本作有**两套表**：造诣 50 档 + **生产称谓 16 档**（生手／熟手／…）。引擎不给默认文案 | `CONTEXT.md` |
 | 伤害模型 | 兵刃层（恒有、受外功防御减）+ 系别层（× 系别系数）；方式（内功/外功）× 系别（七系 + 无属性）= 2×8；玩家抗性 = 条件修饰符（非属性） | ADR-0009 |
-| 内力 | 持续回复 + 离线稳态结算 O(1)；耗尽 → 零消耗基础攻击；代价"在另一维度付账" | ADR-0010 |
+| 内力 | 持续回复；耗尽 → 零消耗基础攻击（输出降级不归零）；代价"在另一维度付账"。上限来源 = 武功等级 + 心法 + 装备词缀。⚠️ 原「稳态 DPS 离线 O(1) 结算」**已作废**（ADR-0016：离线不自动战斗） | ADR-0010 |
 | 战斗文本 | 13 槽位 `{attacker}` 语法；模板 = 片段序列（3–7 段）；后果词库 5 维分池；三层门控；motion 是**动词**的属性 | ADR-0011 |
 | 秘境与产出 | 分层驻守（难度涌现）；四参数在 config；掉落 8 步管线（**稀有度是因、词条数是果**）；底材分层 + 倾向标签化 | ADR-0012 |
 | 装备 | **7 槽**（兵/冠/甲/腕/腰/裤/靴）+ 独立随从栏（兽）；稀有度四档；底材分层 + 倾向标签化 | `CONTEXT.md`／ADR-0012 |
-| 呈现 | 对峙式视觉层 + MUD 式叙事层；`core` 只吐结构化事件，不感知题材 | ADR-0006 |
+| 呈现 | **叙事 >> 视觉**：全屏小说式文本流为绝对主体（衬线、墨色），视觉层降级为顶部细状态条。⚠️ ADR-0006 原定的「对峙式布局／飘字／招式名弹出／头像边框光环」**已作废** | ADR-0006（配比定调） |
 | 构筑 | 掉落驱动（底材 × 稀有度 × 词缀阶位）；流派由标签联动涌现 | ADR-0005 |
-| 内容管线 | `content/` **16 个集合**（原 13 + `commands/` `rooms/` `npcs/`）+ `config/`（结构性配置）；每条目一 JSON 文件；id 一经发布不可变更 | `content.md` |
-| 兽 | 本质是装备（修饰符 + 叙事片段），不是战斗单位；七系各一只**机制放大器**；独立随从栏不占 7 槽；数据在独立 `beast/` 集合（第 13 集合），获取走 sect `exchange` 兑换 | ADR-0013 |
+| 内容管线 | `content/` 共 **15 个条目集合**（原 12 + `commands/` `rooms/` `npcs/`）+ `config/`（结构性配置）+ `lore/`（纯 Markdown）；每条目一 JSON 文件；id 一经发布不可变更。详见 `docs/agents/content.md` | `content.md` |
+| 兽 | 本质是装备（修饰符 + 叙事片段），不是战斗单位；七系各一只**机制放大器**；独立随从栏不占 7 槽；数据在独立 `beast/` 集合，获取走 sect `exchange` 兑换 | ADR-0013 |
 | 门派 | 武功池 + 缺省系别 + 生产加成三件套；脉是武功池标签、非身份选择；已学武功与门派解耦 | ADR-0014 |
 | 成长与反馈 | 招式解锁 + 造诣晋升替代天赋树；战斗摘要／同对手对照补中频反馈；专精靠词缀涌现 | ADR-0015／0019／0020 |
-| **玩法主次** | **MUD 为主，放置为辅**：在线命令交互是核心体验；离线只补气血／内力恢复与基础武功熟练度（有上限），**不自动战斗、不推层、不产掉落** | ADR-0016／0019 |
+| **玩法主次** | **在线命令交互为主，离线结算为辅**：命令驱动是核心体验；离线只补气血／内力恢复与基础武功熟练度（有上限），**不自动战斗、不推层、不产掉落**。⚠️「放置」是已废弃的 idle 期语汇，勿再用 | ADR-0016／0019 |
 | **交互模型** | 命令层内容化（`commands/` 的动词/别名/前置/拒绝文案全是数据，**引擎零动词**）；世界 = 房间（`rooms/`）+ 人物（`npcs/`）；**双时钟**（心跳 tick ／ 离线结算，不共用代码路径） | ADR-0016 |
-| **intent** | **manual-source 优先**（命令输入是主要来源），auto 降级为「未下指令时的默认行为」与自动应战模式；共用注册位，切换不改 core | ADR-0016 |
+| **出招来源** | **manual-source 优先**（命令输入是主要来源），auto 降级为「未下指令时的默认行为」与自动应战模式；共用注册位，切换不改 core。⚠️ 勿再称「intent」——该词现指「意图」（可序列化动作结构） | ADR-0016 |
 | **权威端** | **单机优先 + 薄服务端**：世界模拟在本机，服务端只做云存档／排行榜／聊天；`Authority` 端口隔离，界面永远不认实现；core 必须保持完全确定性（禁 `Math.random()` ／ `Date.now()`） | ADR-0017 |
 | **客户端矩阵** | Web（React + Vite）是唯一基准端；跨端只共享 `TerminalView` 接口与逻辑层，**不共享组件**；小程序端重写渲染层、**不引入 Taro**；桌面 PWA → Tauri v2，APK 用 Capacitor | ADR-0018 |
 | **输出行** | 可移植富文本 token：语义样式名（枚举在 `config/dimensions.json`），不是 ANSI、不是 HTML | ADR-0018 |
@@ -62,7 +65,7 @@
 | **反馈三层** | ① 战斗摘要（战后一行画像，由签名生成，是 build 的指纹）② 同对手对照（昨我 vs 今我：「三日前三十合，今日十一合」）③ 社会层（50 档造诣 + NPC 敬称） | ADR-0020 |
 | **命令可用性** | **多源合并**：会话／玩家／角色／携带物／所在地／周围物件／**出口（优先级最高，永远可用）**，按 `priority` + `mergetype`（Union/Replace/Remove/Intersect）合成。全是内容字段，引擎零改动 | ADR-0021 |
 | **出口** | **独立实体，不是房间字段**；方向即命令（中文「北／南／上／出」+ 英文缩写并列）。门禁挂在出口上，拒绝文案是内容 | ADR-0021 |
-| **视角** | **Actor stance（第二人称）**：同一事件，当事人读到「你…」、旁观者读到「黑衣人…」。中文无动词变位，只需代词替换——**第一天做对，否则联网时全部文本返工** | ADR-0021 |
+| **立场** | **Actor stance（第二人称）**：同一事件，当事人读到「你…」、旁观者读到「黑衣人…」。中文无动词变位，只需代词替换——**第一天做对，否则联网时全部文本返工** | ADR-0021 |
 | **别名** | 两层：**内容层**（`commands[].verbs[]`，全局）+ **玩家层**（存档 nicks，个人，支持模板）。中文输入成本高，个人别名是刚需 | ADR-0021 |
 | **状态持久化** | `db.*`（持久，进存档）／ `ndb.*`（非持久，重启即失，**游戏逻辑不得读取**）。**未显式写入的字段不落盘**，改默认值时既有存档自动跟随 | ADR-0022 |
 | **条件表达式** | **JSON 数组** `{all/any/not}` + 通用谓词（`attr_gte`/`has_tag`/`has_flag`/`has_state`…），**不用字符串 DSL**（无法被 Schema 校验）；拒绝文案 `err_*` 也是数据 | ADR-0022 |
@@ -104,12 +107,12 @@
 
 ## 当前状态
 
-- ✅ 术语词典、文风指南、内容管线约定、**22 个 ADR**
-- ✅ **Schema 16 个**：覆盖 16 个集合（`config` 拆 5 类 activities / dimensions / display-tiers / resources / settings；+ effects / martial / equipment / beast / monster / dungeon / herb / pill / sect / event / combat-text）。**`commands` / `rooms` / `npcs` 的 schema 待 M1 补**
-- ✅ 兽数据归属已定：独立 `beast/` 集合（第 13 集合），获取走 sect `exchange` 贡献兑换（ADR-0013）
-- 🚧 `content/` 条目填充：config 已有 activities / resources / settings **三个**最小文件（dimensions、display-tiers 待补），其余集合待生产（见 issue #17）
-- ✅ **Monorepo tracer bullet 已落地（issue #2）**：`packages/core`（纯 TS 引擎门面 `createGame`，注入 content/save/clock/rng）+ `apps/web`（React + Vite 壳，本地存档、刷新不丢）+ `apps/editor` 占位；三测试套件（门面行为 / 存档迁移 / 引擎纯度）；版本化存档 v1 + 迁移链骨架
-- ✅ **`content:check` 最小形态已落地**：`scripts/check-content.mjs` 自动发现 `content/` 下全部 JSON 并按目录约定映射 Schema 校验，退出码即结果（当前覆盖 config 3 文件）；完整化（交叉引用 / 连通性 / 反向扫描孤儿 schema）见 issue #3
+- ✅ 术语词典、文风指南、内容管线约定、**27 个 ADR**
+- ✅ **Schema 14 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ beast / combat-text / dungeon / effects / equipment / event / herb / martial / monster / pill / sect。**`commands` / `rooms` / `npcs` 的 schema 待 M1 补**。⚠️ `config.activities` 与 `config.resources` 两个 schema 已随放置领域模型一并删除
+- ✅ 兽数据归属已定：独立 `beast/` 集合，获取走 sect `exchange` 贡献兑换（ADR-0013）
+- 🚧 `content/` 条目填充：**目前只有 `config/settings.json` 一个 JSON**；`dimensions` / `display-tiers` 待补（**注意：这两个文件被 CONTEXT.md、ADR-0011/0018/0019、spec/05 与多个 schema 引用，但尚未创建**）；其余集合待生产（见 issue #17）
+- ✅ **Monorepo 工程骨架**：`packages/core`（**三个源文件**：`types.ts` 端口与契约 / `index.ts` / `save/migrations.ts` 迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor` 占位；**两个测试文件**（引擎纯度 / 存档迁移），9 个用例通过
+- ✅ **`content:check` 已落地**：`scripts/check-content.mjs` 按目录约定映射 Schema 校验，退出码即结果（当前仅校验 `config/settings.json`）；**已含反向扫描**，会列出无内容可映射的 schema。待补：交叉引用 / 连通性校验（issue #3）
 - ✅ **MUD 转向已定案（2026-09-01）**：ADR-0016 交互模型 ／ ADR-0017 权威端抽象 ／ ADR-0018 客户端矩阵；ADR-0008 部分翻案（任务体系、NPC 集合）；`CONTEXT.md` 新增「世界与交互」术语段 7 条，`intent` 改判为 manual-source 优先
 - ✅ **ADR-0019 / 0020 已定案（2026-09-01）**：取消境界突破（进度主轴改为武功修习／空间探索／装备构筑）；七系从系数升级为结构签名 + 三层反馈定案
 - 🧹 **无关内容已清理（2026-09-01）**：删除 `docs/design/`（废弃设计稿）、`docs/research/ui-mockups/` + `idle-ui-references.md` + `ui-gen-prompts.md`（放置期视觉资产）、`prototype/`（结论已迁至 ADR-0006/0011）、`apps/web/dist/`、`docs/design-spec-BRIEF.md`（放置期规格，§11 已提取至 `docs/engine-reservations.md`）、`docs/archive/`（放置期设计会话记录）。恢复命令：`git checkout 79bd991 -- docs/design-spec-BRIEF.md docs/archive/`
@@ -117,14 +120,13 @@
 - ✅ **ADR-0024 已定案（2026-09-01）**：Evennia 源码级第二轮——**中文解析器必须自研**（Evennia 按空格分词，中文无空格）、确定性检查清单、`.call()` 三处缺陷不照抄、CJK 范围扩大、原型与条件表达式的边界修正
 - ✅ **ADR-0025 已定案（2026-09-01）**：Evennia 第三轮（源码 + 完整示例游戏 EvAdventure）——**不能后补的地基**：命令携带 `actorId`、事件侧 `seq` 与三类失败、**不需要 attribute handler**、调度六原语（含「观察时补偿结算」）、游戏内时间是 tick 纯函数、**实体 hook 九项**、输入加固用私有码位、测试权重压边界、配置三分法
 - ✅ **ADR-0026 已定案（2026-09-01）· 定位升级**：**我们做的是引擎**——中文优先的确定性文字 MUD 引擎 + 武侠内容包。三条硬标准从「纪律」升级为「产品定义」；确立取长补短分工（Evennia 给架构、xkx100 给中文叙事、我们补确定性/JSON 门禁/多端结构化输出）
-- ✅ **`docs/chinese-mud-concerns.md` 已落**：中文 MUD 特有问题全景（A 输入／B 输出／C 叙事／D 检索／E 编码／F 中立性），26 条，**6 条待定**（避头尾折行与中文排序最贵）
+- ✅ **`docs/chinese-mud-concerns.md` 已落**：中文 MUD 特有问题全景（A 输入／B 输出／C 叙事／D 检索／E 编码／F 中立性），**35 条**，**5 条待定**（A6 全角标点归一化 / B8 避头尾折行 / B9 中英空格 / D1 中文排序 / D4 模糊命令建议）。E3（UTF-8 存档往返）已完成。B8 与 D1 会在内容量上来后变贵，建议 M1 结束前定掉
 - ✅ **换内容演练已完成（2026-09-01）**：结论是「通过词汇检验、未通过领域检验」——引擎读的是放置模型（`cycleSeconds`/`offlineCapHours`）且 `Clock` 是墙钟毫秒。五处耦合见 `docs/engine-purity-audit.md`
 - ✅ **领域模型已清零（2026-09-01）**：删除放置遗留的配置面、引擎门面与内容绑定加载器；**保留**纯度测试、`content:check`、迁移链。同时把 `docs/spec/01` 的端口与契约落成 `packages/core/src/types.ts`（Clock 改 tick 计数、命令带 `actorId`、事件带 `seq`、三类失败）
-- 🚧 **下一步 M1**：命令测试骨架 → 中文解析器 → `commands/` `rooms/` `npcs/` 三个集合。起点见 `docs/spec/02-command-layer.md`
-- 🚧 **下一步 M1**：**先搭命令测试骨架（ADR-0023 §1）**，再做 `commands/` `rooms/` `npcs/` 三个集合 + schema 三处同步（core 类型／编辑器／`content.md`）+ 命令解析管线 + 双时钟拆分（`tick()` ／ `settleOffline()`）
+- 🚧 **下一步 M1**：**先搭命令测试骨架（ADR-0023 §1）**，再自研中文解析器（最长动词匹配），然后 `commands/` `rooms/` `npcs/` 三个集合 + schema 三处同步（core 类型／编辑器／`content.md`）。起点见 `docs/spec/02-command-layer.md`
 - ✅ **术语清理已完成（2026-09-01）**：`CONTEXT.md` 删除「境界／修为／突破／闭关／突破丹」，新增「实战经验／武功等级／练功／潜能／造诣」，改写「显示档位／兽／内力／intent／离线结算／疗伤丹」；`style-guide.md` 改「静修／造诣档位」；HANDBOOK 与 10 个 schema 全表去放置语汇（波次／DPS／挂机／Melvor／断链 BRIEF 引用 ×33）
-- ✅ **境界已从代码删除（2026-09-01）**：`packages/core` 去掉 `realmId` / `currentRealm()` / `progress()` / `content.realm()` / `RealmConfig` / `RealmProgressSettings`；删除 `content/config/realms.json` 与 `config.realms.schema.json`；`settings.json` 去掉 `realmProgress`；`martial` schema 的 `realmIndexMin` → `martialLevelMin`，`dungeon` 的 `recommendedRealmIndex` → `recommendedPower` 区间，`pill` 去掉 `isBreakthrough`；活动 `act-seclusion`（闭关）→ `act-practice`（练功），资源 `res-cultivation`（修为）→ `res-experience`（实战经验）。**测试 24 全过、typecheck 通过、content:check 通过、build 通过**
-- ✅ **docs/martial 与 docs/quests 已同步**：武功前置门槛 `realmIndexMin` → `martialLevelMin`，造诣门槛映射（三流→初窥门径 / 二流→登堂入室 / 绝顶→炉火纯青）；任务六卷分卷依据改为造诣档位（不堪一击 / 初窥门径 / 驾轻就熟 / 炉火纯青 / 出神入化 / 返璞归真）
-- ✅ **ADR 历史标注已完成（2026-09-01）**：0001 作废、0004／0005／0010／0012／0013／0015 部分失效或待重估均已加眉注；0016 的「闭关修为／波次／挂机」改为「基础武功熟练度／驻守／自动应战」；0019 的待办清单标记执行完毕
-- ✅ **包名已改（2026-09-01）**：`@idlerpg/*` → `@sexymud/*`（root `package.json` 亦改 `sexymud`），同步 `pnpm-lock.yaml` 与三处 import。`pnpm install` 通过（lockfile 无需重新解析）、软链接 `@sexymud` 已重建；24 测试 / content:check / typecheck / build 全过。全仓已无 `idlerpg` 残留
+- ✅ **境界已从代码删除（2026-09-01）**：`packages/core` 去掉 `realmId` / `currentRealm()` / `progress()` / `content.realm()` / `RealmConfig` / `RealmProgressSettings`；删除 `content/config/realms.json` 与 `config.realms.schema.json`；`settings.json` 去掉 `realmProgress`；`martial` schema 的 `realmIndexMin` → `martialLevelMin`，`dungeon` 的 `recommendedRealmIndex` → `recommendedPower` 区间，`pill` 去掉 `isBreakthrough`；（后续 `activities` / `resources` 两个 config 及其 schema 已随放置领域模型一并删除，故上述两个 id 亦不再存在。）**当时测试 24 全过、typecheck / content:check / build 通过**
+- ✅ **docs/martial 与 docs/quests 已同步**：武功前置门槛一律用 `martialLevelMin`（**造诣不再把门**）；任务六卷分卷依据改为造诣档位（不堪一击 / 初窥门径 / 驾轻就熟 / 炉火纯青 / 出神入化 / 返璞归真，六档均出自 xkx100 §5.1）
+- ✅ **ADR 历史标注已完成（2026-09-01）**：0001 作废、0004／0005 更新；**新增眉注**：0002（Taro／Electron／先纯单机被否）、0003（`npm run` 违规）、0006（视觉层与视觉强度映射作废）、0009（元素→系别、BRIEF 断链）、0011（视觉强度作废）、0013（造诣成长／任务奖励排除／波次→驻守）、0014（BRIEF 断链）、0015（聚合函数依赖失效）、0016／0021（**分词已废，改最长动词匹配**）。⚠️ 仍待补：0012 第 15 条与 Consequences 的境界残留
+- ✅ **包名已改（2026-09-01）**：`@idlerpg/*` → `@sexymud/*`（root `package.json` 亦改 `sexymud`），同步 `pnpm-lock.yaml` 与三处 import。`pnpm install` 通过（lockfile 无需重新解析）、软链接 `@sexymud` 已重建；9 测试 / content:check / typecheck / build 全过。全仓已无 `idlerpg` 残留
 - ⏸ 待决：奇遇形态未定（`event/` 仅有最小骨架；形态未定的概念不进术语表）

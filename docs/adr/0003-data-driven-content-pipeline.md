@@ -1,5 +1,9 @@
 # 数据驱动内容管线：JSON + Schema、本地编辑器、agent 写入约定
 
+> ⚠️ **2026-09-01 更新**：文中出现的 **`npm run content:check` 一律改为 `corepack pnpm content:check`** —— 见 ADR-0007（依赖环境自包含）与 `docs/spec/06-content-schema.md` §4。用 `npm run` 属违规。
+>
+> 其余仍然有效：JSON + JSON Schema 硬门禁（`content:check` 退出码即结果）、每条目一文件、agent 批量工作流。
+
 游戏内容（武功、装备、怪物、丹方、秘境、门派、奇遇、世界文本）全部数据化，不写死在代码里。决策内容：
 
 1. **存储**：`content/` 目录，每个条目一个 JSON 文件，每个集合一份 JSON Schema。`core` 包加载时强制校验，不合法内容直接报错。编辑器表单由 Schema 自动生成，AI agent 产出以 Schema 校验为硬门禁。

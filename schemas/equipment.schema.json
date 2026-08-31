@@ -37,7 +37,7 @@
         },
         "tierRange": {
           "type": "object",
-          "description": "品阶范围（能出哪些阶位的词缀）。在数据上锁死洗练天花板——洗练再多次也出不了更高阶。",
+          "description": "**阶位**范围（能出哪些阶位的词缀，T1~T3）。⚠️ 不是「品阶」——品阶是功法档次（下乘/中乘/上乘/绝学），词缀用阶位，两者是三件事之一（CONTEXT.md）。此字段在数据上锁死洗练天花板——洗练再多次也出不了更高阶。",
           "required": ["min", "max"],
           "properties": {
             "min": { "type": "integer", "minimum": 1 },

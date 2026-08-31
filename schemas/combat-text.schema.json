@@ -66,7 +66,7 @@
       "additionalProperties": false
     },
     "dimensionRef": {
-      "description": "维度取值（单值或集合）。取值合法性、增删由 content/config/dimensions.json 维度表管；本 schema 不写死枚举（引擎零写死，形状清单 #11）",
+      "description": "维度取值（单值或集合）。取值合法性、增删由 content/config/dimensions.json 维度表管；本 schema 不写死枚举（引擎零写死，ADR-0004 扩展留白）",
       "type": ["string", "array"],
       "items": { "type": "string", "minLength": 1 }
     }
