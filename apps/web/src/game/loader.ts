@@ -15,7 +15,7 @@ export function buildContentRegistry(): ContentRegistry {
     realms: realmsData.realms,
     activities: activitiesData.activities,
     resources: resourcesData.resources,
-    progression: { realmResourceId: settingsData.progression.realmResourceId },
+    realmProgress: { resourceId: settingsData.realmProgress.resourceId },
   });
 }
 

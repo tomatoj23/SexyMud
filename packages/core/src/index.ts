@@ -4,8 +4,8 @@ export type {
   ActivityProgression,
   ActivityRate,
   GameContentConfig,
-  ProgressionSettings,
   RealmConfig,
+  RealmProgressSettings,
   ResourceConfig,
 } from "./content/types.js";
 export { createGame } from "./engine/createGame.js";

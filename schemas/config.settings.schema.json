@@ -4,9 +4,22 @@
   "title": "全局阈值与公式常数（content/config/settings.json）",
   "description": "引擎通过内容注册表取参数，零写死。本集合是各类公式常数、上限、倍率、默认策略的唯一载体：改动它就能调平衡，不动引擎。所需参数清单见 docs/design-spec-BRIEF.md §10.3（12 项数值 + 映射表）与 §10.4（纯数值）。",
   "type": "object",
-  "required": ["id"],
+  "required": ["id", "realmProgress"],
   "properties": {
     "id": { "type": "string", "const": "settings" },
+    "realmProgress": {
+      "type": "object",
+      "description": "境界进度主轴的资源链接：realms.cultivationRequired 度量哪个资源。引擎经注册表读取，资源 id 绝不写死在引擎（ADR-0004）。与生产活动条目的 progression（等级参数）是两回事。",
+      "required": ["resourceId"],
+      "properties": {
+        "resourceId": {
+          "type": "string",
+          "pattern": "^res-[a-z0-9-]+$",
+          "description": "资源 id（指向 config/resources.json），如 res-cultivation"
+        }
+      },
+      "additionalProperties": false
+    },
     "defense": {
       "type": "object",
       "description": "减伤 = 防御 / (防御 + K)（BRIEF §3.1、CONTEXT.md 内功防御/外功防御词条）",

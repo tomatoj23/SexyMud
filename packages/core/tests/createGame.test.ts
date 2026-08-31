@@ -34,7 +34,7 @@ function makeContent(overrides: Partial<GameContentConfig> = {}): GameContentCon
       },
     ],
     resources: [{ id: "res-a", name: "Resource A", kind: "progress" }],
-    progression: { realmResourceId: "res-a" },
+    realmProgress: { resourceId: "res-a" },
     ...overrides,
   };
 }
@@ -291,8 +291,13 @@ describe("ContentRegistry integrity", () => {
   });
 
   it("rejects an unknown progression resource", () => {
-    const content = makeContent({ progression: { realmResourceId: "res-ghost" } });
-    expect(() => ContentRegistry.from(content)).toThrow(/progression\.realmResourceId references unknown resource/);
+    const content = makeContent({ realmProgress: { resourceId: "res-ghost" } });
+    expect(() => ContentRegistry.from(content)).toThrow(/realmProgress\.resourceId references unknown resource/);
+  });
+
+  it("rejects a missing realm progress link", () => {
+    const content = makeContent({ realmProgress: undefined });
+    expect(() => ContentRegistry.from(content)).toThrow(/realmProgress\.resourceId references unknown resource/);
   });
 
   it("rejects non-consecutive realm indexes", () => {

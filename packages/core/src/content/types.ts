@@ -51,14 +51,14 @@ export interface ResourceConfig {
   kind: string;
 }
 
-export interface ProgressionSettings {
+export interface RealmProgressSettings {
   /** Resource whose amount measures realm progression. */
-  realmResourceId: string;
+  resourceId: string;
 }
 
 export interface GameContentConfig {
   realms: RealmConfig[];
   activities: ActivityConfig[];
   resources: ResourceConfig[];
-  progression: ProgressionSettings;
+  realmProgress: RealmProgressSettings;
 }

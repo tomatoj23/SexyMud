@@ -37,10 +37,9 @@ export class ContentRegistry {
       }
     });
 
-    if (!this.resourcesById.has(content.progression.realmResourceId)) {
-      throw new Error(
-        `progression.realmResourceId references unknown resource: ${content.progression.realmResourceId}`,
-      );
+    const realmProgressResourceId = content.realmProgress?.resourceId;
+    if (typeof realmProgressResourceId !== "string" || !this.resourcesById.has(realmProgressResourceId)) {
+      throw new Error(`realmProgress.resourceId references unknown resource: ${realmProgressResourceId}`);
     }
 
     for (const realm of content.realms) {
@@ -86,7 +85,7 @@ export class ContentRegistry {
 
   /** Resource whose amount measures realm progression. */
   get realmProgressResourceId(): string {
-    return this.content.progression.realmResourceId;
+    return this.content.realmProgress.resourceId;
   }
 
   realm(id: string): RealmConfig {

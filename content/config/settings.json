@@ -1,6 +1,6 @@
 {
   "id": "settings",
-  "progression": {
-    "realmResourceId": "res-cultivation"
+  "realmProgress": {
+    "resourceId": "res-cultivation"
   }
 }
