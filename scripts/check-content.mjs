@@ -87,4 +87,27 @@ for (const file of files.sort()) {
   }
 }
 
+// Reverse scan: this loop only ever walks content/, so a schema that no content
+// file can select would stay invisible forever. Surface the count so an
+// orphaned schema (one whose name can never map to a content path) is noticed.
+// Collections without content are expected — adding content opts it into the
+// gate — so this reports, it does not fail.
+const usedSchemas = new Set(
+  files
+    .map((file) => schemaPathFor(file))
+    .filter(Boolean)
+    .map((path) => path.replace(/\\/g, "/")),
+);
+const unusedSchemas = readdirSync(join(root, "schemas"))
+  .filter((name) => name.endsWith(".schema.json"))
+  .map((name) => join("schemas", name).replace(/\\/g, "/"))
+  .filter((path) => !usedSchemas.has(path))
+  .sort();
+
+if (unusedSchemas.length > 0) {
+  console.log(
+    `NOTE     ${unusedSchemas.length} schema(s) have no content yet, so they were not validated: ${unusedSchemas.join(", ")}`,
+  );
+}
+
 process.exit(failed ? 1 : 0);

@@ -2,13 +2,6 @@ import type { Snapshot } from "../types.js";
 
 export const SAVE_VERSION = 1;
 
-export interface GameStateV1 {
-  resources: Record<string, number>;
-  activeActivityId: string | null;
-  /** Last time accrual was settled (ms epoch). */
-  lastSettleTimestamp: number;
-}
-
 /**
  * Stepwise save migrations. Key N migrates a snapshot of version N to N+1.
  * Saves from the future (or from a version with no path) must fail loudly
