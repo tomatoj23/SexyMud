@@ -6,15 +6,22 @@
 
 ```
 content/
-├── config/           # 结构性配置：realms、activities、resources、dimensions、settings 等
-│                     #   （境界序列、曲线、槽位、维度表、阈值——引擎零写死数量的载体）
+├── config/           # 结构性配置：activities、resources、dimensions、settings 等
+│                     #   （曲线、槽位、维度表、阈值——引擎零写死数量的载体）
+│                     #   ⚠️ realms（境界序列）已随 ADR-0019 删除；造诣是纯显示层
 ├── effects/          # 效果定义：primitive 组合条目（武功/怪物/层主共用）
 ├── martial/          # 武功（招式 + 心法），字段 kind 区分
 ├── equipment/        # 装备基件与词缀池
 ├── beast/            # 兽（随从栏内容，一系一只）：修饰符 + 叙事片段；获取走 sect exchange 兑换，
 │                     #   不走掉落管线（ADR-0013）
 ├── monster/          # 怪物
-├── dungeon/          # 秘境与层配置
+├── dungeon/          # 秘境与层配置（规则层：分层 / 驻守 / 产出）
+├── rooms/            # 房间（空间层：出口 / 进入文本 / 常驻实体引用）
+│                     #   按 zoneId 归属秘境，与 dungeon 是规则层与空间层的分工（ADR-0016）
+├── npcs/             # 人物：世界中可交互实体（外观称呼 / 对话 / 行为）
+│                     #   战斗数值引用 monster/ 条目，不复制（ADR-0016）
+├── commands/         # 命令表：动词 / 别名 / 参数形态 / 前置条件 / 拒绝文案
+│                     #   全是数据，引擎只做通用解析与分发，不认识任何动词（ADR-0016）
 ├── herb/             # 药材
 ├── pill/             # 丹方与丹药
 ├── sect/             # 门派
@@ -28,9 +35,11 @@ assets/               # 美术资产（MVP 允许为空）
 └── portraits/<集合>/<id>.png
 ```
 
+> ⚠️ `rooms/` `npcs/` `commands/` 是 ADR-0016（2026-09-01）新增的三个集合，**Schema 与 id 规则尚未定稿（M1 工作）**。**定稿前不得写入条目**——否则绕开 `content:check` 硬门禁，属违规。
+
 ## 硬性规则
 
-- **id 一经发布不可变更**：资产路径、存档引用都依赖它。条目集合命名格式 `<集合缩写>-<门派/区域>-<序号>`，如 `mrt-hs-001`（华山招式 1）、`mon-sy-014`（山魈 14）；**config 集合豁免序号段**，用 `<类别>-<序号>` 或语义名（如 `realm-01`、`act-seclusion`、`res-cultivation`）。id 只用小写字母、数字、连字符。
+- **id 一经发布不可变更**：资产路径、存档引用都依赖它。条目集合命名格式 `<集合缩写>-<门派/区域>-<序号>`，如 `mrt-hs-001`（华山招式 1）、`mon-sy-014`（山魈 14）；**config 集合豁免序号段**，用 `<类别>-<序号>` 或语义名（如 `act-practice`、`res-experience`）。id 只用小写字母、数字、连字符。
 - 每个条目必须通过对应 Schema 校验后才能提交。校验命令：`corepack pnpm content:check`。
 - 叙事字段（`description`、事件文本等）必须遵守 `content/style-guide.md` 的武侠语体；世界背景类长文写入 `content/lore/*.md`。
 - 资产不内嵌 base64、不写绝对路径；引用走约定路径，确需覆盖时用条目的 `art` 字段（相对 `assets/` 的路径）。
@@ -44,16 +53,15 @@ assets/               # 美术资产（MVP 允许为空）
 - `masters`：门派条目的师父字段（`sect.masters`）。MVP 只留字段、无实际内容（可教武功池与贡献规则后续填充）；"学习武功"流程带条件检查点，做拜师门槛不动流程、只改配置。
 - `sectId` / `regionId`：条目的**门派归属** / **区域归属**，校验器据此检查覆盖与连通。
 - `tags`：标签集。**优先用标签表达语义，不建特殊类型**——例如纯叙事道具就是普通条目加 `tags:["quest"]` 且价值归零；战斗相关条目用**对象形态** `{ "moveTag": [...], "elementTag": [...] }` 做维度键，取值来自 config 维度表（见「combat-text 与效果」）。
-- `effects`：效果引用列表（`["eff-xxx"]`），指向 `content/effects/` 的效果定义条目；效果 = primitive 组合（候选集限定 §11.3 已标 ✅ 的 14 项），武功/怪物/层主共用。
-- `progression`：仅用于生产活动（采集、炼丹等），内容侧只放**等级参数** `maxLevel`（等级上限）与 `xpPerCycle`（每次产出获得的经验）。**玩家的当前等级与经验是运行时状态，存于存档，不写进内容条目**。等级与境界门槛共同决定可进入的采集区。
-- `realmProgress`：settings 专用——境界进度主轴所度量的资源（`resourceId` 指向 resources 集合，如 `res-cultivation`）。引擎经注册表读取该链接来报告进度与判定突破，资源 id 绝不写死在引擎（ADR-0004）；与上一条生产活动的 `progression`（等级参数）无关。
+- `effects`：效果引用列表（`["eff-xxx"]`），指向 `content/effects/` 的效果定义条目；效果 = primitive 组合（候选集限定 **13 项**，见 `docs/engine-reservations.md` §3），武功/怪物/层主共用。
+- `progression`：仅用于生产活动（采集、炼丹等），内容侧只放**等级参数** `maxLevel`（等级上限）与 `xpPerCycle`（每次产出获得的经验）。**玩家的当前等级与经验是运行时状态，存于存档，不写进内容条目**。等级与战力门槛（`powerMin`）共同决定可进入的采集区。
 - `rates`：活动直接产出的资源列表；**产出为物品（如药材）的活动可为空数组**，此时产出由物品表定义。
 
 命名语汇（写内容时必须遵守，详见 `CONTEXT.md`）：
 
 - 武功**品阶**：下乘 / 中乘 / 上乘 / 绝学
 - 装备**稀有度**：寻常 / 精良 / 罕见 / 绝世
-- **显示档位**（数值→造诣描述，由 config `displayTiers` 区间表推导，不写死在条目里）：**50 档**（完整列表见 `docs/design-spec-BRIEF.md` §10.2）；代表性档位：不堪一击 / 初窥门径 / 稍有所成 / 登堂入室 / 炉火纯青 / 出神入化 / 返璞归真
+- **造诣 / 显示档位**（数值→造诣描述，由 config `displayTiers` 区间表推导，不写死在条目里）：**50 档**（完整列表见 `docs/research/xkx100-kungfu-combat.md` §5.1）；代表性档位：不堪一击 / 初窥门径 / 登堂入室 / 炉火纯青 / 出神入化 / 返璞归真。**造诣是纯显示层，不产生任何门槛**（ADR-0019）
 
 ## combat-text 与效果
 
@@ -102,8 +110,8 @@ source    = 招式声明（内功/外功）
 ### 效果定义（`content/effects/`）
 
 - 效果定义 = **primitive 组合**条目：`{ "id": "eff-xxx", "primitives": [...] }`
-- 候选集限定 §11.3 已标 ✅ 的 **13 项**（16 项穷举排除 连击 / 护盾 / 位移）；MVP 先用其中 9 个 + 另注册 2 个（见 `docs/design-spec-BRIEF.md` §13）
-- 武功/怪物/**层主**（秘境每波主怪）通过 `effects: [...]` 引用；层主带机制 = 用现有 primitive 组合，不新增引擎能力
+- 候选集限定 ✅ 的 **13 项**（16 项穷举排除 连击 / 护盾 / 位移，见 `docs/engine-reservations.md` §3）；MVP 先用其中 9 个 + 另注册 2 个
+- 武功/怪物/**层主**（秘境每层驻守主怪）通过 `effects: [...]` 引用；层主带机制 = 用现有 primitive 组合，不新增引擎能力
 
 ## 批量生成工作流
 
