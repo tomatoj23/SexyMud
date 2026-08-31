@@ -150,6 +150,7 @@ describe("createGame (facade behavior seam)", () => {
       type: "activityStarted",
       activityId: "act-alpha",
       activityName: "Alpha Activity",
+      timestamp: 0,
     });
     const accrual = events[1];
     if (accrual?.type !== "resourcesAccrued") throw new Error("expected an accrual event");
@@ -165,6 +166,7 @@ describe("createGame (facade behavior seam)", () => {
       type: "activityStopped",
       activityId: "act-alpha",
       activityName: "Alpha Activity",
+      timestamp: 4_000,
     });
   });
 

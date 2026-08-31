@@ -31,7 +31,7 @@ assets/               # 美术资产（MVP 允许为空）
 ## 硬性规则
 
 - **id 一经发布不可变更**：资产路径、存档引用都依赖它。条目集合命名格式 `<集合缩写>-<门派/区域>-<序号>`，如 `mrt-hs-001`（华山招式 1）、`mon-sy-014`（山魈 14）；**config 集合豁免序号段**，用 `<类别>-<序号>` 或语义名（如 `realm-01`、`act-seclusion`、`res-cultivation`）。id 只用小写字母、数字、连字符。
-- 每个条目必须通过对应 Schema 校验后才能提交。校验命令：`npm run content:check`。
+- 每个条目必须通过对应 Schema 校验后才能提交。校验命令：`corepack pnpm content:check`。
 - 叙事字段（`description`、事件文本等）必须遵守 `content/style-guide.md` 的武侠语体；世界背景类长文写入 `content/lore/*.md`。
 - 资产不内嵌 base64、不写绝对路径；引用走约定路径，确需覆盖时用条目的 `art` 字段（相对 `assets/` 的路径）。
 - 禁止修改 `schemas/` 下的定义来迁就一次内容写入；Schema 变更是独立决策，需同步 `core` 校验器与编辑器表单。
@@ -109,7 +109,7 @@ source    = 招式声明（内功/外功）
 1. 明确目标集合与数量（如"给 3 个秘境共 30 只怪物补 description"）。
 2. 读取该集合现有条目与 `content/style-guide.md`，保持语体一致。
 3. 写入/修改条目 JSON（每条目一文件，保持既有 id 不动）。
-4. 运行 `npm run content:check`，全部通过才算完成；报错必须修复而不是跳过校验。
+4. 运行 `corepack pnpm content:check`，全部通过才算完成；报错必须修复而不是跳过校验。
 5. 汇报变更清单（新增/修改的 id 列表），便于人工抽查。
 
 ## 批量数值调整

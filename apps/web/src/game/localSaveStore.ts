@@ -7,11 +7,10 @@ export class LocalSaveStore implements SaveStore {
   async load(): Promise<Snapshot | null> {
     const raw = localStorage.getItem(this.key);
     if (!raw) return null;
-    try {
-      return JSON.parse(raw) as Snapshot;
-    } catch {
-      return null;
-    }
+    // Corrupt saves fail loudly instead of silently starting a fresh game
+    // (which would overwrite the broken save on the next autosave); the host
+    // catches and offers a reset.
+    return JSON.parse(raw) as Snapshot;
   }
 
   async save(snapshot: Snapshot): Promise<void> {

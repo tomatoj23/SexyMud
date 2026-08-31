@@ -15,7 +15,8 @@ export interface Game {
    * Settle time-based accrual up to the clock's current time. A single gap is
    * capped at the activity's content-defined offline maximum, which is what
    * makes long offline gaps safe while short online ticks are untouched.
-   * Only whole cycles settle; partial-cycle time carries over.
+   * Only whole cycles settle; partial-cycle time carries over unless the
+   * offline cap cuts the gap (a capped gap discards its remainder).
    */
   sync(): void;
   snapshot(): Snapshot<GameStateV1>;
@@ -80,7 +81,9 @@ function buildGame(options: EngineOptions, state: GameStateV1): Game {
 
     if (settledMs < elapsedMs) {
       // Gap exceeded the offline cap: everything beyond the cap is discarded
-      // so the same span of time is never settled twice.
+      // so the same span of time is never settled twice. The sub-cycle
+      // remainder inside the capped span goes with it — keeping it pending
+      // would re-arm the cap on the next sync and double-settle.
       state.lastSettleTimestamp = now;
     } else {
       // Consume whole cycles; partial-cycle time stays pending for the next
@@ -143,7 +146,7 @@ function buildGame(options: EngineOptions, state: GameStateV1): Game {
       if (state.activeActivityId === activityId) return;
       sync(); // settle pending cycles for the previous activity first
       state.activeActivityId = activityId;
-      emit({ type: "activityStarted", activityId, activityName: activity.name });
+      emit({ type: "activityStarted", activityId, activityName: activity.name, timestamp: clock.now() });
     },
 
     stopActivity(): void {
@@ -152,7 +155,7 @@ function buildGame(options: EngineOptions, state: GameStateV1): Game {
       const previous = state.activeActivityId;
       const activity = content.activity(previous);
       state.activeActivityId = null;
-      emit({ type: "activityStopped", activityId: previous, activityName: activity.name });
+      emit({ type: "activityStopped", activityId: previous, activityName: activity.name, timestamp: clock.now() });
     },
 
     sync,

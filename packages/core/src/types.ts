@@ -25,8 +25,8 @@ export interface SaveStore {
 }
 
 export type GameEvent =
-  | { type: "activityStarted"; activityId: string; activityName: string }
-  | { type: "activityStopped"; activityId: string; activityName: string }
+  | { type: "activityStarted"; activityId: string; activityName: string; timestamp: number }
+  | { type: "activityStopped"; activityId: string; activityName: string; timestamp: number }
   | {
       type: "resourcesAccrued";
       /** Resource amounts gained in this settlement. */

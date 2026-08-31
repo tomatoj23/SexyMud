@@ -25,7 +25,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ### Content pipeline
 
-Game content lives as JSON files under `content/`, validated by JSON Schema (`npm run content:check`). Batch edits by agents must follow `docs/agents/content.md` and the style guide at `content/style-guide.md`.
+Game content lives as JSON files under `content/`, validated by JSON Schema (`corepack pnpm content:check`). Batch edits by agents must follow `docs/agents/content.md` and the style guide at `content/style-guide.md`.
 
 > **Note**: `corepack pnpm content:check` is the committed pipeline contract (ADR-0003); the script (`scripts/check-content.mjs`, landed with issue #2) auto-discovers every JSON under `content/` and validates it against `schemas/` by directory convention — currently the four `config/` files. Schemas for collections without content yet remain design drafts.
 > `docs/design/` is **deprecated** early exploration docs (visual direction only) — do not read or maintain it.
