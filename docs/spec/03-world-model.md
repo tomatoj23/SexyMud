@@ -1,6 +1,6 @@
 # 03 · 世界模型
 
-> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5；M2-T3：`at_msg_receive` 可否决 + `fromObj` 可空的广播原语 + `at_pre_say`／`at_post_say` 配对 + say 出厂适配器，见 §7.4）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
 > **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、**ADR-0028**、xkx100 调研。
 
 ## 1. 集合划分
@@ -107,6 +107,14 @@
 - **穿行适配器 `traversalSpec`**（`packages/core/src/world/traverse.ts`，引擎出厂，ADR-0028 §3）：出口 traverse 门禁（管线 access 段）→ 目标房 enter 门禁（`checkAccess`，事件带 `roomId` 定位房间文案）→ `moveTo("traverse")`。两道门禁拒绝均 `rejected` ＋ `commandRefused` 语义事件；执行段拒绝通道见 spec/02 §4.1。
 - **测试**：`tests/entity-move.test.ts`（合成内容：hook 次序／三否决点／零门禁／逐接收者／状态树／响亮失败）＋ `tests/traversal-chain.test.ts`（真实内容：柳青镇全链路、第二假玩家多接收者、异房不收、两道门禁文案来自 JSON、确定性重放）。
 
+### 7.4 落地形态（M2-T3：说）
+
+- **`broadcastMessage`**（`packages/core/src/world/message.ts`）：`at_msg_receive` 的**唯一消费入口**——「谁在听／谁能被屏蔽」一等公民的引擎侧落实（§7 第 4 项）。对同位置**动态占用**（升序）逐一遍历：每个接收者的 `at_msg_receive` 先跑——**显式 false 仅屏蔽该接收者**，其余不受影响；未屏蔽者各得**一条**语义事件。`fromEntityId`（即 Evennia 的 `fromObj` 语义）**可空**：系统消息（环境变化、公告）无发送者，屏蔽决策仍在完整语境（draft／发送者／接收者）下运行。静态在场不消费事件（ADR-0028 §1）；位置不可解析＝装配 bug，**大声抛错**而非静默空广播。容器（实体位置）同样可广播——get/give/drop 的言语场景（箱中说悄悄话）无需新原语。
+- **`Entity` 三 hook**（`packages/core/src/world/entity.ts`）：`at_msg_receive`（接收侧，可屏蔽）＋ `at_pre_say`／`at_post_say`（说者侧配对，§7 第 7 项的 say 部分：pre **显式 false 否决**整场广播 + post 广播后通知）。缺省行为＝不屏蔽、不否决、无通知——与移动族「无 pre hook 从不否决」同律；三者的 context 类型与移动族同居 `entity.ts`。
+- **`say`**（`packages/core/src/world/say.ts`）：编排（`moveTo` 的言语对应物）——`at_pre_say`（否决点**先于一切投递**）→ `broadcastMessage`（`say` 事件带足语境：`speakerId`／`text`／`locationId`，**说者含在接收者内**——逐接收者渲染把同一事件读成「你」与名字，与移动播报同律）→ `at_post_say`。**零权限检查**（门禁归命令管线，与 §7.2 同源）。说的 `text` 是玩家输入**原样透传**（会话数据，回放与存档需要完整语境），不是渲染叙事——人称立场（你／他）归渲染层。
+- **`saySpec` 出厂适配器**（ADR-0028 §2）：`cmd-say` 内容条目经 `commandSpecFromEntry` 绑定（argForm 非 `text` 抛错），`call()` 全链路。`at_pre_say` 否决 → `rejected` + `commandRefused{reason:"sayVetoed", commandKey, stage:"at_pre_say"}`——与 `moveVetoed`（移动 hook 否决）／`notVisible`（look 可见性）同构的**执行段拒绝**。
+- **测试**：`tests/say-behavior.test.ts`（合成世界：hook 次序 pre→逐接收筛→post、三否决/屏蔽路径、`fromEntityId` 为空的系统消息、容器内广播、响亮失败；真实内容：大堂双假玩家各一条 + 异房第三者零事件、静态在场（掌柜的）不消费、英文动词同分发、零已渲染文本（text 原样、无「说道」「你说」）、确定性重放）。
+
 ### 7.5 落地形态（M2-T2：看）
 
 - **`returnAppearance`**（`packages/core/src/world/look.ts`）：`return_*` 律——纯返回、零消息、零写入。外观组装 = 房名／长描述（注册表内容读）＋ 出口清单（id／方向／verbs）＋ 静态在场（放置清单**直读**，ADR-0028 §1）＋ 动态占用（`occupantsOf` 升序、**剔除观者**——「看」回答观者周围有谁，不回答观者自己）。它是静态在场与动态占用两条在场通道的**唯一汇合点**（宿主可直接消费：房间面板）。
@@ -139,5 +147,6 @@
 - [x] 移动 hook 带 **`moveType`**——M2-T1 已落：`MOVE_TYPES` 五值枚举，`MoveInfo` 进每个 hook
 - [x] 移动入口**不做权限检查**（外置）——M2-T1 已落：`moveTo` 零门禁；穿行适配器编排 traverse → enter → moveTo（ADR-0028 §3）
 - [x] `return_appearance` **纯返回不发消息**——M2-T2 已落：`returnAppearance` 纯组装（静态在场直读 × 状态树占用），`at_look` 内做可见性（显式 `look` 门禁，缺省可见）
+- [x] `at_msg_receive` **可否决 + `fromObj` 可空**——M2-T3 已落：`broadcastMessage` 逐接收者过筛（显式 false 仅屏蔽该接收者），`fromEntityId` 可空（系统消息路径有测试）
 - [ ] `at_object_post_creation` 存在，让 JSON 赢过代码默认值
-- [x] 消息**按接收者逐一遍历发射**（引擎侧）——M2-T1 已落：announce 逐接收者逐事件（`departed`／`arrived`，含移动者本人）；渲染层的按观者渲染仍是 spec/05 的事
+- [x] 消息**按接收者逐一遍历发射**（引擎侧）——M2-T1 已落：announce 逐接收者逐事件（`departed`／`arrived`，含移动者本人）；M2-T3：say 经 `broadcastMessage` 同律逐接收者（含说者，各过 `at_msg_receive`）；渲染层的按观者渲染仍是 spec/05 的事

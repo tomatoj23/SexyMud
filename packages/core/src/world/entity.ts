@@ -1,7 +1,7 @@
 import type { EventDraft } from "../command/pipeline.js";
 
 /**
- * The Entity interface and the movement hook family (spec/03 §7, ADR-0028).
+ * The Entity interface and its hook families (spec/03 §7, ADR-0028).
  *
  * An Entity is a DYNAMIC OCCUPANT: something that holds mutable state (its
  * state lives in the one tree, spec/04 §1) and carries behaviour (these
@@ -9,6 +9,10 @@ import type { EventDraft } from "../command/pipeline.js";
  * straight from room placement lists — but the interface is designed for
  * ANY entity: item containers, stateful NPCs, materialized rooms. The
  * kernel's completeness lives in these hooks, not in features (ADR-0027).
+ *
+ * Three families live here: the movement family (at_pre_move through
+ * at_object_receive, M2-T1), the message receiver (at_msg_receive, M2-T3)
+ * and the say pair (at_pre_say / at_post_say, M2-T3).
  *
  * Naming follows the Evennia convention the spec pins (spec/03 §7): `at_*`
  * hook, `at_pre_*` vetoable by returning an explicit false, `at_post_*`
@@ -86,6 +90,53 @@ export interface Entity {
   at_object_leave?(ctx: MoveHookContext): void;
   /** Container side: after the occupant arrived. */
   at_object_receive?(ctx: MoveHookContext): void;
+  /**
+   * Receiver side (spec/03 §7.4): veto THIS message by returning an
+   * explicitly false — that one receiver hears nothing, everyone else
+   * unaffected. "Who is listening / who can be muted" is a first-class
+   * citizen of the engine, not an afterthought: muting, deafness effects
+   * and distance filters all hang on this one hook. Runs once per
+   * receiver, inside broadcastMessage (see message.ts) — say delivers
+   * through it today; other broadcast paths (the movement announcements)
+   * emit per-receiver on their own for now and may join that seam in a
+   * later ticket.
+   */
+  at_msg_receive?(ctx: MsgReceiveContext): boolean | void;
+  /** Speaker side (spec/03 §7.7's say half): vetoable before anything is broadcast. */
+  at_pre_say?(ctx: SayHookContext): boolean | void;
+  /** Speaker side (spec/03 §7.7's say half): after-the-fact notification, post-broadcast. */
+  at_post_say?(ctx: SayHookContext): void;
+}
+
+/**
+ * What at_msg_receive sees (spec/03 §7.4): the message's semantic payload
+ * plus the sender, when there is one. fromEntityId is deliberately nullable
+ * — a system message (an ambient shift, a server notice) has no sender
+ * entity, and Evennia's from_obj=None marks exactly the same case. Muting
+ * decisions get the full context: draft (zero rendered text), who it is
+ * from, and which receiver is being asked (the hook runs per receiver).
+ */
+export interface MsgReceiveContext {
+  /** The message's semantic payload — never rendered text (spec/01 §5.1). */
+  readonly draft: EventDraft;
+  /** The sending entity's id, or undefined for a senderless system message. */
+  readonly fromEntityId: string | undefined;
+  /** The receiver being asked — the hook runs once per receiver. */
+  readonly receiverId: string;
+}
+
+/**
+ * What every say-family hook runs against (spec/03 §7.7's say half): who
+ * speaks, where, what — plus the emit port, so a hook may emit its own
+ * semantic events (the movement family's MoveHookContext carries the same
+ * seam). Hooks never render; they emit EventDrafts and the caller stamps
+ * seq/actorId.
+ */
+export interface SayHookContext {
+  readonly speakerId: string;
+  readonly locationId: string;
+  readonly text: string;
+  emit(recipientId: string, draft: EventDraft): void;
 }
 
 /** The hook surface without identity — what createEntity overrides. */

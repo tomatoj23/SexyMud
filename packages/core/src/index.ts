@@ -66,6 +66,8 @@ export type {
   MoveHookContext,
   MoveInfo,
   MoveType,
+  MsgReceiveContext,
+  SayHookContext,
 } from "./world/entity.js";
 export { createWorldRuntime } from "./world/runtime.js";
 export type { WorldRuntime, WorldRuntimeOptions } from "./world/runtime.js";
@@ -74,6 +76,10 @@ export type { MovePorts, MoveRequest, MoveResult, MoveVetoStage } from "./world/
 export { traversalSpec } from "./world/traverse.js";
 export { atLook, lookSpec, returnAppearance } from "./world/look.js";
 export type { ExitDigest, LookOutcome, RoomAppearance, StaticPresence } from "./world/look.js";
+export { broadcastMessage } from "./world/message.js";
+export type { BroadcastRequest, MessagePorts } from "./world/message.js";
+export { say, saySpec } from "./world/say.js";
+export type { SayRequest, SayResult, SayVetoStage } from "./world/say.js";
 export type { EntityState, WorldState } from "./state/tree.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
