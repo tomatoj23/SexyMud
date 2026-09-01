@@ -1,6 +1,6 @@
 # 03 · 世界模型
 
-> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；§5–§7（标签运行时、原型继承、实体 hook）**待实现**——房间与人物先以内容形态落地，实体运行时（移动 hook 等）是后续票。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；§5–§7（标签运行时、原型继承、实体 hook）**待实现**——房间与人物先以内容形态落地，实体运行时（移动 hook 等）是后续票；形态定案见 §4.2（ADR-0028），§7 ＋ 状态树种子（spec/04 §1）＝ **M2**（已拆票），§5–§6 ＝ **M3**。
 > **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、xkx100 调研。
 
 ## 1. 集合划分
@@ -46,6 +46,13 @@
 ### 4.1 落地形态（M1-T6）
 
 `schemas/npcs.schema.json` ＋ 引擎 `NpcEntry`（`packages/core/src/world/entry.ts`）：人物只带 `id`／`name`／`description`（回答「是谁」）与可选 `monsterId`（战斗数值引用）——**schema 上没有任何战斗数值字段的容身之处**（`additionalProperties: false`），「不复制」是结构性保证而非约定。是否可触发战斗 = 是否声明 `monsterId`；首批三人物中店家与货郎无之、护院孙彪引用 `mon-lq-001`（注册表校验引用存在性）。人物自身不带位置——站在哪里由房间放置清单决定（房间是内容容器）。敬称档位表待社会层票。
+
+### 4.2 实体模型（M2 定案，ADR-0028）
+
+- **动态占用**（运行时实体）：持有可变状态的实体——M2 只有玩家（位置在状态树）；走 `Entity` 接口 ＋ hook 运行时
+- **静态在场**：NPC 不物化，外观组装直读放置清单；`count > 1` 的确定性实例 id 难题随战斗/物品才真实
+- `Entity` 接口为将来物化留位（物品、需要状态的 NPC）；`at_object_creation` 两层的首个真实消费者是那张票
+- 事件接收者集合 = 房内**动态占用**（静态在场不消费事件）；`return_appearance` 是静态在场与动态占用的汇合点
 
 ## 5. 标签纪律
 
