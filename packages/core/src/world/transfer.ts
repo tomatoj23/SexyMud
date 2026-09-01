@@ -87,6 +87,13 @@ export function getObject(
   ports: TransferPorts,
 ): GetResult {
   const entity = runtime.entity(request.entityId);
+  // The pickup's destination IS the getter — an entity acting as a
+  // container. A room id here is a wiring bug, not play: moveTo would
+  // accept it (rooms are legal move targets) and silently word a
+  // nonsensical "picked up into a room". Semantic validation of what the
+  // destination must BE, not a permission check (spec/03 §7.2's rule —
+  // reachability stays a command-layer gate).
+  runtime.entity(request.getterId);
   const fromLocationId = runtime.locationOf(request.entityId);
   const hookContext: GetHookContext = {
     entityId: request.entityId,
@@ -125,6 +132,12 @@ export function giveObject(
   ports: TransferPorts,
 ): GiveResult {
   const entity = runtime.entity(request.entityId);
+  // The handover's destination IS the receiver — an entity, both parties
+  // being containers of the movement chain. A room id here is a wiring bug
+  // for the same reason as getObject's getter check; the giver needs no
+  // such check because it is not a destination (whether the giver actually
+  // holds the entity is a command-layer gate, never re-checked here).
+  runtime.entity(request.receiverId);
   const hookContext: GiveHookContext = {
     entityId: request.entityId,
     giverId: request.giverId,

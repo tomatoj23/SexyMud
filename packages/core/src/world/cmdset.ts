@@ -35,6 +35,14 @@ import type { WorldRuntime } from "./runtime.js";
  * the host's assembled base — the same constructive-guarantee stance the
  * input-hardening design takes, over an honor system). Adjustment happens by
  * return value only.
+ *
+ * The sources copy is TWO levels deep — the source list and each source's
+ * command list — which blocks every structural mutation (adding, removing,
+ * replacing sources or commands). The command records themselves ({key,
+ * verbs}) are treated as immutable values and shared by reference, exactly
+ * as every other hook context treats its payloads (the drafts, the move):
+ * their readonly TYPES are the compile-time guard, and a hook that casts
+ * them away to mutate fields is past what any seam here defends against.
  */
 export function assembleSources(
   runtime: WorldRuntime,

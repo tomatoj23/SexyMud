@@ -276,6 +276,21 @@ describe("the get seam (spec/03 §7.7's get half)", () => {
       /unknown entity/,
     );
   });
+
+  it("throws loudly when the getter is a ROOM: a pickup's destination must be an entity", () => {
+    const runtime = makeRuntime();
+    runtime.addEntity(createEntity("obj-1"), "room-a");
+    const { ports, emissions } = makePorts();
+    // moveTo accepts rooms as move targets, so without this check a room-id
+    // typo would silently word a nonsensical "picked up into a room" —
+    // semantic validation, not a permission check (reachability is the
+    // command layer's gate).
+    expect(() => getObject(runtime, { entityId: "obj-1", getterId: "room-a" }, ports)).toThrow(
+      /unknown entity/,
+    );
+    expect(emissions).toEqual([]);
+    expect(runtime.locationOf("obj-1")).toBe("room-a");
+  });
 });
 
 describe("the give seam (spec/03 §7.7's give half)", () => {
@@ -381,14 +396,28 @@ describe("the give seam (spec/03 §7.7's give half)", () => {
     expect(runtime.locationOf("obj-1")).toBe("receiver-1");
   });
 
-  it("throws loudly when the receiver resolves to neither room nor entity", () => {
+  it("throws loudly on an unknown receiver id (wiring bug, not play)", () => {
     const runtime = makeRuntime();
     runtime.addEntity(createEntity("giver-1"), "room-a");
     runtime.addEntity(createEntity("obj-1"), "giver-1");
     const { ports } = makePorts();
     expect(() =>
       giveObject(runtime, { entityId: "obj-1", giverId: "giver-1", receiverId: "nobody" }, ports),
-    ).toThrow(/neither a loaded room nor a registered entity/);
+    ).toThrow(/unknown entity/);
+  });
+
+  it("throws loudly when the receiver is a ROOM: a handover's destination must be an entity", () => {
+    const runtime = makeRuntime();
+    runtime.addEntity(createEntity("giver-1"), "room-a");
+    runtime.addEntity(createEntity("obj-1"), "giver-1");
+    const { ports, emissions } = makePorts();
+    // Same wiring-bug class as getObject's room-getter: the destination of
+    // a give is a container entity, never a room.
+    expect(() =>
+      giveObject(runtime, { entityId: "obj-1", giverId: "giver-1", receiverId: "room-a" }, ports),
+    ).toThrow(/unknown entity/);
+    expect(emissions).toEqual([]);
+    expect(runtime.locationOf("obj-1")).toBe("giver-1");
   });
 });
 
