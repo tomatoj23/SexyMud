@@ -102,6 +102,8 @@ export type { BroadcastRequest, MessagePorts } from "./world/message.js";
 export { say, saySpec } from "./world/say.js";
 export type { SayRequest, SayResult, SayVetoStage } from "./world/say.js";
 export type { EntityState, WorldState } from "./state/tree.js";
+export { restoreWorld, serializeWorld } from "./state/snapshot.js";
+export type { EntityRecordV1, RestoreOptions, SaveDataV1 } from "./state/snapshot.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
   CallOptions,

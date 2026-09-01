@@ -1,6 +1,6 @@
 # 04 · 状态、存档、时间与调度
 
-> **状态**：迁移链骨架**已实现**；**§1 状态树种子已实现（M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地，attrs/tags/states/skills 随各自系统进树）**；序列化与快照 v1 ＝ M2-T5；§2–§4（时间、游戏内时间、调度六原语）＝ **M4**（战斗前夜）；其余**待实现**。
+> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地，attrs/tags/states/skills 随各自系统进树。**序列化与快照 v1 ＝ M2-T5 已落**：`state/snapshot.ts`（`serializeWorld`／`restoreWorld` ＋ v1 形状）＋ `state/derived.ts`（`derived` 契约）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4）；§2–§4（时间、游戏内时间、调度六原语）＝ **M4**（战斗前夜）；其余**待实现**。
 > **依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
 
 ## 1. 状态：typed 对象 + 迁移链（不需要 attribute handler）
@@ -26,6 +26,18 @@ Evennia 那一千多行缓存机器（`_cache`/`_catcache`/`SaverMutable` 代理
 - **不要给它一个长得一样、却会在重启时静默清空的 API**（Evennia 自己承认：nattributes 非空时对象不能 flush，「those would get lost!」）
 
 依据：ADR-0022 §1、ADR-0025 §二
+
+### 1.4 快照 v1（M2-T5 已落）
+
+`packages/core/src/state/snapshot.ts`：`serializeWorld(world) → Snapshot<SaveDataV1>` ／ `restoreWorld(snapshot, options?) → WorldState`。
+
+- **载荷就是状态树**，不是平行结构：`SaveDataV1 = { entities: Record<string, EntityRecordV1> }`，`EntityRecordV1 = Omit<EntityState, DerivedEntityKey>`。序列化在树之上只加三样：① `version` 戳（迁移链入口）② `derived` 切分（见 §1.3）③ **规范序**（entities 按 id 升序、flags 排序）——两个相等的世界存出**同一份字节**（ADR-0024 §2），确定性引擎的历史才可 diff、可比对。
+- **NPC 不在快照里，是构造使然而非过滤**：静态在场直读放置清单（ADR-0028 §1），未显式写入的字段不落盘——这里没有 NPC 行可删，也永远不该有。
+- **恢复＝重放树，不是创建**：`restoreWorld` 只重建状态（`migrateSnapshot` → 形状校验 → 逐实体重建 → 重算 `derived`），宿主再用 `WorldRuntime.attachEntity` 重挂 hook 载体；**不跑** creation 两层（跑 `at_object_creation` 等于用代码默认值覆盖存档，正是两层接缝要防的反转）。挂载**顺序无关**（被携带者可先于携带者挂载），恢复后的位置必须仍能解析——内容漂移大声失败，不做半解释状态。
+- **大声失败**：版本大于 `SAVE_VERSION`／非数字、`data` 非对象／缺 `entities`、实体无 `locationId`、flags 非字符串数组、记录 id 与键不符——全部在加载时抛（ADR-0003）。
+- **v1 里没有**引擎 tick 与 RNG 种子（消费者在 §2–§4，M4）：树随它们的消费者长槽位，那一天是 v2 + 一条迁移，不是往 v1 形状里静默加字段。
+- **`SAVE_VERSION` 保持 1，迁移链机制就绪但为空**——首个真实迁移出现在 v2 那天才算检验，不造假迁移。
+- **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与六类损坏存档大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩）。
 
 ## 2. 时间：tick 计数
 
@@ -90,7 +102,7 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 ## 5. 自检清单
 
 - [ ] 状态是 **typed 对象**，没有 attribute handler / 字符串 key 查找层
-- [ ] 迁移链可用；`derived` 字段**不进快照**、加载后重算
+- [x] 迁移链可用；`derived` 字段**不进快照**、加载后重算（M2-T5：`state/derived.ts` 一张表同时驱动「快照类型」（`Omit`）与「序列化排除」，恢复时逐实体 `recompute`；表今日为空，首个消费者是修饰符系统）
 - [ ] 引擎里搜不到 `Date.now` / `setTimeout`
 - [ ] `Clock` 是 **tick 计数**不是毫秒
 - [ ] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储

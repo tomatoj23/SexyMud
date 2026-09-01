@@ -132,8 +132,8 @@ TerminalView 实现                   style-guide.md（文风约束）
 | 看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2） | ✅ **已落**（`world/look.ts`：纯外观组装——静态在场（放置清单直读）×动态占用（状态树）的唯一汇合点；可见性检查在 `atLook` 内——房间**显式** `look` 门禁（缺省可见，`default` 不管辖 look）；`lookSpec` 绑定 `cmd-look` 经 `call()` 全链路；`appearance` 事件＝roomId／出口清单／静态在场清单／动态占用清单，零已渲染文本；`tests/look-behavior.test.ts`） |
 | 说行为：`at_msg_receive` + say 出厂适配器（M2-T3） | ✅ **已落**（`world/message.ts`：`broadcastMessage` 逐接收者投递原语——`at_msg_receive` 显式 false 仅屏蔽该接收者，`fromEntityId`（fromObj）可空（系统消息路径）；`world/say.ts`：`say` 编排（`at_pre_say` 可否决 → 广播（说者含在接收者内）→ `at_post_say`）+ `saySpec` 绑定 `cmd-say` 经 `call()` 全链路；`say` 事件＝speakerId／text／locationId，零已渲染文本，文本为玩家输入原样透传（会话数据非渲染叙事）；`tests/say-behavior.test.ts`） |
 | 接缝补全：转移配对 + creation 两层 + 动态 cmdset（M2-T4） | ✅ **已落**（`world/transfer.ts`：`getObject`／`giveObject`／`dropObject`——`at_pre_get/give/drop` 行为级否决包 `moveTo` 外（先于移动链）+ `at_post_*` 配对，give 三方否决（被给实体＋给者＋收者），moveType 随播报；`world/creation.ts`：`createObject` 两层——`at_object_creation` 代码默认值 → `at_object_post_creation` JSON 内容覆盖，顺序即契约；`world/cmdset.ts`：`assembleSources`——`at_cmdset_get` 逐分发重组基准源（语境给防御拷贝，调整即返回），实体状态变化下一次分发动作集即变，引擎零缓存；全合成驱动 `tests/entity-seams.test.ts`，无物品系统依赖——首个真实消费者是物化票） |
-| 世界模型实体运行时其余部分（快照 v1） | ❌ 未实现（M2-T5，形态定案 ADR-0028） |
-| MUD 状态模型（快照 v1 随 M2 落）、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
+| 快照 v1：状态树序列化 + 迁移链往返（M2-T5） | ✅ **已落**（`state/snapshot.ts`：`serializeWorld`／`restoreWorld`——载荷即状态树（非平行结构），只加版本戳／`derived` 切分／规范序（同世界＝同字节）；`state/derived.ts`：`derived` 一张表同时驱动快照类型与序列化排除，加载后逐实体 `recompute`（表今日为空，首个消费者＝修饰符系统）；`WorldRuntime.attachEntity`：**恢复＝重放树＋重挂实例，不走 `createObject`**（creation 两层不跑，否则代码默认值覆盖存档），挂载顺序无关、内容漂移大声失败；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空；NPC **构造性不入档**（静态在场＝内容真相）；`tests/snapshot.test.ts`） |
+| 输出管线、中文层其余部分，及状态模型余下部分（时间／调度＝ M4） | ❌ 未实现（规格已定，见各文件） |
 | 14 个 schema | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做） |
 
 **下一步**：M2 最小可玩世界运行时（走/看/说，六张 tracer 票，形态见 ADR-0028）→ M3 标签与原型（spec/03 §5–§6）→ M4 时间与调度（spec/04 §2–§4，战斗前夜）。每完成一个子系统，跑该文件末尾的自检清单。

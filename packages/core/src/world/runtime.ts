@@ -19,19 +19,30 @@ import type { Entity } from "./entity.js";
  */
 export interface WorldRuntime {
   readonly registry: ContentRegistry;
-  /** The one state tree — mutated in place; serialization lands with M2-T5. */
+  /** The one state tree — mutated in place; serialized by state/snapshot.ts. */
   readonly state: WorldState;
 
   /**
    * Registers an entity: its hook-carrying instance plus its seed state
    * (id, location, empty flags) in the tree. The location must resolve to a
    * loaded room or an already-registered entity (an entity can BE a
-   * location — that is how get/give/drop container moves will read). The
-   * entity id must not collide with a room id: locations would be
-   * ambiguous. Loading a saved tree and re-attaching instances is M2-T5's
-   * path, not this one.
+   * location — that is how get/give/drop container moves read). The entity
+   * id must not collide with a room id: locations would be ambiguous.
+   * CREATION's entry point — a restored save goes through the tree plus
+   * attachEntity instead (M2-T5).
    */
   addEntity(entity: Entity, locationId: string): void;
+  /**
+   * THE LOAD PATH (M2-T5): re-attaches a hook-carrying instance to a state
+   * the tree ALREADY holds, because a restored save adopted a whole tree.
+   * No creation layer runs here — restore replays a tree, it does not
+   * create (running at_object_creation on load would overwrite saved state
+   * with code defaults). The tree must hold the state (restoreWorld first),
+   * and the saved location must still resolve to a loaded room or to
+   * another entity's state; that second check is order-independent on
+   * purpose, so a carried entity may be attached before its carrier.
+   */
+  attachEntity(entity: Entity): void;
   /** The hook-carrying instance; unknown ids throw (wiring bug, not play). */
   entity(id: string): Entity;
   /** The entity's location, from the tree; unknown ids throw. */
@@ -79,18 +90,31 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
   const resolvableLocation = (locationId: string): boolean =>
     instances.has(locationId) || isRoom(locationId);
 
+  /**
+   * A location read back from a SAVE: a loaded room, or an entity whose
+   * state the tree already holds — whether or not that entity's instance has
+   * been attached yet, so attaching in any order works.
+   */
+  const resolvableRestoredLocation = (locationId: string): boolean =>
+    isRoom(locationId) || state.entities[locationId] !== undefined;
+
+  /** What is true of ANY instance's id, creation or restore alike. */
+  const assertUsableId = (entity: Entity): void => {
+    if (typeof entity.id !== "string" || entity.id === "") {
+      throw new Error("world runtime: an entity with an empty id");
+    }
+    if (isRoom(entity.id)) {
+      throw new Error(
+        `world runtime: entity id "${entity.id}" collides with a room id — a location would be ambiguous`,
+      );
+    }
+  };
+
   return {
     registry,
     state,
     addEntity(entity, locationId) {
-      if (typeof entity.id !== "string" || entity.id === "") {
-        throw new Error("world runtime: an entity with an empty id");
-      }
-      if (isRoom(entity.id)) {
-        throw new Error(
-          `world runtime: entity id "${entity.id}" collides with a room id — a location would be ambiguous`,
-        );
-      }
+      assertUsableId(entity);
       if (instances.has(entity.id) || state.entities[entity.id] !== undefined) {
         throw new Error(`world runtime: entity id "${entity.id}" added twice`);
       }
@@ -102,6 +126,24 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
       instances.set(entity.id, entity);
       const entityState: EntityState = { id: entity.id, locationId, flags: [] };
       state.entities[entity.id] = entityState;
+    },
+    attachEntity(entity) {
+      assertUsableId(entity);
+      if (instances.has(entity.id)) {
+        throw new Error(`world runtime: entity "${entity.id}" is attached twice`);
+      }
+      const entityState = state.entities[entity.id];
+      if (entityState === undefined) {
+        throw new Error(
+          `world runtime: entity "${entity.id}" has no state in the tree — adopt a restored tree before attaching instances`,
+        );
+      }
+      if (!resolvableRestoredLocation(entityState.locationId)) {
+        throw new Error(
+          `world runtime: restored entity "${entity.id}" sits in "${entityState.locationId}", which is neither a loaded room nor a state in the tree`,
+        );
+      }
+      instances.set(entity.id, entity);
     },
     entity(id) {
       const found = instances.get(id);

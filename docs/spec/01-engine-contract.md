@@ -1,6 +1,6 @@
 # 01 · 引擎对外契约
 
-> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1）**已落**；`time/`、`effects/` 待实现。
+> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约与快照 v1 M2-T5）**已落**；`time/`、`effects/` 待实现。
 > **依据**：ADR-0002、ADR-0017、ADR-0025 §一、ADR-0006、ADR-0018。
 
 ## 1. 注入端口（Ports）
@@ -102,7 +102,7 @@ packages/core/          引擎（可独立发布的库，零题材词）
     command/            解析、命令集合并、分发（M1-T1/T2 已落）
     save/               版本化存档迁移链
     world/              房间、出口、实体、hook
-    state/              typed 状态、derived
+    state/              typed 状态、derived、快照 v1
     time/               tick、调度六原语、游戏内时间
     effects/            效果执行
     content/            ContentRegistry（读内容，永不 import 数据）
