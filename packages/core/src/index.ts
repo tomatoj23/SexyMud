@@ -72,6 +72,8 @@ export type { WorldRuntime, WorldRuntimeOptions } from "./world/runtime.js";
 export { moveTo } from "./world/move.js";
 export type { MovePorts, MoveRequest, MoveResult, MoveVetoStage } from "./world/move.js";
 export { traversalSpec } from "./world/traverse.js";
+export { atLook, lookSpec, returnAppearance } from "./world/look.js";
+export type { ExitDigest, LookOutcome, RoomAppearance, StaticPresence } from "./world/look.js";
 export type { EntityState, WorldState } from "./state/tree.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {

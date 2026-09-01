@@ -105,7 +105,7 @@
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **状态树种子** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；14 个测试文件 / 211 用例全绿
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **状态树种子** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；15 个测试文件 / 225 用例全绿
 - **Schema 18 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ `condition`（被引用库）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON

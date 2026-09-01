@@ -129,7 +129,8 @@ TerminalView 实现                   style-guide.md（文风约束）
 | commands/ 内容集合 + `ContentRegistry`（M1-T5） | ✅ **已落**（`schemas/commands.schema.json` + `content/commands/` 首批 4 条 + `command/entry.ts` + `content/registry.ts`；加命令 = 加 JSON 文件） |
 | rooms/ + npcs/ 世界集合 + 出口即命令（M1-T6） | ✅ **已落**（`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 柳青镇首批内容（4 房间／3 人物／1 怪物）+ `world/entry.ts`（`ExitEntry extends CommandEntry`）+ 注册表加载期引用完整性；「北」经合并栈→动词表→`call()` 全链路跑通，门禁拒绝文案来自内容 JSON） |
 | 实体运行时 + 移动全链路（M2-T1） | ✅ **已落**（`Entity` 接口 + 移动族 8 hook + `moveType` 五值 + `moveTo`（零权限检查）+ `WorldRuntime` + 状态树种子（`state/tree.ts`）+ 引擎出厂穿行适配器 `traversalSpec`（traverse → enter → moveTo）；announce 逐接收者；柳青镇全链路含两道门禁拒绝路径，第二假玩家多接收者场景机械验证（`tests/entity-move.test.ts` + `tests/traversal-chain.test.ts`）；执行段拒绝通道 `CommandRejection` 进管线） |
-| 世界模型实体运行时其余部分（看/说适配器、接缝补全、快照 v1） | ❌ 未实现（M2-T2～T5，形态定案 ADR-0028） |
+| 看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2） | ✅ **已落**（`world/look.ts`：纯外观组装——静态在场（放置清单直读）×动态占用（状态树）的唯一汇合点；可见性检查在 `atLook` 内——房间**显式** `look` 门禁（缺省可见，`default` 不管辖 look）；`lookSpec` 绑定 `cmd-look` 经 `call()` 全链路；`appearance` 事件＝roomId／出口清单／静态在场清单／动态占用清单，零已渲染文本；`tests/look-behavior.test.ts`） |
+| 世界模型实体运行时其余部分（说适配器、接缝补全、快照 v1） | ❌ 未实现（M2-T3～T5，形态定案 ADR-0028） |
 | MUD 状态模型（快照 v1 随 M2 落）、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
 | 14 个 schema | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做） |
 

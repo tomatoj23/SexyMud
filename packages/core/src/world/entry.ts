@@ -105,16 +105,19 @@ export interface RoomEntry {
   readonly objects?: readonly PlacementEntry[];
   /**
    * Room rules (four elements: rules): the gate map for the room itself —
-   * what the host asks when ENTERING (the room collection's accessType
-   * vocabulary: "enter" per content.md), as opposed to the gate on an exit,
-   * which guards traversal. Omitted = no gate. Refusal copy is err_enter /
-   * err_default on this entry.
+   * what the host asks when ENTERING ("enter"), and — for the look
+   * behaviour — whether a viewer PERCEIVES the room at all ("look", an
+   * opt-in gate: absent means visible to whoever is there, and `default`
+   * does not govern it, spec/03 §7.5). The room collection's accessType
+   * vocabulary: "enter" / "look" per content.md, as opposed to the gate on
+   * an exit, which guards traversal. Omitted = no gate. Refusal copy is
+   * err_enter / err_look / err_default on this entry.
    */
   readonly preconditions?: AccessRules;
   /**
    * Refusal copy, keyed `err_<accessType>` and `err_default` (spec/02 §5.4)
-   * — for rooms, the room's own enter gate. The engine's refusal event only
-   * carries the errKey that locates these fields.
+   * — for rooms, the room's own enter and look gates. The engine's refusal
+   * event only carries the errKey that locates these fields.
    */
   readonly [errKey: `err_${string}`]: string | undefined;
   /**

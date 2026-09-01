@@ -82,9 +82,10 @@ export type ParseOutcome = { ok: true; args: unknown } | { ok: false; reason: st
 
 /**
  * The execution stage's refusal: a legitimate mid-execution failure — a
- * gate beyond the entry's own (the target room's enter gate), a movement
- * hook veto, a missing target. Same class as an access denial (spec/01
- * §4): `rejected`, the seq IS consumed, and the refusal is game content.
+ * gate beyond the entry's own (the target room's enter gate, the look
+ * behaviour's visibility gate), a movement hook veto, a missing target.
+ * Same class as an access denial (spec/01 §4): `rejected`, the seq IS
+ * consumed, and the refusal is game content.
  *
  * The refusing func HAS ALREADY emitted its refusal event(s) with full
  * semantics — the executor owns the context (commandKey, errKey, ids) and

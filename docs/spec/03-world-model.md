@@ -1,6 +1,6 @@
 # 03 · 世界模型
 
-> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
 > **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、**ADR-0028**、xkx100 调研。
 
 ## 1. 集合划分
@@ -107,6 +107,13 @@
 - **穿行适配器 `traversalSpec`**（`packages/core/src/world/traverse.ts`，引擎出厂，ADR-0028 §3）：出口 traverse 门禁（管线 access 段）→ 目标房 enter 门禁（`checkAccess`，事件带 `roomId` 定位房间文案）→ `moveTo("traverse")`。两道门禁拒绝均 `rejected` ＋ `commandRefused` 语义事件；执行段拒绝通道见 spec/02 §4.1。
 - **测试**：`tests/entity-move.test.ts`（合成内容：hook 次序／三否决点／零门禁／逐接收者／状态树／响亮失败）＋ `tests/traversal-chain.test.ts`（真实内容：柳青镇全链路、第二假玩家多接收者、异房不收、两道门禁文案来自 JSON、确定性重放）。
 
+### 7.5 落地形态（M2-T2：看）
+
+- **`returnAppearance`**（`packages/core/src/world/look.ts`）：`return_*` 律——纯返回、零消息、零写入。外观组装 = 房名／长描述（注册表内容读）＋ 出口清单（id／方向／verbs）＋ 静态在场（放置清单**直读**，ADR-0028 §1）＋ 动态占用（`occupantsOf` 升序、**剔除观者**——「看」回答观者周围有谁，不回答观者自己）。它是静态在场与动态占用两条在场通道的**唯一汇合点**（宿主可直接消费：房间面板）。
+- **`atLook`**：可见性检查在**这里**，不在命令里（§7 第 6 项）。房间 preconditions 可声明**显式** `look` 键（感知该房间是否有条件——黑暗、幻象）；**缺省即对在场者可见，`default` 不管辖 look**——default 表达进入策略，若回填 look，每个缺省拒绝的房间都会对自己的住客变黑（Evennia 的 view 锁同样是「不声明即开放」）。拒绝返回 `errKey`（= `err_look`），不发事件；房间集合的 accessType 词汇表由此扩为 `enter`／`look`（与出口 `traverse` 同类：集合固定词汇，非题材词）。
+- **`lookSpec` 出厂适配器**（ADR-0028 §2）：`cmd-look` 内容条目经 `commandSpecFromEntry` 绑定引擎行为（argForm 非 none 的大声抛错——带参的看是另一种行为），`call()` 全链路。可见 → 向观者发**一条** `appearance` 语义事件：roomId／出口清单／静态在场清单／动态占用清单——房名、长描述、实体名字全部留在内容数据（渲染层按 id 经注册表取，与 `err_*` 文案同律），事件零已渲染文本（spec/01 §5.1）；人称立场（你／他）归渲染层；look 是观者的私有感知，同房他人不收事件（与移动播报相反）。不可见 → `rejected`（seq 已消耗）+ `commandRefused` 事件（`reason: "notVisible"`——与门禁拒绝的 `accessDenied` 分立，感知失败与准入拒绝是两类玩家体验；`commandKey`／`accessType: "look"`／`errKey`／`roomId` 定位文案）。
+- **测试**：`tests/look-behavior.test.ts`（真实内容：大堂双假玩家 + 掌柜的放置；后院孙彪（放置）与假玩家（状态树）同场——汇合点；`look` 英文动词走同一分发；合成遮蔽房（无灯不可见、执灯可见、同一会话内揭幕）；`default: false` 不使房间对住客变黑；零文本断言（事件串不含房名／描述／NPC 名／`err_look` 文案）；确定性重放）。
+
 ### 命名约定（照抄，高度一致且好用）
 
 | 前缀 | 含义 |
@@ -131,6 +138,6 @@
 - [ ] `prototypeKey` 不参与继承
 - [x] 移动 hook 带 **`moveType`**——M2-T1 已落：`MOVE_TYPES` 五值枚举，`MoveInfo` 进每个 hook
 - [x] 移动入口**不做权限检查**（外置）——M2-T1 已落：`moveTo` 零门禁；穿行适配器编排 traverse → enter → moveTo（ADR-0028 §3）
-- [ ] `return_appearance` **纯返回不发消息**
+- [x] `return_appearance` **纯返回不发消息**——M2-T2 已落：`returnAppearance` 纯组装（静态在场直读 × 状态树占用），`at_look` 内做可见性（显式 `look` 门禁，缺省可见）
 - [ ] `at_object_post_creation` 存在，让 JSON 赢过代码默认值
 - [x] 消息**按接收者逐一遍历发射**（引擎侧）——M2-T1 已落：announce 逐接收者逐事件（`departed`／`arrived`，含移动者本人）；渲染层的按观者渲染仍是 spec/05 的事

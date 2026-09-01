@@ -88,10 +88,10 @@ assets/               # 美术资产（MVP 允许为空）
   - `verbs[]`：方向词，**中文与英文缩写并列**（如 `["北","north","n","往北走"]`）。
   - `argForm`：恒为 `"none"`——方向词本身即是完整命令。
   - `cmdset` + `priority`（+ `mergetype` 可省略）：本包约定出口集 `exits`、优先级 **+101**（高于一切常规源，方向词永远可用；机制 = 合并顺序，数值是数据）。
-  - `preconditions`：出口门禁（`accessRules`）。**房间/出口集合的 accessType 词汇表：`enter`（房间自身）/ `traverse`（出口）**——出口装配用 `commandSpecFromEntry(exit, { accessType: "traverse", func })`。
+  - `preconditions`：出口门禁（`accessRules`）。**出口集合的 accessType 词汇表：`traverse`**——出口装配用 `commandSpecFromEntry(exit, { accessType: "traverse", func })`（房间自身的 `enter`／`look` 见下）。
   - `err_traverse`／`err_default`：出口拒绝文案。
 - `objects[]`：放置清单（房间是内容容器）：每项 `{ "id": <实体id>, "count": <数量≥1> }`；id 引用 npcs/monster/（未来物品等），同一房间内同一 id 只出现一次，注册表校验存在性。空房间可省略。
-- `preconditions` + `err_enter`／`err_default`：房间自身门禁（进入）与拒绝文案，可省略。
+- `preconditions` + `err_enter`／`err_look`／`err_default`：房间自身门禁与拒绝文案，可省略。**房间集合的 accessType 词汇表：`enter`（进入）/ `look`（可见性，M2-T2）**——`look` 是**显式**门禁：不写 `look` 键 = 房间对在场者可见，`default` 不管辖 look（否则每个缺省拒绝的房间都对自己的住客变黑）；写了 `look`（如黑暗房 `{ "look": { "has_flag": "持灯" } }`）则引擎 look 行为先查它，拒绝读 `err_look` 文案（spec/03 §7.5）。
 - `zoneId`：秘境归属（关联 `dungeon/`，规则层与空间层分工）；野外/村落房间省略。
 
 引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands, rooms, npcs, monsters })`（悬空 targetRoomId／放置 id／monsterId、重复 exit id／同房重复方向，全部加载期抛错）→ 按角色所在地取 `registry.room(id).exits` → `commandSetSources(exits)` 并入合并栈（出口源最后合并、压在最上）→ `commandSpecFromEntry(exit, { accessType: "traverse", func })` 装配（func = 穿行行为，宿主注入）。

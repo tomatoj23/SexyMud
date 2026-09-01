@@ -38,7 +38,7 @@
     },
     "preconditions": {
       "$ref": "condition.schema.json#/definitions/accessRules",
-      "description": "房间规则（四要素·规则）：房间自身的门禁映射。**房间集合的 accessType 词汇表：enter**（进入；出口上的门禁是 traverse，两者分工：出口管离开本房间的那一步，房间规则管从任何路径踏入本房间）。省略本字段 = 无门禁。"
+      "description": "房间规则（四要素·规则）：房间自身的门禁映射。**房间集合的 accessType 词汇表：enter（进入）/ look（可见性，M2-T2）**——出口上的门禁是 traverse，两者分工：出口管离开本房间的那一步，房间规则管从任何路径踏入本房间；`look` 是**显式**门禁（不写 look 键 = 对在场者可见，`default` 不管辖 look——缺省拒绝不该让房间对自己的住客变黑）。省略本字段 = 无门禁。"
     },
     "zoneId": {
       "type": "string",
@@ -50,7 +50,7 @@
     "^err_[a-z][a-z0-9-]*$": {
       "type": "string",
       "minLength": 1,
-      "description": "拒绝文案：键名 = err_ + accessType（「enter」门拒绝读 err_enter；默认门拒绝读 err_default）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。可整体省略（渲染层回退通用文案），但写了就必须非空。房间集合现用词汇表只有 err_enter 与 err_default。"
+      "description": "拒绝文案：键名 = err_ + accessType（「enter」门拒绝读 err_enter，「look」门拒绝读 err_look；默认门拒绝读 err_default）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。可整体省略（渲染层回退通用文案），但写了就必须非空。房间集合现用词汇表：err_enter、err_look 与 err_default。"
     }
   },
   "additionalProperties": false,
