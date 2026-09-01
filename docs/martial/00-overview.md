@@ -74,7 +74,7 @@ ADR-0010 定了"数值后置"。设计稿不写具体数，只写**节奏型**�
 
 **前置链沿脉生长**（`prerequisites.martialIds` + `martialLevelMin`），同脉四阶一以贯之（丐帮掌脉：饿虎拦路 → 黑虎偷心 → 醉里乾坤 → 平地惊雷）。跨脉学习无武功前置、只设 `martialLevelMin`——鼓励横向混搭，纵向锁深度。
 
-> ⚠️ **ADR-0019 后的口径**：境界已取消。**造诣是纯显示层，不产生任何门槛**——所有前置一律用 `martialLevelMin`（武功等级下限），原 `realmIndexMin` 字段已废弃。档位名一律取自 50 档表（`docs/research/xkx100-kungfu-combat.md` §5.1），**不得杜撰**。
+> **造诣是纯显示层，不产生任何门槛**——所有前置一律用 `martialLevelMin`（武功等级下限）。档位名一律取自 50 档表（`docs/research/xkx100-kungfu-combat.md` §5.1），**不得杜撰**。
 
 ## 七、流派涌现示例（武功池 × 装备词缀）
 

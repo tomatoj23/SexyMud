@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "dungeon.schema.json",
   "title": "秘境（content/dungeon/，每秘境一文件，层为子结构）",
-  "description": "秘境 = **规则层**（分层 / 驻守 / 产出），与房间（`rooms/`，空间层）靠 `zoneId` 关联，两者不是同一集合（ADR-0016 §3、docs/spec/03 §1）。四参数全在本集合，引擎零写死。\n\n⚠️ **已完成「波次 → 驻守」重构（2026-09-01）**：ADR-0012 的「层内定时波次」是放置期模型，MUD 下改为**驻守 + 定时刷新**——怪是房间的驻守者，被清后按 tick 补位，不是按波次推进。时间单位一律用 **tick**，不用毫秒（ADR-0022 §5、docs/spec/04）。",
+  "description": "秘境 = **规则层**（分层 / 驻守 / 产出），与房间（`rooms/`，空间层）靠 `zoneId` 关联，两者不是同一集合（ADR-0016 §3、docs/spec/03 §1）。四参数全在本集合，引擎零写死。\n\n怪是房间的**驻守者**，被清后按 tick 补位——不是按波次推进。时间单位一律用 **tick**，不用毫秒（ADR-0022 §5、docs/spec/04）。",
   "type": "object",
   "required": ["id", "name", "floors"],
   "properties": {
@@ -39,7 +39,7 @@
         "index": { "type": "integer", "minimum": 1, "description": "层数（深度 = 装备有多强，不是造诣门槛）" },
         "guards": {
           "type": "object",
-          "description": "驻守配置：本层房间里站着哪些怪。`fixed` 用 `monsters` 固定表；`pool` 从 `pool` 随机并叠加 `guaranteed` 保底。⚠️ 精英与层主不进随机池。原 `waveCount` / `waveComposition` 已随波次模型废弃。",
+          "description": "驻守配置：本层房间里站着哪些怪。`fixed` 用 `monsters` 固定表；`pool` 从 `pool` 随机并叠加 `guaranteed` 保底。⚠️ 精英与层主不进随机池。",
           "required": ["mode"],
           "properties": {
             "mode": { "type": "string", "enum": ["fixed", "pool"], "description": "fixed = 固定表；pool = 从池随机 + 保底" },
@@ -80,7 +80,7 @@
         },
         "recommendedPower": {
           "type": "array",
-          "description": "推荐战力区间 [min, max] = 软提示，非硬门槛；硬门槛只用于\"未通关前一层\"。ADR-0019：原 recommendedRealmIndex（境界序号）已废，改用战力区间。",
+          "description": "推荐战力区间 [min, max] = 软提示，非硬门槛；硬门槛只用于\"未通关前一层\"。",
           "minItems": 2,
           "maxItems": 2,
           "items": { "type": "integer", "minimum": 0 }

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.settings.schema.json",
   "title": "全局阈值与公式常数（content/config/settings.json）",
-  "description": "引擎通过内容注册表取参数，零写死。本集合是各类**公式常数、上限、倍率**的唯一载体：改动它就能调平衡，不动引擎。\n\n**配置三分法（docs/spec/06 §6）**——本文件只收 TUNING（数字）：\n- **STRUCTURE**（装配图：模块路径 / typeclass / cmdset）**不进这里**，用 `$ref` 指向内容；\n- **POLICY**（决策：权限层级、多会话模式、默认策略）另开 `content/config/policy.json`；\n- **TUNING**（数字）才放本文件。\n\n**三条硬规则**：\n1. **禁止用 `null` 表示「无限／无」** —— 用显式形态（如 `{\"unlimited\": true}`）或直接省略字段；\n2. **时间相关键名必须带单位**，且引擎内一律用 **tick**（如 `regenPerTick`、`cooldownTicks`），不用毫秒；\n3. 每组可带 **`formula`** 字段记录该组数值的计算公式，让**数值与公式同处一地**。\n\n⚠️ 原 `realmProgress`（境界进度资源链接）已随 ADR-0019 删除——境界不是门槛，造诣由武功等级 + 实战经验推导，是纯显示层。",
+  "description": "引擎通过内容注册表取参数，零写死。本集合是各类**公式常数、上限、倍率**的唯一载体：改动它就能调平衡，不动引擎。\n\n**配置三分法（docs/spec/06 §6）**——本文件只收 TUNING（数字）：\n- **STRUCTURE**（装配图：模块路径 / typeclass / cmdset）**不进这里**，用 `$ref` 指向内容；\n- **POLICY**（决策：权限层级、多会话模式、默认策略）另开 `content/config/policy.json`；\n- **TUNING**（数字）才放本文件。\n\n**三条硬规则**：\n1. **禁止用 `null` 表示「无限／无」** —— 用显式形态（如 `{\"unlimited\": true}`）或直接省略字段；\n2. **时间相关键名必须带单位**，且引擎内一律用 **tick**（如 `regenPerTick`、`cooldownTicks`），不用毫秒；\n3. 每组可带 **`formula`** 字段记录该组数值的计算公式，让**数值与公式同处一地**。\n\n**造诣是纯显示层**，由武功等级 + 实战经验推导，不产生任何门槛。",
   "type": "object",
   "required": ["id"],
   "properties": {

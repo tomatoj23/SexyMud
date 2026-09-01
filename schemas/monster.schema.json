@@ -37,7 +37,7 @@
       "properties": {
         "maxHp": { "type": "number", "minimum": 1 },
         "attack": { "type": "number", "minimum": 0 },
-        "externalDefense": { "type": "number", "minimum": 0, "description": "外功防御（旧名「护甲」已废弃）" },
+        "externalDefense": { "type": "number", "minimum": 0, "description": "外功防御" },
         "internalDefense": { "type": "number", "minimum": 0, "description": "内功防御" },
         "dodge": { "type": "number", "minimum": 0, "maximum": 1 }
       },

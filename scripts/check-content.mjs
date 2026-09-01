@@ -46,6 +46,31 @@ if (files.length === 0) {
 
 const ajv = new Ajv({ allErrors: true });
 
+// Dead-concept gate. Concepts retired by an ADR must not creep back into content.
+// This replaces the "⚠️ 已废，勿用" notes that used to sit in schema descriptions
+// and docs: a note only works if someone happens to read it, this runs on every
+// check. Terms with a legitimate non-mechanical use in prose (「突破重围」) live in
+// `warn` so they surface without blocking the build.
+const bannedRules = JSON.parse(
+  readFileSync(join(root, "scripts", "banned-terms.json"), "utf8"),
+);
+
+function scanBannedTerms(file) {
+  const lines = readFileSync(file, "utf8").split(/\r?\n/);
+  const hits = [];
+  for (const [group, severity] of [
+    ["banned", "error"],
+    ["warn", "warn"],
+  ]) {
+    for (const [term, reason] of Object.entries(bannedRules[group] ?? {})) {
+      lines.forEach((line, index) => {
+        if (line.includes(term)) hits.push({ severity, term, reason, line: index + 1 });
+      });
+    }
+  }
+  return hits;
+}
+
 let failed = false;
 for (const file of files.sort()) {
   const relative = file.slice(root.length + 1).replace(/\\/g, "/");
@@ -84,6 +109,14 @@ for (const file of files.sort()) {
     }
   } else {
     console.log(`OK      ${relative}`);
+  }
+
+  for (const hit of scanBannedTerms(file)) {
+    const isError = hit.severity === "error";
+    (isError ? console.error : console.warn)(
+      `${isError ? "BANNED " : "WARN   "} ${relative}:${hit.line} 「${hit.term}」— ${hit.reason}`,
+    );
+    if (isError) failed = true;
   }
 }
 

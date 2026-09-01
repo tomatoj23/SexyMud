@@ -33,7 +33,7 @@
         },
         "presentation": {
           "type": "object",
-          "description": "呈现参数（配色／字重），由 UI 层消费，引擎不读。⚠️ 原含「飘字大小／屏震强度」，已随 ADR-0006 配比定调（对峙式视觉层作废）移除",
+          "description": "呈现参数（配色／字重），由 UI 层消费，引擎不读",
           "properties": {
             "color": { "type": "string" },
             "fontScale": { "type": "number", "minimum": 0 }

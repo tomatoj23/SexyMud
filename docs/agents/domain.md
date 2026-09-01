@@ -22,7 +22,7 @@ Monorepo (pnpm workspaces), single context (one `CONTEXT.md` at the repo root):
 ├── docs/
 │   ├── adr/                      # decision records
 │   ├── agents/                   # agent pipeline conventions
-│   └── research/                 # research notes（docs/design/ 已废弃，勿参考）
+│   └── research/                 # research notes
 ├── schemas/                      # content JSON Schema drafts
 ├── apps/                         # applications
 │   ├── web/                      # game frontend
