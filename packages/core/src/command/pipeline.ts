@@ -1,4 +1,6 @@
 import type { Clock, Command, CommandResult, GameEvent, Rng } from "../types.js";
+import { parseArgForm } from "./parser.js";
+import type { ArgForm, VerbTable } from "./parser.js";
 
 /**
  * The command pipeline (ADR-0023 §1a): four stages, run in order.
@@ -68,18 +70,27 @@ export type ParseOutcome = { ok: true; args: unknown } | { ok: false; reason: st
 
 /**
  * A command as executable behaviour. Verbs live in content data, not here —
- * a spec is identified by `key`; how input is matched to specs (longest verb
- * match) arrives with the parser and the content registry.
+ * a spec is identified by `key`; input is matched to specs by longest verb
+ * match against the verb table (see parser.ts).
  */
 export interface CommandSpec<W = unknown> {
   key: string;
+  /**
+   * Declarative argument form (spec/02 §1.2): the engine's parse stage cuts
+   * the verb (via deps.verbs) and parses the remainder per this form. An
+   * explicit `parse` hook, when present, takes precedence.
+   */
+  argForm?: ArgForm;
   /** Return explicitly `false` to veto (spec/03 §7: falsy aborts). */
   at_pre_cmd?(ctx: CommandContext<W>): boolean | void;
   /**
-   * Parses the raw input into args. Absent means "whole input is the args"
-   * — the real verb-matching parser replaces this default.
+   * Parses input into args. Receives the FULL raw input, verb included —
+   * unlike the argForm path, which gets the post-verb remainder — so a
+   * custom hook cuts the verb itself. Absent means the engine parses
+   * instead: argForm + deps.verbs when declared, otherwise the whole input
+   * is the args (the pre-parser default kept for stage-by-stage tests).
    */
-  parse?(ctx: CommandContext<W>, rawArgs: string): ParseOutcome;
+  parse?(ctx: CommandContext<W>, rawInput: string): ParseOutcome;
   func(ctx: CommandContext<W>): void;
   at_post_cmd?(ctx: CommandContext<W>): void;
 }
@@ -92,6 +103,11 @@ export interface CommandDeps<W = unknown> {
   sink: MessageSink;
   /** Queued player inputs for interactive commands, consumed FIFO. */
   inputs?: string[];
+  /**
+   * The verbs available for this dispatch (the cmdset merge result). Required
+   * when a spec declares `argForm` — the parse stage cuts the verb with it.
+   */
+  verbs?: VerbTable;
 }
 
 /**
@@ -100,6 +116,47 @@ export interface CommandDeps<W = unknown> {
  * copy (spec/02 §5.4 — refusal wording is data).
  */
 const DEFAULT_VETO_REASON = "vetoed";
+
+/**
+ * The parse stage (spec/02 §1): an explicit hook wins; otherwise the engine
+ * parses — verb cut via the verb table, remainder per the declared argForm —
+ * and the pre-parser default (whole input is the args) survives for
+ * stage-by-stage tests that predate argForm.
+ *
+ * The verb is re-cut inside the stage even though the dispatcher already
+ * matched it to pick this spec: the same deterministic table yields the same
+ * result, and the commandKey guard turns a stale or mismatched dispatch into
+ * an `invalid` result instead of silently running the wrong command.
+ */
+function parseStage<W>(
+  spec: CommandSpec<W>,
+  command: Command,
+  deps: CommandDeps<W>,
+  ctx: CommandContext<W>,
+): ParseOutcome {
+  if (spec.parse) {
+    return spec.parse(ctx, command.raw);
+  }
+  if (spec.argForm === undefined) {
+    return { ok: true, args: command.raw };
+  }
+  if (!deps.verbs) {
+    // Wiring bug, not player input: a declared argForm is unusable without
+    // the verb table, so this fails loudly instead of masquerading as
+    // malformed input.
+    throw new Error(
+      `command "${spec.key}" declares argForm "${spec.argForm}" but no verb table was provided (deps.verbs)`,
+    );
+  }
+  const match = deps.verbs.match(command.raw);
+  if (!match.ok) {
+    return { ok: false, reason: match.reason };
+  }
+  if (match.commandKey !== spec.key) {
+    return { ok: false, reason: "verbMismatch" };
+  }
+  return parseArgForm(spec.argForm, match.rawArgs);
+}
 
 /**
  * Runs the four stages and returns the dispatch result.
@@ -148,7 +205,7 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
     }
   }
 
-  const outcome = spec.parse ? spec.parse(ctx, command.raw) : { ok: true as const, args: command.raw };
+  const outcome = parseStage(spec, command, deps, ctx);
   if (!outcome.ok) {
     return { ok: false, seq: command.seq, kind: "invalid", reason: outcome.reason };
   }

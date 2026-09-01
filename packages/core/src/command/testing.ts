@@ -2,6 +2,8 @@ import type { Command, CommandResult, GameEvent } from "../types.js";
 import { createSeededRng } from "../rng.js";
 import { runCommand } from "./pipeline.js";
 import type { CommandSpec, Message } from "./pipeline.js";
+import { createVerbTable } from "./parser.js";
+import type { VerbEntry } from "./parser.js";
 
 /**
  * The command test harness (ADR-0023 §1). `call()` manually drives the four
@@ -42,6 +44,13 @@ export interface HarnessOptions<W> {
   seed?: number;
   /** Starting engine tick. */
   nowTick?: number;
+  /**
+   * Verb entries for the engine's parse stage: specs declaring `argForm`
+   * match their input against this table, so `call()` runs the full chain —
+   * raw input, verb cut, argForm parse, func. Built once per harness, so a
+   * conflicting registration fails at harness creation, not mid-session.
+   */
+  verbs?: readonly VerbEntry[];
 }
 
 export interface CallOptions {
@@ -70,6 +79,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
   // One RNG stream per harness: a session replays as a command sequence, so
   // identical inputs at different points must roll different values.
   const rng = createSeededRng(options.seed ?? 1);
+  const verbs = options.verbs ? createVerbTable(options.verbs) : undefined;
   let nextSeq = 1;
 
   return {
@@ -94,6 +104,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         world: structuredClone(options.world),
         sink,
         inputs: [...(callOptions.inputs ?? [])],
+        verbs,
       });
       return { result, messages };
     },

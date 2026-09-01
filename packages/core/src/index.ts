@@ -17,6 +17,14 @@ export type {
   MessageSink,
   ParseOutcome,
 } from "./command/pipeline.js";
+export { createVerbTable, parseArgForm, parseNumeral } from "./command/parser.js";
+export type {
+  ArgForm,
+  TargetRef,
+  VerbEntry,
+  VerbMatch,
+  VerbTable,
+} from "./command/parser.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
   CallOptions,

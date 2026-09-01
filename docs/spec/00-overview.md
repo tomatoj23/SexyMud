@@ -122,9 +122,11 @@ TerminalView 实现                   style-guide.md（文风约束）
 | `apps/web` React 壳 | ✅ 可用（占位，等待命令层） |
 | 引擎领域模型（放置遗留） | ✅ **已清零**（`6a36674`） |
 | **端口与契约**（Clock/Rng/SaveStore/Authority、Command、GameEvent、三类失败） | ✅ **已落**（`packages/core/src/types.ts`） |
-| 命令层、世界模型、MUD 状态模型、输出管线、中文层 | ❌ 未实现（规格已定，见各文件） |
+| 命令测试骨架 + 最小分发管线（M1-T1） | ✅ **已落**（`packages/core/src/command/`） |
+| 中文解析器：最长动词匹配 + `argForm`（M1-T2） | ✅ **已落**（`packages/core/src/command/parser.ts`） |
+| 命令集合并、commands/ 内容集合、世界模型、MUD 状态模型、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
 | 14 个 schema | ⚠️ 放置期设计，需随本规格重估 |
 
 **下一步**：按§文档地图，从 `02-command-layer.md` 开始生长。每完成一个子系统，跑该文件末尾的自检清单。
 
-> 引擎目前只有三个源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`save/migrations.ts`（迁移链骨架），加两个测试文件。这是刻意的——**先定契约，再长能力**。
+> 引擎源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`rng.ts`、`save/migrations.ts`、`command/pipeline.ts`（四段管线）、`command/testing.ts`（测试骨架）、`command/parser.ts`（中文解析器）。这是刻意的——**先定契约，再长能力**。
