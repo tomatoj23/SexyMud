@@ -42,6 +42,13 @@ export type {
   VerbMatch,
   VerbTable,
 } from "./command/parser.js";
+export { mergeCmdSets } from "./command/cmdset.js";
+export type {
+  CmdSetCommand,
+  CmdSetSource,
+  MergeType,
+  MergedCmdSet,
+} from "./command/cmdset.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
   CallOptions,

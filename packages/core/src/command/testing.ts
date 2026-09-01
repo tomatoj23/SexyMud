@@ -5,6 +5,8 @@ import { runCommand } from "./pipeline.js";
 import type { CommandSpec, Message } from "./pipeline.js";
 import { createVerbTable } from "./parser.js";
 import type { VerbEntry } from "./parser.js";
+import { mergeCmdSets } from "./cmdset.js";
+import type { CmdSetSource } from "./cmdset.js";
 
 /**
  * The command test harness (ADR-0023 §1). `call()` manually drives the four
@@ -53,6 +55,14 @@ export interface HarnessOptions<W> {
    */
   verbs?: readonly VerbEntry[];
   /**
+   * Command-set sources (spec/02 §3) merged into the parse-stage verb
+   * table — the merge product IS the verb table source. Mutually exclusive
+   * with `verbs`. Merged once per harness (static like `verbs`); hosts that
+   * merge per input, because sources change with location, call
+   * mergeCmdSets themselves and pass deps.verbs per dispatch.
+   */
+  cmdsets?: readonly CmdSetSource[];
+  /**
    * Builds the condition subject for access-gated specs (spec/02 §5); passed
    * through to the pipeline deps. Required only when a called spec declares
    * an access gate — the world is deep-copied per call, so the subject is
@@ -89,7 +99,16 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
   // One RNG stream per harness: a session replays as a command sequence, so
   // identical inputs at different points must roll different values.
   const rng = createSeededRng(options.seed ?? 1);
-  const verbs = options.verbs ? createVerbTable(options.verbs) : undefined;
+  if (options.verbs !== undefined && options.cmdsets !== undefined) {
+    // Wiring bug, not a data problem: two verb-table sources disagree about
+    // which table a call parses against.
+    throw new Error("harness options: pass either verbs or cmdsets, not both");
+  }
+  const verbs = options.verbs
+    ? createVerbTable(options.verbs)
+    : options.cmdsets
+      ? createVerbTable(mergeCmdSets(options.cmdsets).verbEntries())
+      : undefined;
   let nextSeq = 1;
 
   return {

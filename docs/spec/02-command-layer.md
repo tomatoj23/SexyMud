@@ -1,6 +1,6 @@
 # 02 · 命令层
 
-> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余**待实现**（M1-T4~T6）。
+> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余**待实现**（M1-T5~T6）。
 > **依据**：ADR-0016 §2、ADR-0021 §1/§2/§4、ADR-0024 §1/§3、ADR-0022 §2（经 **ADR-0024 §8** 修正）、ADR-0025 §六。
 > （注：ADR-0024 的 **§7 修正的是 ADR-0022 §3**（原型继承），**§8 修正的是 ADR-0022 §2**（条件表达式）。本文件只涉及后者。）
 
@@ -62,6 +62,14 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 **为什么必须是内容而非引擎逻辑**：加一个「黑屋里 `look` 变摸黑」= 加一条命令集条目 + 一条 condition，引擎零改动。
 
 依据：ADR-0021 §1
+
+### 3.1 落地形态（M1-T4）
+
+- **纯函数折叠**（`packages/core/src/command/cmdset.ts`）：`mergeCmdSets(sources)` 把各源按 `priority` **稳定升序排序**后自左向右折叠到**空累积器**上——「按优先级分组、组内两两合并、再按优先级升序合并」就是这个折叠；同优先级组内**输入顺序即合并顺序**，后者压前者。引擎无缓存、无源概念词汇、无魔法数（七个源槽位与 +101 都是内容侧约定）。
+- **incoming 的 mergetype 生效**（借 Evennia：A 并入 B，A 的合并规则适用；同优先级时后来者胜）。空种子使四种算子**全然**（total）：单独一个 Remove／Intersect 集合过滤不到任何东西——它的命令是过滤清单，不是供给。
+- **四种算子**：`Union`（默认；同键**整体替换** payload 含 verbs）／`Intersect`（只留双方共有的键，取 incoming 版本）／`Replace`（丢弃累积结果）／`Remove`（纯过滤器，不添加任何命令）。
+- **合并顺序 = 最后引入顺序**：跨键动词冲突归**后合并者**所有——合并栈在到达分发前解决动词归属（`parser.ts` 的契约：`createVerbTable` 遇跨键同名动词会抛错，合并产物不再有歧义）。这就是出口源（+101，高于一切常规源）**永远可用**的机制：它最后合并，下方任何源都无法遮蔽或滤掉它的方向词。
+- **接入解析器**：合并产物 `verbEntries()` 即动词表来源，是 `createVerbTable` 的直接输入（`deps.verbs`）；测试骨架新增 `cmdsets` 选项演示接入（与 `verbs` 互斥），真实宿主每次输入时按地点重组源列表后自行调用。确定性（ADR-0024 §2）：同一输入列表必得同一合并结果。
 
 ## 4. 出口即命令
 
@@ -140,8 +148,8 @@ Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只�
 - [x] 解析器用**最长动词匹配**，没有引入分词库（M1-T2 已落，`parser.ts`）
 - [x] 别名按**长度降序**匹配（M1-T2 已落：长度降序 + 字典序，跨进程稳定）
 - [ ] 引擎源码里搜不到任何动词（动词全在 `content/commands/`）——src 侧已由 `engine-purity` 文法字符集守卫，`content/commands/` 待 M1-T5
-- [ ] 命令集是**多源合并**，不是单表查询
-- [ ] 出口是**独立实体**，方向词是它的 `verbs`，优先级最高
+- [x] 命令集是**多源合并**，不是单表查询（M1-T4 已落：`cmdset.ts` 纯函数折叠，四种 mergetype，合并产物即动词表来源）
+- [ ] 出口是**独立实体**，方向词是它的 `verbs`，优先级最高——引擎侧 +101 永远可用的机制已随 M1-T4 落地，出口实体化待 M1-T6
 - [x] 条件表达式 schema **允许递归嵌套**（M1-T3 已落：`schemas/condition.schema.json`，`$ref` 自引用无深度限制）
 - [x] 外层是 `Map<accessType, expr>` 且有 `default`（M1-T3 已落：`#/definitions/accessRules` + `checkAccess`）
 - [x] 拒绝文案 `err_*` 是数据字段，不是引擎字符串（M1-T3 已落：事件携带 `errKey`，文案在条目数据，引擎零文案）
