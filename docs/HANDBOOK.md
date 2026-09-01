@@ -104,10 +104,11 @@
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；12 个测试文件 / 185 用例全绿
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；12 个测试文件 / 187 用例全绿
 - **Schema 18 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ `condition`（被引用库）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）
-- **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`
+- **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
+- **`content:check` 四道**：① Schema 校验（有内容者硬失败）② **已废概念门禁**（命中即失败）③ 无内容可映射 schema 的反向扫描 ④ **draft-07 合法性清扫**（全部 schema 编译；无内容者的违规 WARN 呈现不阻塞）
 - **`content:check` 三道**：① Schema 校验 ② **已废概念门禁**（命中即失败，清单见 `scripts/banned-terms.json`）③ 无内容可映射 schema 的反向扫描
 - 术语词典 / 文风指南 / 内容管线约定 / **27 个 ADR** 齐备；兽数据归 `beast/` 集合，获取走 sect `exchange` 贡献兑换
 
@@ -115,11 +116,11 @@
 
 | 项 | 说明 |
 |---|---|
-| 🚧 `content/` 其余集合 | 待生产（issue #17）。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
+| 🚧 `content/` 其余集合 | 待生产。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
 | 🚧 世界模型实体运行时 | 移动 hook 九项／容器／可见性（spec/03 §5–§7）；房间与人物已以内容形态落地（M1-T6），运行时待后续票 |
-| 🚧 描述与放置清单自动对齐校验 | M1-T6 首批内容手工对齐；自动校验是另一待办 |
-| 🚧 `content:check` 交叉引用 / 连通性校验 | issue #3 |
+| 🚧 世界连通性校验（可达性） | 引用完整性已由**注册表加载期校验**承担（ADR-0003 分层：形状归 content:check、引用归注册表，M1-T5/T6 落地并由测试行使）；「全图可达」需起始房间概念，随世界引导（bootstrap）票再补 |
 | 🚧 `monster.schema.json` 重估 | 已随 `mon-lq-001` 进入编译，但仍是放置期设计，需随秘境票重估 |
+| 🚧 `combat-text.schema.json` 联合类型 | draft-07 清扫已呈现 `dimensionRef` 的 `"type": ["string","array"]`（strictTypes WARN，Ajv 日志级不抛错）；随 combat-text 内容落地重估时修复（或管线定夺 allowUnionTypes） |
 | 🚧 中文清单待定 5 条 | A6 全角标点归一化 / B9 中英空格 / C5 四字格 / D4 模糊命令建议 / G6 宿主侧存档编码。**均不因推迟而变贵**。✅ D1 已定（拼音序，仅呈现层） |
 | 🚧 中文清单 G 组待评估 5 条 | G1 中文数词 / G2 重名与视觉混淆 / G4 字体栈 / G5 简繁体 / G7 中文进 URL |
 | ⏸ 奇遇形态 | 未定（`event/` 仅有最小骨架；形态未定的概念不进术语表） |

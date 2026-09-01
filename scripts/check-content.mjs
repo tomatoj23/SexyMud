@@ -10,10 +10,11 @@
 // Cross-file $ref (M1-T5): collection schemas may reference each other by $id
 // (commands.schema.json -> condition.schema.json#/definitions/accessRules).
 // Every schema under schemas/ is therefore REGISTERED up front so those refs
-// resolve. Registration is not compilation: a schema is compiled — and thus
-// its draft-07 legality checked — only when content maps to it or another
-// compiled schema $refs it, so schemas without content still do not fail the
-// gate (spec/06 §3.1).
+// resolve. Since the gap sweep of 2026-09-01, EVERY schema is also COMPILED
+// for draft-07 legality: a schema mapped by content still fails the gate on
+// compile errors, while a schema with no content yet only surfaces violations
+// as WARN lines — design drafts get re-evaluated when their content lands,
+// and a warn-level signal beats invisibility (spec/06 §3.1).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,7 +53,17 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const ajv = new Ajv({ allErrors: true });
+const ajv = new Ajv({
+  allErrors: true,
+  // Route Ajv's own strict-mode LOG-level findings (e.g. strictTypes union
+  // types, which log rather than throw) through the same WARN channel the
+  // sweep below uses, so nothing surfaces as an anonymous stderr line.
+  logger: {
+    log: (message) => console.log(message),
+    warn: (message) => console.warn(`WARN    ${message}`),
+    error: (message) => console.warn(`WARN    ${message}`),
+  },
+});
 
 // Register every schema by $id (see the cross-file $ref note above). A schema
 // file that is not valid JSON is a broken gate, so it fails the run loudly.
@@ -126,7 +137,19 @@ for (const file of files.sort()) {
     continue;
   }
 
-  const validate = ajv.compile(schema);
+  let validate;
+  try {
+    // Compiles through the pre-registered $id space, so cross-file $refs
+    // resolve; the SAME parsed object is passed so Ajv's per-object cache
+    // sees one schema per $id.
+    validate = ajv.compile(schema);
+  } catch (error) {
+    // A mapped schema that cannot even compile is a broken gate, not a
+    // content bug — fail cleanly instead of crashing mid-run.
+    failed = true;
+    console.error(`INVALID ${relative} (schema ${schemaRel.replace(/\\/g, "/")} does not compile: ${error.message})`);
+    continue;
+  }
   if (!validate(data)) {
     failed = true;
     console.error(`INVALID ${relative} (schema: ${schemaRel.replace(/\\/g, "/")})`);
@@ -165,8 +188,24 @@ const unusedSchemas = readdirSync(join(root, "schemas"))
 
 if (unusedSchemas.length > 0) {
   console.log(
-    `NOTE     ${unusedSchemas.length} schema(s) have no content mapping, so they were not compiled directly (a schema referenced via $ref still compiles through its consumers): ${unusedSchemas.join(", ")}`,
+    `NOTE     ${unusedSchemas.length} schema(s) have no content mapping (design drafts until their collections land; compile problems surface as WARN below, not failures): ${unusedSchemas.join(", ")}`,
   );
+}
+
+// Draft-07 legality sweep over the unmapped schemas (spec/06 §3.1): a design
+// draft that cannot compile is worth SEEING now — it becomes a hard failure
+// the moment content for its collection lands — but not worth blocking the
+// gate, since re-evaluation is scheduled with that landing. Mapped schemas
+// already failed the gate above if they could not compile.
+for (const schemaRel of unusedSchemas) {
+  const schema = schemasByPath.get(schemaRel);
+  try {
+    ajv.compile(schema);
+  } catch (error) {
+    console.warn(
+      `WARN    ${schemaRel} does not compile (no content maps to it yet; fix or re-evaluate before landing its collection): ${error.message}`,
+    );
+  }
 }
 
 process.exit(failed ? 1 : 0);

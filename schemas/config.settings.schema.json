@@ -2,11 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.settings.schema.json",
   "title": "全局阈值与公式常数（content/config/settings.json）",
-  "description": "引擎通过内容注册表取参数，零写死。本集合是各类**公式常数、上限、倍率**的唯一载体：改动它就能调平衡，不动引擎。\n\n**配置三分法（docs/spec/06 §6）**——本文件只收 TUNING（数字）：\n- **STRUCTURE**（装配图：模块路径 / typeclass / cmdset）**不进这里**，用 `$ref` 指向内容；\n- **POLICY**（决策：权限层级、多会话模式、默认策略）另开 `content/config/policy.json`；\n- **TUNING**（数字）才放本文件。\n\n**三条硬规则**：\n1. **禁止用 `null` 表示「无限／无」** —— 用显式形态（如 `{\"unlimited\": true}`）或直接省略字段；\n2. **时间相关键名必须带单位**，且引擎内一律用 **tick**（如 `regenPerTick`、`cooldownTicks`），不用毫秒；\n3. 每组可带 **`formula`** 字段记录该组数值的计算公式，让**数值与公式同处一地**。\n\n**造诣是纯显示层**，由武功等级 + 实战经验推导，不产生任何门槛。",
+  "description": "引擎通过内容注册表取参数，零写死。本集合是各类**公式常数、上限、倍率**的唯一载体：改动它就能调平衡，不动引擎。\n\n**顶层键是结构**（spec/06 §6.1 的九类 + id，additionalProperties: false——写错类别键会被拦）；**组内键是调参**（保持开放：加参数 = 加 config 键，不动引擎；新增类别 = Schema 变更，走三处同步）。\n\n**配置三分法（docs/spec/06 §6）**——本文件只收 TUNING（数字）：\n- **STRUCTURE**（装配图：模块路径 / typeclass / cmdset）**不进这里**，用 `$ref` 指向内容；\n- **POLICY**（决策：权限层级、多会话模式、默认策略）另开 `content/config/policy.json`；\n- **TUNING**（数字）才放本文件。\n\n**三条硬规则**：\n1. **禁止用 `null` 表示「无限／无」** —— 用显式形态（如 `{\"unlimited\": true}`）或直接省略字段；\n2. **时间相关键名必须带单位**，且引擎内一律用 **tick**（如 `regenPerTick`、`cooldownTicks`），不用毫秒；\n3. 每组可带 **`formula`** 字段记录该组数值的计算公式，让**数值与公式同处一地**。\n\n**造诣是纯显示层**，由武功等级 + 实战经验推导，不产生任何门槛。",
   "type": "object",
   "required": ["id"],
-  "properties": {
-    "id": { "type": "string", "const": "settings" },
+  "properties": {    "id": { "type": "string", "const": "settings" },
     "combat": {
       "type": "object",
       "description": "战斗：减伤／闪避／抗性／内力／暴击的常数与倍率",
@@ -117,7 +116,7 @@
       "description": "节流：命令节流、移动冷却、防刷怪窗口"
     }
   },
-  "additionalProperties": { "$ref": "#/definitions/parameterGroup" },
+  "additionalProperties": false,
   "definitions": {
     "formula": {
       "type": "string",

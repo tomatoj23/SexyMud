@@ -6,8 +6,9 @@
 
 ```
 content/
-├── config/           # 结构性配置：activities、resources、dimensions、settings 等
-│                     #   （曲线、槽位、维度表、阈值——引擎零写死数量的载体）
+├── config/           # 结构性配置：dimensions、display-tiers、settings（维度表／
+│                     #   显示档位区间表／阈值与公式常数——引擎零写死数量的载体；
+│                     #   settings 顶层九类封闭，组内开放，见 spec/06 §6）
 │                     #   ⚠️ realms（境界序列）已随 ADR-0019 删除；造诣是纯显示层
 ├── effects/          # 效果定义：primitive 组合条目（武功/怪物/层主共用）
 ├── martial/          # 武功（招式 + 心法），字段 kind 区分

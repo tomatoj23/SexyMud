@@ -229,6 +229,46 @@ describe("content/rooms/ and content/npcs/ as loaded content", () => {
     expect(reversed.rooms).toEqual(forward.rooms);
     expect(reversed.npcs).toEqual(forward.npcs);
   });
+
+  it("keeps descriptions and placement lists corroborated (spec/03 §2, automated)", () => {
+    const registry = loadWorld();
+    // A mention implies presence: any entity whose NAME appears in a room's
+    // long description must be placed in that room. One direction only — a
+    // placed-but-unmentioned entity is discoverable by look, not a lie.
+    //
+    // Monster names are skipped when an npc references the monster: the npc
+    // is the placed persona, the monster its combat projection — 孙彪 in a
+    // description means the npc stands there, not a second body. Standalone
+    // monsters (no referencing npc) keep the check: a wolf named in prose
+    // must be in the placement list.
+    //
+    // Caveat kept deliberately: the matcher is a plain substring over names,
+    // so past-tense narration of an absent figure ("原是货郎落脚处") would
+    // fail here and force either a rewording or an explicit exception — the
+    // pack QA test tightens as real cases appear.
+    const referencedMonsterIds = new Set(
+      registry.npcs.flatMap((npc) => (npc.monsterId !== undefined ? [npc.monsterId] : [])),
+    );
+    const namedEntities = [
+      ...registry.npcs.map((npc) => ({ id: npc.id, name: npc.name })),
+      ...loadCollection<{ id: string; name: string }>("monster")
+        .filter((monster) => !referencedMonsterIds.has(monster.id))
+        .map((monster) => ({ id: monster.id, name: monster.name })),
+    ];
+    expect(namedEntities.length).toBeGreaterThan(0);
+
+    for (const room of registry.rooms) {
+      const placed = new Set((room.objects ?? []).map((placement) => placement.id));
+      for (const entity of namedEntities) {
+        if (room.description.includes(entity.name)) {
+          expect(
+            placed.has(entity.id),
+            `${room.id}'s description names "${entity.name}" (${entity.id}) — it must be placed there`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
 });
 
 describe("exits as commands through the real dispatch path (spec/02 §4)", () => {

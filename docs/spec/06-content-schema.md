@@ -42,15 +42,17 @@ corepack pnpm content:check
 - 自动发现 `content/` 下全部 JSON，按目录约定映射到 `schemas/`：
   - `content/<集合>/<条目>.json` → `schemas/<集合>.schema.json`
   - `content/config/<名>.json` → `schemas/config.<名>.schema.json`
-- **跨文件 `$ref` 已支持**（M1-T5）：管线启动时按 `$id` 预注册 `schemas/` 下全部 schema（注册 ≠ 编译），集合 schema 可互相引用（如 `commands.schema.json` → `condition.schema.json#/definitions/accessRules`）。仍只有被内容映射（或被已编译 schema `$ref`）的 schema 才会被编译——无内容的 schema 不因此失败。
+- **跨文件 `$ref` 已支持**（M1-T5）：管线启动时按 `$id` 预注册 `schemas/` 下全部 schema，集合 schema 可互相引用（如 `commands.schema.json` → `condition.schema.json#/definitions/accessRules`）。
+- **全部 schema 都会被编译**做 draft-07 合法性检查（2026-09-01 缺口清扫）：有内容映射者编译失败即硬失败（干净 INVALID，退出码 1）；无内容者的违规以 **WARN** 呈现、不阻塞——设计草稿随其集合落地时重估，warn 级信号好过不可见。Ajv 的日志级 strict 警告（如 strictTypes 联合类型）也统一走 WARN 前缀。
 - 退出码即结果
 
 ⚠️ **不得用 `npm run` 调用** —— 违反硬标准 3（ADR-0007）。
 
 ### 3.1 已知缺口
 
-- ~~只从 content 侧枚举，从不遍历 schemas/~~ —— **已修**：现会反向扫描并打印无内容可映射的 schema（报 NOTE，不失败）。**但这些 schema 仍不会被直接编译**（被 `$ref` 引用的除外——它会随消费者一起编译，如 `condition.schema.json` 经 `commands.schema.json`），所以无消费者的 schema 其中的 draft-07 违规在补齐内容前仍不会暴露
-- `config.settings.schema.json` 的 `additionalProperties: {}` 无约束，写错键名不会被拦
+- ~~只从 content 侧枚举，从不遍历 schemas/~~ —— **已修**：反向扫描并打印无内容可映射的 schema（NOTE，不失败）
+- ~~无内容 schema 从不被编译，draft-07 违规不可见~~ —— **已修**（2026-09-01 缺口清扫）：全部 schema 编译做合法性检查，无内容者违规 WARN 呈现。清扫首跑即揪出 `combat-text.schema.json` `dimensionRef` 的联合类型 strictTypes 警告（Ajv 日志级、不抛错、此前完全不可见），已记 HANDBOOK 待办随该集合重估
+- ~~`config.settings.schema.json` 顶层开放，写错类别键不会被拦~~ —— **已修**（2026-09-01 缺口清扫）：顶层九类封闭（`additionalProperties: false`，类别是结构，走三处同步）；组内保持开放（加参数 = 加 config 键，不动引擎）
 
 依据：ADR-0003、第三轮子代理审计
 
@@ -83,6 +85,8 @@ corepack pnpm content:check
 ### 6.1 `settings.json` 首发建议 9 类
 
 `combat` / `progression` / `derivedStats` / `economy` / `rng` / `caps` / `time` / `newPlayerDefaults` / `throttles`
+
+顶层键 = 这九类 + `id`，schema 已封闭（`additionalProperties: false`）——类别是**结构**（新增类别 = Schema 变更，三处同步），组内键是**调参**（保持开放）。
 
 ### 6.2 三条硬规则
 
