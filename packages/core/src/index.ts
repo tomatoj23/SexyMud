@@ -6,6 +6,26 @@
  * render GameEvents themselves. See docs/spec/00-overview.md.
  */
 export { SAVE_VERSION, migrateSnapshot } from "./save/migrations.js";
+export { createSeededRng } from "./rng.js";
+export { runCommand } from "./command/pipeline.js";
+export type {
+  CommandContext,
+  CommandDeps,
+  CommandSpec,
+  EventDraft,
+  Message,
+  MessageSink,
+  ParseOutcome,
+} from "./command/pipeline.js";
+export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
+export type {
+  CallOptions,
+  CallOutcome,
+  CommandHarness,
+  ExpectedMessage,
+  HarnessOptions,
+  TestClock,
+} from "./command/testing.js";
 export type {
   Authority,
   Clock,

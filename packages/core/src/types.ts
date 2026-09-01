@@ -61,10 +61,15 @@ export type DispatchFailure =
   | { kind: "invalid"; reason: string }
   | { kind: "transport"; reason: string };
 
+/**
+ * Dispatch outcome for one command. `seq` identifies which command this
+ * result answers (spec/01 §2.2): on `rejected` the seq IS consumed — an
+ * event carrying it was emitted — while on `invalid`/`transport` no event
+ * with that seq ever reaches the stream, so the caller knows it may reissue.
+ */
 export type CommandResult =
   | { ok: true; seq: number; events: GameEvent[] }
-  | ({ ok: false } & DispatchFailure);
-
+  | ({ ok: false; seq: number } & DispatchFailure);
 /**
  * A single engine occurrence.
  *
