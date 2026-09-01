@@ -98,19 +98,18 @@
 > ⚠️ **本节源自放置游戏时期，MUD 转向后已失准——不要据此排产。** MUD 化的排产见 `docs/spec/02-command-layer.md` 起。
 > - 优先级已变：**房间与人物先于秘境分层**——没有可走的世界就没有 MUD
 
-**明确不做**：知识/生活技能、换派偷师、招架/格挡、`itemLevel`（ADR-0008）、任务体系、独立 NPC 集合（ADR-0016）
+**明确不做**：知识/生活技能、换派偷师、招架/格挡（留 v2——出处 CONTEXT.md「闪避」条：命中判定两级，非 ADR-0008）、`itemLevel`（ADR-0008）、任务体系、独立 NPC 集合（ADR-0016）
 
 ## 当前状态
 
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；17 个测试文件 / 273 用例全绿
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；17 个测试文件 / 275 用例全绿
 - **Schema 18 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ `condition`（被引用库）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
 - **`content:check` 四道**：① Schema 校验（有内容者硬失败）② **已废概念门禁**（命中即失败）③ 无内容可映射 schema 的反向扫描 ④ **draft-07 合法性清扫**（全部 schema 编译；无内容者的违规 WARN 呈现不阻塞）
-- **`content:check` 三道**：① Schema 校验 ② **已废概念门禁**（命中即失败，清单见 `scripts/banned-terms.json`）③ 无内容可映射 schema 的反向扫描
 - 术语词典 / 文风指南 / 内容管线约定 / **28 个 ADR** 齐备；兽数据归 `beast/` 集合，获取走 sect `exchange` 贡献兑换
 
 ### 待办
@@ -129,7 +128,7 @@
 ### 下一步（M2）
 
 1. **M1 六张 tracer 票已全部关闭**（#1–#6）：命令测试骨架 → 中文解析器 → 条件表达式 → cmdset 合并栈 → commands/ 内容集合 → rooms/+npcs/ 世界集合 + 出口即命令
-2. **M2 已拆票**（ADR-0028 定形态）：~~实体运行时+移动全链路（tracer）~~（**#7 已关，6059e63**）→ ~~看~~（**#8 已关，4795ec8**）→ ~~说~~（**#9 已关，8ddfa86**）→ ~~接缝补全~~（**#10 已实现**：转移三配对 + creation 两层 + 动态 cmdset，合成驱动）→ 快照 v1（#11）→ 非武侠迷你包验收（#12，验收标准 2 首次机械化）；阻塞边：T1 → {T2,T3,T4,T5}，{T2,T3} → T6
+2. **M2 已拆票**（ADR-0028 定形态）：~~实体运行时+移动全链路（tracer）~~（**#7 已关，6059e63**）→ ~~看~~（**#8 已关，4795ec8**）→ ~~说~~（**#9 已关，8ddfa86**）→ ~~接缝补全~~（**#10 已关，083fa78**）→ 快照 v1（#11）→ 非武侠迷你包验收（#12，验收标准 2 首次机械化）；阻塞边：T1 → {T2,T3,T4,T5}，{T2,T3} → T6
 3. M3 ＝ 标签运行时 ＋ 原型继承（spec/03 §5–§6）；M4 ＝ 时间与调度（spec/04 §2–§4，战斗前夜）
 
 > **两条已绑定的验收条件**（不是待办，做对应动作时必须带上）：写折行器时**必须一次做对避头尾**（B8，`spec/05` §10）；写第一个输入组件时**必须处理 IME 合成**（G3，`spec/02` §8）。
