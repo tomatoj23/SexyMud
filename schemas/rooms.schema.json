@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rooms.schema.json",
+  "title": "房间（content/rooms/，每条目一文件）",
+  "description": "房间 = 空间层（spec/03 §1–§3；ADR-0016 §3、ADR-0021 §2），四要素齐备：出口图节点（每条出口是**独立实体**，方向 → 目标房间 id 的有向边）／描述文案（可内嵌实体存在的暗示，与放置清单互相印证）／放置清单（房间是内容容器，实体按 id 引用、数值不复制）／规则（门禁，拒绝文案也是内容）。出口把自己注册成命令：方向词（中文与英文缩写并列，如 [\"北\",\"north\",\"n\",\"往北走\"]）是它的 verbs，门禁与拒绝文案挂在它身上，归属命令集的优先级由内容声明（本内容包约定 +101，高于一切常规源，保证方向词**永远可用**，spec/02 §3/§4）。字段与引擎类型三处同步（spec/06 §4）：本文件 ／ packages/core/src/world/entry.ts ／ docs/agents/content.md 的房间集合节。",
+  "type": "object",
+  "required": ["id", "name", "description", "enterText", "exits"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^room-[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "如 room-lq-001（柳青镇房间 1）。命名 `<集合缩写>-<区域>-<序号>`（content.md）；id 一经发布不可变更，文件名 = 条目 id。"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "房间短名（标题，如「柳青镇镇口」）。"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "长描述（四要素·描述文案）：1~3 句，可内嵌实体存在的暗示——**描述里出现的元素必须真的在 objects 放置清单里**（文本与数据互相印证，spec/03 §2；自动校验是另一待办，当前手工对齐）。须遵守 content/style-guide.md。"
+    },
+    "enterText": {
+      "type": "string",
+      "minLength": 1,
+      "description": "进入文本（ADR-0021 §2）：踏入房间时的叙述，与可反复查看的长描述分工；第二人称「你」起句，须遵守 style-guide。"
+    },
+    "exits": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/exit" },
+      "description": "出口图（四要素·出口图节点）：方向 → 目标房间的有向边集合。每条出口是独立实体：有自己的 id（全局唯一，即分发键）、verbs、门禁与拒绝文案，且声明自己的命令集归属与优先级。同一房间内 direction 不得重复（注册表校验——方向是边的键）；死端房间显式写 \"exits\": []。"
+    },
+    "objects": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/placement" },
+      "description": "放置清单（四要素·放置清单）：房间是内容容器。每项 = 实体 id + 数量；id 引用 npcs/monster/（未来物品等）条目，同一房间内不得重复放置同一 id，注册表校验引用存在性。可省略（空房间）。"
+    },
+    "preconditions": {
+      "$ref": "condition.schema.json#/definitions/accessRules",
+      "description": "房间规则（四要素·规则）：房间自身的门禁映射。**房间集合的 accessType 词汇表：enter**（进入；出口上的门禁是 traverse，两者分工：出口管离开本房间的那一步，房间规则管从任何路径踏入本房间）。省略本字段 = 无门禁。"
+    },
+    "zoneId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "秘境归属（规则层 dungeon/ 与空间层 rooms/ 靠此字段关联，ADR-0016 §3；归属字段化，不做目录分层）。野外/村落房间省略。注册表不校验其存在性（dungeon 集合未落地，落地时补）。"
+    }
+  },
+  "patternProperties": {
+    "^err_[a-z][a-z0-9-]*$": {
+      "type": "string",
+      "minLength": 1,
+      "description": "拒绝文案：键名 = err_ + accessType（「enter」门拒绝读 err_enter；默认门拒绝读 err_default）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。可整体省略（渲染层回退通用文案），但写了就必须非空。房间集合现用词汇表只有 err_enter 与 err_default。"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "exit": {
+      "type": "object",
+      "description": "出口：独立实体（不是房间的普通字段，spec/02 §4），它把自己注册成命令。字段 = 命令条目形态（verbs/argForm/cmdset/priority/mergetype/preconditions/err_*，三处同步同 commands.schema.json）+ 边字段（direction/targetRoomId）。引擎侧类型 ExitEntry extends CommandEntry（packages/core/src/world/entry.ts），经 commandSetSources 分组、commandSpecFromEntry 装配，与命令走同一条路。",
+      "required": ["id", "direction", "targetRoomId", "verbs", "argForm", "cmdset", "priority"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^exit-[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "出口 id，**全局唯一**（它即分发键：动词表把方向词映射到它，commandRefused 事件以它为 commandKey 供渲染层回头查拒绝文案）。建议 `exit-<房间区域段>-<房间序号>-<方向>`（如 exit-lq-003-north）。"
+        },
+        "direction": {
+          "type": "string",
+          "minLength": 1,
+          "description": "边的方向标签（方向 → 目标房间的有向边之「方向」），同一房间内不得重复（注册表校验）。本内容包约定取值：北/南/东/西/上/下/进/出（与 verbs 中的中文方向词一致）；不写成枚举——变体方向（东北）不该要求改 schema。"
+        },
+        "targetRoomId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "目标房间 id（有向边的终点）。注册表校验其存在——悬空的边在加载期即抛错。"
+        },
+        "verbs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "方向词（出口命令的触发动词）：**中文与英文缩写并列**，如 [\"北\",\"north\",\"n\",\"往北走\"]——中文是主入口，英文缩写服务老玩家肌肉记忆，长短语（往北走）与单词（北）可共存（解析按最长动词匹配）。"
+        },
+        "argForm": {
+          "enum": ["none"],
+          "description": "出口命令无参数——方向词本身即是完整命令（与引擎 ArgForm 枚举同步，出口集合只取 none；将来出现带参方向命令再扩展，三处同步）。"
+        },
+        "cmdset": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "归属命令集（合并源名，本内容包约定：exits）。同一 cmdset 的全部出口必须声明一致的 priority 与 mergetype（合并规则属于集）；commandSetSources 分组时对不一致抛错。"
+        },
+        "priority": {
+          "type": "integer",
+          "description": "命令集合并优先级：升序合并、高者后合并压在上面。本内容包约定出口源用高于一切常规源的值（+101），下方任何源都无法遮蔽或滤掉方向词——「永远可用」的机制（spec/02 §3.1）。"
+        },
+        "mergetype": {
+          "enum": ["Union", "Intersect", "Replace", "Remove"],
+          "description": "命令集合并算子（默认 Union，可省略）。与同一 cmdset 的其余出口一致。"
+        },
+        "preconditions": {
+          "$ref": "condition.schema.json#/definitions/accessRules",
+          "description": "出口门禁：**挂在出口上**（spec/03 §3），拒绝文案是内容字段。出口集合的 accessType 词汇表：**traverse**（通行；宿主装配时以 commandSpecFromEntry(exit, { accessType: \"traverse\", func }) 传入）。省略 = 无门禁。"
+        }
+      },
+      "patternProperties": {
+        "^err_[a-z][a-z0-9-]*$": {
+          "type": "string",
+          "minLength": 1,
+          "description": "拒绝文案：键名 = err_ + accessType（「traverse」门拒绝读 err_traverse；默认门拒绝读 err_default）。可省略，但写了就必须非空；须遵守 style-guide（第二人称「你」、古典白话）。出口集合现用词汇表只有 err_traverse 与 err_default。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "placement": {
+      "type": "object",
+      "description": "放置清单项：实体 id → 数量（spec/03 §2）。数组形态（而非对象映射）：保留顺序确定性（ADR-0024 §2），且每项可扩展（将来的按放置条件）；同一 id 在同一房间只出现一次。",
+      "required": ["id", "count"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "被放置实体的条目 id（npcs/monster/…）。注册表校验存在性——放置一个不存在的实体在加载期即抛错。"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "数量（同种实体多只，如两个山贼）；最小 1，放置 0 只无意义。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

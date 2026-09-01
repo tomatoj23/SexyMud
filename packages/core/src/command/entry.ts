@@ -70,6 +70,9 @@ export interface CommandEntry {
 /**
  * Groups command entries into cmdset merge sources (spec/02 §3): every entry
  * of one cmdset becomes that source's command payload, in input order.
+ * Exits group through here unchanged (each room's exits are one such list —
+ * an exit IS a command whose cmdset, per the pack's convention, sits above
+ * every regular source).
  *
  * Merge rules belong to the command set, not to a single command, so entries
  * sharing a cmdset must agree on priority and mergetype (an explicit "Union"
@@ -152,6 +155,11 @@ export interface CommandSpecOptions<W = unknown> {
  * Builds the pipeline-facing spec from a content entry: id becomes the
  * dispatch key, argForm drives the parse stage, preconditions become the
  * access gate checked before at_pre_cmd (spec/02 §5.5).
+ *
+ * Exits flow through here too (spec/02 §4): an exit IS a command — ExitEntry
+ * extends CommandEntry — so the same adapter assembles it, with the host
+ * asking the exit collection's accessType ("traverse" per content.md) and
+ * injecting the traversal behaviour.
  *
  * The behaviour half (func) is injected: an entry alone is data, not
  * executable. Hosts needing the other pipeline hooks (at_pre_cmd, custom

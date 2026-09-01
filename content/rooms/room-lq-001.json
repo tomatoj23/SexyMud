@@ -1,0 +1,18 @@
+{
+  "id": "room-lq-001",
+  "name": "柳青镇镇口",
+  "description": "官道到此收窄，化作一条青石街。道旁几株老槐浓荫匝地，树影里货郎守着担子打盹，北面街市的人声隐隐可闻。",
+  "enterText": "你行至柳青镇口，脚下官道化作青石街面。",
+  "exits": [
+    {
+      "id": "exit-lq-001-north",
+      "direction": "北",
+      "targetRoomId": "room-lq-002",
+      "verbs": ["北", "north", "n", "往北走"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ],
+  "objects": [{ "id": "npc-lq-001", "count": 1 }]
+}

@@ -127,9 +127,10 @@ TerminalView 实现                   style-guide.md（文风约束）
 | 条件表达式：递归求值器 + 谓词注册表 + 门禁映射（M1-T3） | ✅ **已落**（`packages/core/src/conditions.ts` + `schemas/condition.schema.json`） |
 | 命令集合并栈：多源合并 + 四种 mergetype（M1-T4） | ✅ **已落**（`packages/core/src/command/cmdset.ts`） |
 | commands/ 内容集合 + `ContentRegistry`（M1-T5） | ✅ **已落**（`schemas/commands.schema.json` + `content/commands/` 首批 4 条 + `command/entry.ts` + `content/registry.ts`；加命令 = 加 JSON 文件） |
-| 世界模型、MUD 状态模型、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
-| 14 个 schema | ⚠️ 放置期设计，需随本规格重估 |
+| rooms/ + npcs/ 世界集合 + 出口即命令（M1-T6） | ✅ **已落**（`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 柳青镇首批内容（4 房间／3 人物／1 怪物）+ `world/entry.ts`（`ExitEntry extends CommandEntry`）+ 注册表加载期引用完整性；「北」经合并栈→动词表→`call()` 全链路跑通，门禁拒绝文案来自内容 JSON） |
+| 世界模型实体运行时（移动 hook 九项等）、MUD 状态模型、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
+| 14 个 schema | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做） |
 
 **下一步**：按§文档地图，从 `02-command-layer.md` 开始生长。每完成一个子系统，跑该文件末尾的自检清单。
 
-> 引擎源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`rng.ts`、`save/migrations.ts`、`command/pipeline.ts`（四段管线 + access 门禁）、`command/testing.ts`（测试骨架）、`command/parser.ts`（中文解析器）、`command/cmdset.ts`（命令集合并栈）、`command/entry.ts`（命令内容契约：条目 → 源 → spec）、`content/registry.ts`（ContentRegistry）、`conditions.ts`（条件求值与谓词注册表）。这是刻意的——**先定契约，再长能力**。
+> 引擎源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`rng.ts`、`save/migrations.ts`、`command/pipeline.ts`（四段管线 + access 门禁）、`command/testing.ts`（测试骨架）、`command/parser.ts`（中文解析器）、`command/cmdset.ts`（命令集合并栈）、`command/entry.ts`（命令内容契约：条目 → 源 → spec）、`world/entry.ts`（世界内容契约：房间／出口／人物条目，出口即命令）、`content/registry.ts`（ContentRegistry）、`conditions.ts`（条件求值与谓词注册表）。这是刻意的——**先定契约，再长能力**。

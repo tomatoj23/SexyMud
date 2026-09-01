@@ -1,6 +1,6 @@
 # 02 · 命令层
 
-> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§2 命令是内容**已实现**（M1-T5：`schemas/commands.schema.json` + `content/commands/` 首批条目 + `CommandEntry`／`commandSetSources`／`commandSpecFromEntry`（`packages/core/src/command/entry.ts`）+ `ContentRegistry`（`packages/core/src/content/registry.ts`））；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余**待实现**（M1-T6）。
+> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§2 命令是内容**已实现**（M1-T5：`schemas/commands.schema.json` + `content/commands/` 首批条目 + `CommandEntry`／`commandSetSources`／`commandSpecFromEntry`（`packages/core/src/command/entry.ts`）+ `ContentRegistry`（`packages/core/src/content/registry.ts`））；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§4 出口即命令**已实现**（M1-T6：`ExitEntry extends CommandEntry`（`packages/core/src/world/entry.ts`）+ `schemas/rooms.schema.json` 出口子实体 + 首批内容经注册表走全链路）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余（§6 玩家层别名、§7 意图、§8 IME）**待实现**。
 > **依据**：ADR-0016 §2、ADR-0021 §1/§2/§4、ADR-0024 §1/§3、ADR-0022 §2（经 **ADR-0024 §8** 修正）、ADR-0025 §六。
 > （注：ADR-0024 的 **§7 修正的是 ADR-0022 §3**（原型继承），**§8 修正的是 ADR-0022 §2**（条件表达式）。本文件只涉及后者。）
 
@@ -86,6 +86,14 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 - 门禁挂在出口上，**拒绝文案是内容字段**
 - 中文 MUD 要点：方向词必须支持中文（北／南／东／西／上／下／进／出）与英文缩写并列
 
+### 4.1 落地形态（M1-T6）
+
+- **出口 = 命令 + 边**：引擎类型 `ExitEntry extends CommandEntry`（`packages/core/src/world/entry.ts`）——出口携带全套命令字段（verbs／argForm（恒 `none`）／cmdset／priority／mergetype／preconditions／`err_*`），另加 `direction`（边的方向标签，同房内唯一）与 `targetRoomId`。出口经**同一条装配路径**进入分发：`commandSetSources(exits)` 分组、`commandSpecFromEntry(exit, { accessType: "traverse", func })` 装配（穿行行为由宿主注入）。
+- **「永远可用」是数据**：出口自声明 cmdset（本包约定 `exits`）与优先级（**+101**，高于一切常规源）——机制即 §3.1 的合并顺序（最后合并、无人能遮蔽），引擎零魔法数。
+- **门禁与文案**：出口 `preconditions`（`condition.schema.json#/definitions/accessRules`）词汇表 **traverse**；拒绝时 `commandRefused` 事件带 `commandKey`（= 出口 id）+ `errKey`（`err_traverse`／`err_default`），渲染层经 `registry.exit(id)` 回头取文案——事件绝不含已渲染文本（§5.4）。
+- **注册表完整性**（`packages/core/src/content/registry.ts`）：出口 id 全局唯一（重复抛错）、同房 direction 不得重复、`targetRoomId` 必须解析到已加载房间——悬空的边在加载期即败。
+- **首批内容**：`content/rooms/` 柳青镇 4 房间（镇口→街市→客栈大堂→后院），大堂北出口带 `has_flag inn-lodger` 门禁 + `err_traverse` 文案，后院房间带 `default: false` 的 enter 门禁（缺省拒绝 + 住客例外，spec/03 §2 的「规则」要素实例）；全链路测试 `packages/core/tests/world-content.test.ts`（「北」/「n」/「north」/「往北走」均分发到出口命令；无旗标被拒、文案来自 JSON；低优先级 Remove 滤不掉方向词）。
+
 依据：ADR-0021 §2、ADR-0024 记录
 
 ## 5. 前置条件：JSON 递归表达式
@@ -157,7 +165,7 @@ Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只�
 - [x] 别名按**长度降序**匹配（M1-T2 已落：长度降序 + 字典序，跨进程稳定）
 - [x] 引擎源码里搜不到任何动词（动词全在 `content/commands/`）——src 侧由 `engine-purity` 文法字符集守卫，内容侧 M1-T5 已落：动词经注册表→合并栈→动词表进入分发，引擎零动词
 - [x] 命令集是**多源合并**，不是单表查询（M1-T4 已落：`cmdset.ts` 纯函数折叠，四种 mergetype，合并产物即动词表来源）
-- [ ] 出口是**独立实体**，方向词是它的 `verbs`，优先级最高——引擎侧 +101 永远可用的机制已随 M1-T4 落地，出口实体化待 M1-T6
+- [x] 出口是**独立实体**，方向词是它的 `verbs`，优先级最高（M1-T6 已落：`ExitEntry extends CommandEntry`，经同一合并栈与装配路径进入分发；+101 与 cmdset 名是内容数据，引擎零魔法数）
 - [x] 条件表达式 schema **允许递归嵌套**（M1-T3 已落：`schemas/condition.schema.json`，`$ref` 自引用无深度限制）
 - [x] 外层是 `Map<accessType, expr>` 且有 `default`（M1-T3 已落：`#/definitions/accessRules` + `checkAccess`）
 - [x] 拒绝文案 `err_*` 是数据字段，不是引擎字符串（M1-T3 已落：事件携带 `errKey`，文案在条目数据，引擎零文案；M1-T5 首批条目含 `err_use` 实例）

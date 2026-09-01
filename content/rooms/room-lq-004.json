@@ -1,0 +1,24 @@
+{
+  "id": "room-lq-004",
+  "name": "迎宾客栈后院",
+  "description": "院里晾着几竿衣裳，墙根码着柴禾。护院孙彪在廊下打拳，拳风带得绳上衣裳猎猎作响；南面的木门便是大堂。",
+  "enterText": "你穿过木门走进后院，拳风扑面。",
+  "preconditions": {
+    "default": false,
+    "enter": { "has_flag": "inn-lodger" }
+  },
+  "err_enter": "你刚要跨进后院，门内传来掌柜的声音：客官，后院只供住店客人出入。",
+  "exits": [
+    {
+      "id": "exit-lq-004-south",
+      "direction": "南",
+      "targetRoomId": "room-lq-003",
+      "verbs": ["南", "south", "s", "往南走"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ],
+  "objects": [{ "id": "npc-lq-003", "count": 1 }]
+}
+

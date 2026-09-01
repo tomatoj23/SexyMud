@@ -22,7 +22,7 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema（**14 个**；`config` 拆 3 类：dimensions / display-tiers / settings）；`content/` 现有 **3 个 config JSON**，均通过校验 | 🚧 `commands` / `rooms` / `npcs` 的 schema 待 M1 补；其余 11 个集合随内容落地启用 |
+| `schemas/` | JSON Schema（**18 个**；`config` 拆 3 类：dimensions / display-tiers / settings；`condition` 是被引用库）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 其余 11 个集合 schema 随内容落地启用（`monster.schema.json` 已进编译但重估未做） |
 | `docs/research/xkx100-*.md` | **一手调研**：房间/NPC/物品/任务结构、武功体系、**战斗文本模板与 50 档造诣完整列表** | 参考（高价值） |
 
 **冲突处置顺序**：**`docs/spec/`（活规格，最高）** > `CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/`（决策历史）> `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
@@ -104,9 +104,10 @@
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 入口 / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；2 个测试文件 / 9 用例（引擎纯度、存档迁移）
-- **Schema 14 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ 11 个集合
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；12 个测试文件 / 185 用例全绿
+- **Schema 18 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ `condition`（被引用库）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`
+- **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
 - **`content:check` 三道**：① Schema 校验 ② **已废概念门禁**（命中即失败，清单见 `scripts/banned-terms.json`）③ 无内容可映射 schema 的反向扫描
 - 术语词典 / 文风指南 / 内容管线约定 / **27 个 ADR** 齐备；兽数据归 `beast/` 集合，获取走 sect `exchange` 贡献兑换
 
@@ -115,17 +116,18 @@
 | 项 | 说明 |
 |---|---|
 | 🚧 `content/` 其余集合 | 待生产（issue #17）。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
-| 🚧 `commands` / `rooms` / `npcs` schema | 待 M1 补 |
+| 🚧 世界模型实体运行时 | 移动 hook 九项／容器／可见性（spec/03 §5–§7）；房间与人物已以内容形态落地（M1-T6），运行时待后续票 |
+| 🚧 描述与放置清单自动对齐校验 | M1-T6 首批内容手工对齐；自动校验是另一待办 |
 | 🚧 `content:check` 交叉引用 / 连通性校验 | issue #3 |
+| 🚧 `monster.schema.json` 重估 | 已随 `mon-lq-001` 进入编译，但仍是放置期设计，需随秘境票重估 |
 | 🚧 中文清单待定 5 条 | A6 全角标点归一化 / B9 中英空格 / C5 四字格 / D4 模糊命令建议 / G6 宿主侧存档编码。**均不因推迟而变贵**。✅ D1 已定（拼音序，仅呈现层） |
 | 🚧 中文清单 G 组待评估 5 条 | G1 中文数词 / G2 重名与视觉混淆 / G4 字体栈 / G5 简繁体 / G7 中文进 URL |
 | ⏸ 奇遇形态 | 未定（`event/` 仅有最小骨架；形态未定的概念不进术语表） |
 
-### 下一步（M1）
+### 下一步（M1 后）
 
-1. **搭命令测试骨架**（ADR-0023 §1）——起点 `docs/spec/02-command-layer.md`
-2. **自研中文解析器**（最长动词匹配；Evennia 按空格分词，中文照抄不了）
-3. **`commands/` `rooms/` `npcs/` 三个集合** + schema 三处同步（core 类型／编辑器／`content.md`）
+1. **M1 六张 tracer 票已全部关闭**（#1–#6）：命令测试骨架 → 中文解析器 → 条件表达式 → cmdset 合并栈 → commands/ 内容集合 → rooms/+npcs/ 世界集合 + 出口即命令
+2. 按文档地图生长：世界模型实体运行时（spec/03 §5–§7，移动 hook 九项）与状态/时间（spec/04）
 
 > **两条已绑定的验收条件**（不是待办，做对应动作时必须带上）：写折行器时**必须一次做对避头尾**（B8，`spec/05` §10）；写第一个输入组件时**必须处理 IME 合成**（G3，`spec/02` §8）。
 

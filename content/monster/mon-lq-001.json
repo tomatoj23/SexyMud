@@ -1,0 +1,12 @@
+{
+  "id": "mon-lq-001",
+  "name": "孙彪",
+  "role": "普通",
+  "stats": {
+    "maxHp": 140,
+    "attack": 15,
+    "externalDefense": 6,
+    "dodge": 0.05
+  },
+  "description": "护院孙彪出手便是外家硬功，拳拳带着风声。"
+}

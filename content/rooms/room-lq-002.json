@@ -1,0 +1,26 @@
+{
+  "id": "room-lq-002",
+  "name": "柳青镇街市",
+  "description": "街不宽，两旁铺面挤挤挨挨，幌子在风里来回摆动。西面一面酒旗斜挑，那便是迎宾客栈；南面街口老槐的影子拉得老长。",
+  "enterText": "你走进柳青镇街市，市声盈耳。",
+  "exits": [
+    {
+      "id": "exit-lq-002-south",
+      "direction": "南",
+      "targetRoomId": "room-lq-001",
+      "verbs": ["南", "south", "s", "往南走"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    },
+    {
+      "id": "exit-lq-002-west",
+      "direction": "西",
+      "targetRoomId": "room-lq-003",
+      "verbs": ["西", "west", "w", "往西走"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ]
+}

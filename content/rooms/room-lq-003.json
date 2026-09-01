@@ -1,0 +1,32 @@
+{
+  "id": "room-lq-003",
+  "name": "迎宾客栈大堂",
+  "description": "堂中八仙桌椅擦得锃亮，柜上酒坛排成一列。掌柜的立在柜台后拨算盘，眼皮也不抬；北面一道木门通向后院，门上挂着小牌：客人止步。",
+  "enterText": "你掀帘进了迎宾客栈，酒菜香气扑面而来。",
+  "exits": [
+    {
+      "id": "exit-lq-003-east",
+      "direction": "东",
+      "targetRoomId": "room-lq-002",
+      "verbs": ["东", "east", "e", "往东走"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    },
+    {
+      "id": "exit-lq-003-north",
+      "direction": "北",
+      "targetRoomId": "room-lq-004",
+      "verbs": ["北", "north", "n", "往北走"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101,
+      "preconditions": {
+        "default": true,
+        "traverse": { "has_flag": "inn-lodger" }
+      },
+      "err_traverse": "掌柜的笑着拦住你：客官，后院是住店客人去处，打尖的客人请堂中坐。"
+    }
+  ],
+  "objects": [{ "id": "npc-lq-002", "count": 1 }]
+}

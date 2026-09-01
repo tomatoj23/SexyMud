@@ -35,7 +35,7 @@ assets/               # 美术资产（MVP 允许为空）
 └── portraits/<集合>/<id>.png
 ```
 
-> ⚠️ `rooms/` `npcs/` 是 ADR-0016（2026-09-01）新增的两个集合，**Schema 与 id 规则尚未定稿（M1 工作）**。**定稿前不得写入条目**——否则绕开 `content:check` 硬门禁，属违规。`commands/` **已定稿**（M1-T5，`schemas/commands.schema.json`），字段约定见下文「命令集合」节。
+> `commands/` **已定稿**（M1-T5，`schemas/commands.schema.json`），字段约定见下文「命令集合」节；`rooms/` 与 `npcs/` **已定稿**（M1-T6，`schemas/rooms.schema.json` ／ `schemas/npcs.schema.json`），字段约定见下文「房间集合」「人物集合」两节。`monster/` 已随 M1-T6 落入首条内容（`mon-lq-001`，schema 仍属放置期设计、待随秘境票重估）。
 
 ## 硬性规则
 
@@ -71,6 +71,40 @@ assets/               # 美术资产（MVP 允许为空）
 - `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。
 
 引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands })`（重复 id 抛错）→ `commandSetSources(registry.commands)`（按 cmdset 分组）→ `mergeCmdSets` → `verbEntries()` 即动词表。**引擎 src/ 永不 import 内容 JSON**。
+
+## 房间集合（content/rooms/，M1-T6 已定稿）
+
+每间房间一个 JSON 文件（文件名 = id），**四要素齐备**（spec/03 §2）。字段（`schemas/rooms.schema.json` ／ 引擎 `RoomEntry`／`ExitEntry`／`PlacementEntry`（`packages/core/src/world/entry.ts`）与本节三处同步）：
+
+- `id`：`room-<区域>-<序号>`（如 `room-lq-001`，柳青镇房间 1）。
+- `name`：房间短名（标题）。
+- `description`：长描述（1~3 句）——**描述里出现的元素必须真的在 `objects` 放置清单里**（文本与数据互相印证；自动校验是另一待办，当前手工对齐）。
+- `enterText`：进入文本（踏入时的叙述，与可反复查看的长描述分工）。
+- `exits[]`：**出口表——每条出口是独立实体，不是房间的普通字段**（spec/02 §4）。它把自己注册成命令，因此带全套命令字段 + 两个边字段：
+  - `id`：`exit-<区域>-<房间序号>-<方向>`（如 `exit-lq-003-north`），**全局唯一**（即分发键；`commandRefused` 事件以它为 commandKey 供渲染层回头查拒绝文案）。
+  - `direction`：方向标签（本包约定：北/南/东/西/上/下/进/出），同一房间内不得重复（注册表校验——方向是边的键）。
+  - `targetRoomId`：目标房间 id（注册表校验存在性）。
+  - `verbs[]`：方向词，**中文与英文缩写并列**（如 `["北","north","n","往北走"]`）。
+  - `argForm`：恒为 `"none"`——方向词本身即是完整命令。
+  - `cmdset` + `priority`（+ `mergetype` 可省略）：本包约定出口集 `exits`、优先级 **+101**（高于一切常规源，方向词永远可用；机制 = 合并顺序，数值是数据）。
+  - `preconditions`：出口门禁（`accessRules`）。**房间/出口集合的 accessType 词汇表：`enter`（房间自身）/ `traverse`（出口）**——出口装配用 `commandSpecFromEntry(exit, { accessType: "traverse", func })`。
+  - `err_traverse`／`err_default`：出口拒绝文案。
+- `objects[]`：放置清单（房间是内容容器）：每项 `{ "id": <实体id>, "count": <数量≥1> }`；id 引用 npcs/monster/（未来物品等），同一房间内同一 id 只出现一次，注册表校验存在性。空房间可省略。
+- `preconditions` + `err_enter`／`err_default`：房间自身门禁（进入）与拒绝文案，可省略。
+- `zoneId`：秘境归属（关联 `dungeon/`，规则层与空间层分工）；野外/村落房间省略。
+
+引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands, rooms, npcs, monsters })`（悬空 targetRoomId／放置 id／monsterId、重复 exit id／同房重复方向，全部加载期抛错）→ 按角色所在地取 `registry.room(id).exits` → `commandSetSources(exits)` 并入合并栈（出口源最后合并、压在最上）→ `commandSpecFromEntry(exit, { accessType: "traverse", func })` 装配（func = 穿行行为，宿主注入）。
+
+## 人物集合（content/npcs/，M1-T6 已定稿）
+
+每个人物一个 JSON 文件（文件名 = id）。**人物回答「是谁」，怪物回答「多能打」**（spec/03 §4）：战斗数值一律引用 `monster/`，本集合 schema 无任何战斗数值字段的容身之处（`additionalProperties: false`）。字段（`schemas/npcs.schema.json` ／ 引擎 `NpcEntry` 与本节三处同步）：
+
+- `id`：`npc-<区域>-<序号>`（如 `npc-lq-001`）。
+- `name`：外观称呼（玩家所见所指，如「掌柜的」）。
+- `description`：叙事描述（1~3 句，回答「是谁」），遵守 style-guide。
+- `monsterId`：**可省略**。战斗数值引用（`mon-…` 条目 id）——声明即「可触发战斗」，省略即非战斗人物（店家、路人）；注册表校验引用存在性。**绝不在此复制任何战斗数值**。
+
+人物站在哪里由**房间的放置清单**决定（房间是内容容器），条目自身不带位置。
 
 命名语汇（写内容时必须遵守，详见 `CONTEXT.md`）：
 

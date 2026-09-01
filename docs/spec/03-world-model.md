@@ -1,6 +1,6 @@
 # 03 · 世界模型
 
-> **状态**：全部**待实现**。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；§5–§7（标签运行时、原型继承、实体 hook）**待实现**——房间与人物先以内容形态落地，实体运行时（移动 hook 等）是后续票。
 > **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、xkx100 调研。
 
 ## 1. 集合划分
@@ -33,11 +33,19 @@
 - 独立实体，**不是房间的字段**（见 `02-command-layer.md` §4）
 - 门禁与拒绝文案挂在出口上
 
+### 3.1 落地形态（M1-T6）
+
+出口以**命令实体 + 有向边**的形态落地：`ExitEntry extends CommandEntry`（方向词是它的 verbs、门禁与 `err_traverse` 文案挂在它身上、自声明 cmdset `exits` 与优先级 +101），另带 `direction`（同房唯一）与 `targetRoomId`（注册表校验解析）。出口文件物理上住在房间条目的 `exits[]` 数组里，但**身份是全局的**（exit id 即分发键，`registry.exit(id)` 可查）。落地细节见 `02-command-layer.md` §4.1。
+
 ## 4. 人物 vs 怪物
 
 - **人物**回答「是谁」，**怪物**回答「多能打」
 - 人物引用 `monsterId`，**不复制数值**——避免双处维护
 - **NPC 敬称随玩家的造诣档位变化**（后生 → 少侠 → 前辈…），敬称是一张内容表条目，不是引擎逻辑。依据：ADR-0020 §4（社会层反馈）
+
+### 4.1 落地形态（M1-T6）
+
+`schemas/npcs.schema.json` ＋ 引擎 `NpcEntry`（`packages/core/src/world/entry.ts`）：人物只带 `id`／`name`／`description`（回答「是谁」）与可选 `monsterId`（战斗数值引用）——**schema 上没有任何战斗数值字段的容身之处**（`additionalProperties: false`），「不复制」是结构性保证而非约定。是否可触发战斗 = 是否声明 `monsterId`；首批三人物中店家与货郎无之、护院孙彪引用 `mon-lq-001`（注册表校验引用存在性）。人物自身不带位置——站在哪里由房间放置清单决定（房间是内容容器）。敬称档位表待社会层票。
 
 ## 5. 标签纪律
 
@@ -98,10 +106,10 @@
 
 ## 8. 自检清单
 
-- [ ] 房间四要素齐全（出口图 / 描述 / 放置清单 / 规则）
-- [ ] 出口是独立实体，方向词是它的命令
-- [ ] 人物引用怪物数值，**没有复制**
-- [ ] 标签**不带值**；归属用字段不用目录分层
+- [x] 房间四要素齐全（出口图 / 描述 / 放置清单 / 规则）——M1-T6 已落：schema 承载四要素（规则 = 房间 `preconditions`（enter）+ 出口门禁），首批内容全部具实
+- [x] 出口是独立实体，方向词是它的命令（M1-T6 已落：`ExitEntry extends CommandEntry`，`02-command-layer.md` §4.1）
+- [x] 人物引用怪物数值，**没有复制**（M1-T6 已落：npcs schema 结构性禁止战斗数值字段，`monsterId` 引用经注册表校验）
+- [ ] 标签**不带值**；归属用字段不用目录分层（schema 侧随各集合落地时执行；`(key, category)` 倒排索引是运行时能力，待实体系统）
 - [ ] 原型合并：`attrs`/`tags` 互补，其余整体替换
 - [ ] `content:check` 有**原型环检测**
 - [ ] `prototypeKey` 不参与继承
