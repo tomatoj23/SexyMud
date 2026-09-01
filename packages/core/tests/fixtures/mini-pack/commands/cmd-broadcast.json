@@ -1,0 +1,7 @@
+{
+  "id": "cmd-broadcast",
+  "verbs": ["通话", "广播", "broadcast"],
+  "argForm": "text",
+  "cmdset": "character",
+  "priority": 0
+}

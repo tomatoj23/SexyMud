@@ -1,0 +1,18 @@
+{
+  "id": "room-orb-001",
+  "name": "对接舱",
+  "description": "环形舱壁下排着一列系缆桩，靠泊灯把舱内照成淡青色。一台巡检机器人在桩间慢慢滑行，机械臂挨个敲听缆桩的回声。",
+  "enterText": "你穿过气密门滑进对接舱，呼出的白雾在冷光里散开。",
+  "exits": [
+    {
+      "id": "exit-orb-001-fore",
+      "direction": "前",
+      "targetRoomId": "room-orb-002",
+      "verbs": ["前", "fore", "f"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ],
+  "objects": [{ "id": "npc-orb-001", "count": 1 }]
+}

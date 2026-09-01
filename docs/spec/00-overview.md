@@ -91,7 +91,7 @@ TerminalView 实现                   style-guide.md（文风约束）
 ## 三条验收标准（可测）
 
 1. **题材中立**：引擎源码搜不到任何题材词。→ 已有纯度测试，**已达标**。
-2. **换内容不改代码**：换一套非武侠内容包，引擎不改一行代码即可运行。→ **待验证**（见下文"当前状态"）。
+2. **换内容不改代码**：换一套非武侠内容包，引擎不改一行代码即可运行。→ **已机械验证**（`packages/core/tests/mini-content-pack.test.ts` + `packages/core/tests/fixtures/mini-pack/`：非武侠迷你包经**同一装配路径**跑通走／看／说，含门禁拒绝路径；柳青镇与迷你包两套夹具在同一测试文件族中共存且互不渗漏）。
 3. **中文无损**：中文输入、显示、折行、检索在**所有端**（Web／小程序／APK）一致且正确。→ 待实现。
 
 ## 文档地图（怎么读）
@@ -133,6 +133,7 @@ TerminalView 实现                   style-guide.md（文风约束）
 | 说行为：`at_msg_receive` + say 出厂适配器（M2-T3） | ✅ **已落**（`world/message.ts`：`broadcastMessage` 逐接收者投递原语——`at_msg_receive` 显式 false 仅屏蔽该接收者，`fromEntityId`（fromObj）可空（系统消息路径）；`world/say.ts`：`say` 编排（`at_pre_say` 可否决 → 广播（说者含在接收者内）→ `at_post_say`）+ `saySpec` 绑定 `cmd-say` 经 `call()` 全链路；`say` 事件＝speakerId／text／locationId，零已渲染文本，文本为玩家输入原样透传（会话数据非渲染叙事）；`tests/say-behavior.test.ts`） |
 | 接缝补全：转移配对 + creation 两层 + 动态 cmdset（M2-T4） | ✅ **已落**（`world/transfer.ts`：`getObject`／`giveObject`／`dropObject`——`at_pre_get/give/drop` 行为级否决包 `moveTo` 外（先于移动链）+ `at_post_*` 配对，give 三方否决（被给实体＋给者＋收者），moveType 随播报；`world/creation.ts`：`createObject` 两层——`at_object_creation` 代码默认值 → `at_object_post_creation` JSON 内容覆盖，顺序即契约；`world/cmdset.ts`：`assembleSources`——`at_cmdset_get` 逐分发重组基准源（语境给防御拷贝，调整即返回），实体状态变化下一次分发动作集即变，引擎零缓存；全合成驱动 `tests/entity-seams.test.ts`，无物品系统依赖——首个真实消费者是物化票） |
 | 快照 v1：状态树序列化 + 迁移链往返（M2-T5） | ✅ **已落**（`state/snapshot.ts`：`serializeWorld`／`restoreWorld`——载荷即状态树（非平行结构），只加版本戳／`derived` 切分／规范序（同世界＝同字节）；`state/derived.ts`：`derived` 一张表同时驱动快照类型与序列化排除，加载后逐实体 `recompute`（表今日为空，首个消费者＝修饰符系统）；`WorldRuntime.attachEntity`：**恢复＝重放树＋重挂实例，不走 `createObject`**（creation 两层不跑，否则代码默认值覆盖存档），挂载顺序无关、内容漂移大声失败；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空；NPC **构造性不入档**（静态在场＝内容真相）；`tests/snapshot.test.ts`） |
+| 非武侠迷你内容包：验收标准 2 首次机械化（M2-T6） | ✅ **已落**（`tests/fixtures/mini-pack/`：近轨灯塔站，3 房间／4 出口／2 命令／1 人物，方向词 前/后/内/外，`cmd-scan`（环视）绑 `lookSpec`、`cmd-broadcast`（通话）绑 `saySpec`、出口绑 `traversalSpec`——**引擎零改动**，换包只换目录 + 宿主的「命令 id → 出厂行为」绑定表；`tests/mini-content-pack.test.ts`：走／看／说全链路 + 主控室 enter 门禁拒绝（文案来自迷你包 JSON）+ 零武侠词 + 柳青镇/迷你包 id 空间不交、词汇互不渗漏；迷你包同样通过 `schemas/` 校验） |
 | 输出管线、中文层其余部分，及状态模型余下部分（时间／调度＝ M4） | ❌ 未实现（规格已定，见各文件） |
 | 14 个 schema | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做） |
 

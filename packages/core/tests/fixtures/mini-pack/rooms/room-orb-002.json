@@ -1,0 +1,26 @@
+{
+  "id": "room-orb-002",
+  "name": "生活舱",
+  "description": "环形走廊绕着中轴铺开，两侧是一格格睡舱，帘子多半拉着。壁上嵌着一排舷窗，恒星的光斜切进来；内侧一道舱门通向主控室，门边亮着一盏身份识别灯。",
+  "enterText": "你推开舱门飘进生活舱，走廊里有一点热汤的气味。",
+  "exits": [
+    {
+      "id": "exit-orb-002-aft",
+      "direction": "后",
+      "targetRoomId": "room-orb-001",
+      "verbs": ["后", "aft", "a"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    },
+    {
+      "id": "exit-orb-002-inboard",
+      "direction": "内",
+      "targetRoomId": "room-orb-003",
+      "verbs": ["内", "inboard", "in"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ]
+}

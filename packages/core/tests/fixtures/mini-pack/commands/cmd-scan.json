@@ -1,0 +1,7 @@
+{
+  "id": "cmd-scan",
+  "verbs": ["环视", "扫视", "scan"],
+  "argForm": "none",
+  "cmdset": "character",
+  "priority": 0
+}

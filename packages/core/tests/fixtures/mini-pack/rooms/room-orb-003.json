@@ -1,0 +1,22 @@
+{
+  "id": "room-orb-003",
+  "name": "主控室",
+  "description": "半圈控制台对着舷窗，屏上滚着姿态、氧压与轨道偏角。值更的座椅空着，只有通风口在低声送风。",
+  "enterText": "识别灯转绿，舱门向两侧滑开，你踏进主控室。",
+  "preconditions": {
+    "default": false,
+    "enter": { "has_flag": "crew-clearance" }
+  },
+  "err_enter": "识别灯亮起红色：未登记的身份卡，主控室只对当值船员开放。",
+  "exits": [
+    {
+      "id": "exit-orb-003-outboard",
+      "direction": "外",
+      "targetRoomId": "room-orb-002",
+      "verbs": ["外", "outboard", "out"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ]
+}
