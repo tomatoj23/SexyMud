@@ -265,6 +265,20 @@ describe("loud failures", () => {
     );
   });
 
+  it("rejects an entity record that is not an object", () => {
+    const payload = { entities: { "player-1": "gone" } };
+    expect(() => restoreWorld({ version: SAVE_VERSION, data: payload })).toThrow(
+      /entity "player-1" is not an object/,
+    );
+  });
+
+  it("rejects an empty entity key", () => {
+    const payload = { entities: { "": { locationId: "room-a", flags: [] } } };
+    expect(() => restoreWorld({ version: SAVE_VERSION, data: payload })).toThrow(
+      /an entity key in data\.entities is not a non-empty string/,
+    );
+  });
+
   it("rejects an entity without a location", () => {
     const payload = { entities: { "player-1": { id: "player-1", flags: [] } } };
     expect(() => restoreWorld({ version: SAVE_VERSION, data: payload })).toThrow(

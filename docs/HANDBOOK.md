@@ -105,7 +105,7 @@
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；18 个测试文件 / 304 用例全绿
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；18 个测试文件 / 306 用例全绿
 - **Schema 18 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ `condition`（被引用库）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
@@ -117,7 +117,7 @@
 | 项 | 说明 |
 |---|---|
 | 🚧 `content/` 其余集合 | 待生产。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
-| 🚧 世界模型实体运行时 | **M2 六张票已关五**：T1 实体+移动 tracer（#7，已落）、T2 看（#8，已落：`return_appearance` 纯组装 + `at_look` 可见性 + `lookSpec` 出厂适配器）、T3 说（#9，已落：`at_msg_receive` 可否决 + `fromObj` 可空的 `broadcastMessage` 投递缝 + `at_pre_say`／`at_post_say` 配对 + `saySpec` 出厂适配器）、T4 接缝补全（#10，已落：`getObject`/`giveObject`/`dropObject` 三配对包 `moveTo` 外 + `createObject` creation 两层〔顺序即契约，JSON 赢代码默认值〕+ `assembleSources` 动态 cmdset〔逐分发重组零缓存〕，全合成驱动测试）、T5 快照 v1（#11，已落：`serializeWorld`/`restoreWorld` 载荷即状态树〔规范序＝同世界同字节〕+ `derived` 一张表驱动类型与排除、加载后重算 + `attachEntity` 恢复＝重放树不跑 creation + NPC 构造性不入档 + 未来版本与损坏存档大声失败；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空）；余一张＝非武侠迷你包验收（#12）；形态定案 ADR-0028；标签（spec/03 §5）与原型（§6）排 M3 |
+| 🚧 世界模型实体运行时 | **M2 六张票已关五**：T1 实体+移动 tracer（#7，已落）、T2 看（#8，已落：`return_appearance` 纯组装 + `at_look` 可见性 + `lookSpec` 出厂适配器）、T3 说（#9，已落：`at_msg_receive` 可否决 + `fromObj` 可空的 `broadcastMessage` 投递缝 + `at_pre_say`／`at_post_say` 配对 + `saySpec` 出厂适配器）、T4 接缝补全（#10，已落：`getObject`/`giveObject`/`dropObject` 三配对包 `moveTo` 外 + `createObject` creation 两层〔顺序即契约，JSON 赢代码默认值〕+ `assembleSources` 动态 cmdset〔逐分发重组零缓存〕，全合成驱动测试）、T5 快照 v1（#11，已落：`serializeWorld`/`restoreWorld` 载荷即状态树〔规范序＝同世界同字节〕+ `derived` 一张表驱动类型与排除、加载后重算 + `attachEntity` 恢复＝重放树不跑 creation + NPC 构造性不入档 + 未来版本与七类损坏载荷大声失败（逐条测试行使）；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空）；余一张＝非武侠迷你包验收（#12）；形态定案 ADR-0028；标签（spec/03 §5）与原型（§6）排 M3 |
 | 🚧 世界连通性校验（可达性） | 引用完整性已由**注册表加载期校验**承担（ADR-0003 分层：形状归 content:check、引用归注册表，M1-T5/T6 落地并由测试行使）；「全图可达」需起始房间概念，随世界引导（bootstrap）票再补 |
 | 🚧 `monster.schema.json` 重估 | 已随 `mon-lq-001` 进入编译，但仍是放置期设计，需随秘境票重估 |
 | 🚧 `combat-text.schema.json` 联合类型 | draft-07 清扫已呈现 `dimensionRef` 的 `"type": ["string","array"]`（strictTypes WARN，Ajv 日志级不抛错）；随 combat-text 内容落地重估时修复（或管线定夺 allowUnionTypes） |
