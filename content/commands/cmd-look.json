@@ -1,0 +1,7 @@
+{
+  "id": "cmd-look",
+  "verbs": ["看", "瞧", "望", "look", "l"],
+  "argForm": "none",
+  "cmdset": "character",
+  "priority": 0
+}

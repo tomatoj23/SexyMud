@@ -6,6 +6,14 @@
 //   content/<collection>/<entry>.json -> schemas/<collection>.schema.json
 // Collections without content yet (dungeon/, martial/, ...) are simply absent
 // and therefore not validated; adding a file adds it to the gate.
+//
+// Cross-file $ref (M1-T5): collection schemas may reference each other by $id
+// (commands.schema.json -> condition.schema.json#/definitions/accessRules).
+// Every schema under schemas/ is therefore REGISTERED up front so those refs
+// resolve. Registration is not compilation: a schema is compiled — and thus
+// its draft-07 legality checked — only when content maps to it or another
+// compiled schema $refs it, so schemas without content still do not fail the
+// gate (spec/06 §3.1).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +54,26 @@ if (files.length === 0) {
 
 const ajv = new Ajv({ allErrors: true });
 
+// Register every schema by $id (see the cross-file $ref note above). A schema
+// file that is not valid JSON is a broken gate, so it fails the run loudly.
+// The parsed objects are kept: Ajv caches compiled schemas by object identity,
+// so per-file compiles must pass the SAME object or the $id re-registers and
+// throws "already exists". Keys are forward-slash schema paths ("schemas/<name>"),
+// matching how schemaPathFor results are normalized at lookup.
+const schemasByPath = new Map();
+for (const name of readdirSync(join(root, "schemas")).sort()) {
+  if (!name.endsWith(".schema.json")) continue;
+  let schema;
+  try {
+    schema = JSON.parse(readFileSync(join(root, "schemas", name), "utf8"));
+  } catch (error) {
+    console.error(`INVALID schemas/${name} (not valid JSON: ${error.message})`);
+    process.exit(1);
+  }
+  ajv.addSchema(schema);
+  schemasByPath.set(`schemas/${name}`, schema);
+}
+
 // Dead-concept gate. Concepts retired by an ADR must not creep back into content.
 // This replaces the "⚠️ 已废，勿用" notes that used to sit in schema descriptions
 // and docs: a note only works if someone happens to read it, this runs on every
@@ -82,10 +110,8 @@ for (const file of files.sort()) {
     continue;
   }
 
-  let schema;
-  try {
-    schema = JSON.parse(readFileSync(resolve(root, schemaRel), "utf8"));
-  } catch {
+  const schema = schemasByPath.get(schemaRel.replace(/\\/g, "/"));
+  if (!schema) {
     failed = true;
     console.error(`MISSING schema ${schemaRel.replace(/\\/g, "/")} for ${relative}`);
     continue;
@@ -139,7 +165,7 @@ const unusedSchemas = readdirSync(join(root, "schemas"))
 
 if (unusedSchemas.length > 0) {
   console.log(
-    `NOTE     ${unusedSchemas.length} schema(s) have no content yet, so they were not validated: ${unusedSchemas.join(", ")}`,
+    `NOTE     ${unusedSchemas.length} schema(s) have no content mapping, so they were not compiled directly (a schema referenced via $ref still compiles through its consumers): ${unusedSchemas.join(", ")}`,
   );
 }
 

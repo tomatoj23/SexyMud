@@ -126,9 +126,10 @@ TerminalView 实现                   style-guide.md（文风约束）
 | 中文解析器：最长动词匹配 + `argForm`（M1-T2） | ✅ **已落**（`packages/core/src/command/parser.ts`） |
 | 条件表达式：递归求值器 + 谓词注册表 + 门禁映射（M1-T3） | ✅ **已落**（`packages/core/src/conditions.ts` + `schemas/condition.schema.json`） |
 | 命令集合并栈：多源合并 + 四种 mergetype（M1-T4） | ✅ **已落**（`packages/core/src/command/cmdset.ts`） |
-| commands/ 内容集合、世界模型、MUD 状态模型、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
+| commands/ 内容集合 + `ContentRegistry`（M1-T5） | ✅ **已落**（`schemas/commands.schema.json` + `content/commands/` 首批 4 条 + `command/entry.ts` + `content/registry.ts`；加命令 = 加 JSON 文件） |
+| 世界模型、MUD 状态模型、输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
 | 14 个 schema | ⚠️ 放置期设计，需随本规格重估 |
 
 **下一步**：按§文档地图，从 `02-command-layer.md` 开始生长。每完成一个子系统，跑该文件末尾的自检清单。
 
-> 引擎源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`rng.ts`、`save/migrations.ts`、`command/pipeline.ts`（四段管线 + access 门禁）、`command/testing.ts`（测试骨架）、`command/parser.ts`（中文解析器）、`command/cmdset.ts`（命令集合并栈）、`conditions.ts`（条件求值与谓词注册表）。这是刻意的——**先定契约，再长能力**。
+> 引擎源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`rng.ts`、`save/migrations.ts`、`command/pipeline.ts`（四段管线 + access 门禁）、`command/testing.ts`（测试骨架）、`command/parser.ts`（中文解析器）、`command/cmdset.ts`（命令集合并栈）、`command/entry.ts`（命令内容契约：条目 → 源 → spec）、`content/registry.ts`（ContentRegistry）、`conditions.ts`（条件求值与谓词注册表）。这是刻意的——**先定契约，再长能力**。

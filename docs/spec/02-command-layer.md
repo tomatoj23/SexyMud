@@ -1,6 +1,6 @@
 # 02 · 命令层
 
-> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余**待实现**（M1-T5~T6）。
+> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§2 命令是内容**已实现**（M1-T5：`schemas/commands.schema.json` + `content/commands/` 首批条目 + `CommandEntry`／`commandSetSources`／`commandSpecFromEntry`（`packages/core/src/command/entry.ts`）+ `ContentRegistry`（`packages/core/src/content/registry.ts`））；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余**待实现**（M1-T6）。
 > **依据**：ADR-0016 §2、ADR-0021 §1/§2/§4、ADR-0024 §1/§3、ADR-0022 §2（经 **ADR-0024 §8** 修正）、ADR-0025 §六。
 > （注：ADR-0024 的 **§7 修正的是 ADR-0022 §3**（原型继承），**§8 修正的是 ADR-0022 §2**（条件表达式）。本文件只涉及后者。）
 
@@ -40,6 +40,14 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 - `err_*` 拒绝文案
 
 **引擎自己不认识任何动词。** 加命令 = 加内容文件。
+
+### 2.1 落地形态（M1-T5）
+
+- **条目形态**（`schemas/commands.schema.json` ＝ 引擎 `CommandEntry` ＝ `docs/agents/content.md` 命令集合节，三处同步）：`id`（语义名，即分发键，文件名 = id）／`verbs[]`（中英并列）／`argForm`（§1.2 枚举）／`cmdset`＋`priority`＋`mergetype`（归属与合并规则）／`preconditions`（`condition.schema.json#/definitions/accessRules`）／`err_*` 拒绝文案。
+- **`ContentRegistry`**（`packages/core/src/content/registry.ts`）：引擎读内容的唯一通道——宿主加载并解析 JSON 后交给它；加载时强制引用完整性（重复 id、未知 id 查询抛错，ADR-0003 分层：完整 Schema 校验归 `content:check`，注册表不做重复实现）。`commands` 按 id 升序，使下游装配跨进程确定（ADR-0024 §2）。
+- **分组**（`commandSetSources`）：条目按 `cmdset` 折叠成合并源。合并规则属于集，不属于单条命令——同 cmdset 的条目 `priority`／`mergetype` 不一致即抛错。
+- **装配**（`commandSpecFromEntry`）：`id`→`key`、`argForm`→解析段、`preconditions`→access 门禁。**询问的 accessType 由宿主传入**（词汇表是内容侧约定：命令 `use`，见 content.md），引擎只携带不拥有；条目带门禁而未给 accessType = 装配 bug，大声抛错。执行体（func）由宿主注入（效果管线落地前）。
+- **首批条目**（`content/commands/`）：`cmd-look`（看/瞧/望/look/l，none）、`cmd-say`（说/喊/say，text）、`cmd-examine`（端详/打量/examine，target-ordinal）、`cmd-rest`（歇/歇息/rest，none + `not has_state wounded` 门禁 + `err_use` 文案）。加命令 = 加 JSON 文件，经 `call()` 全真实路径跑通（`packages/core/tests/commands-content.test.ts`）。
 
 ## 3. 命令集合并（cmdset merge stack）
 
@@ -147,12 +155,12 @@ Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只�
 
 - [x] 解析器用**最长动词匹配**，没有引入分词库（M1-T2 已落，`parser.ts`）
 - [x] 别名按**长度降序**匹配（M1-T2 已落：长度降序 + 字典序，跨进程稳定）
-- [ ] 引擎源码里搜不到任何动词（动词全在 `content/commands/`）——src 侧已由 `engine-purity` 文法字符集守卫，`content/commands/` 待 M1-T5
+- [x] 引擎源码里搜不到任何动词（动词全在 `content/commands/`）——src 侧由 `engine-purity` 文法字符集守卫，内容侧 M1-T5 已落：动词经注册表→合并栈→动词表进入分发，引擎零动词
 - [x] 命令集是**多源合并**，不是单表查询（M1-T4 已落：`cmdset.ts` 纯函数折叠，四种 mergetype，合并产物即动词表来源）
 - [ ] 出口是**独立实体**，方向词是它的 `verbs`，优先级最高——引擎侧 +101 永远可用的机制已随 M1-T4 落地，出口实体化待 M1-T6
 - [x] 条件表达式 schema **允许递归嵌套**（M1-T3 已落：`schemas/condition.schema.json`，`$ref` 自引用无深度限制）
 - [x] 外层是 `Map<accessType, expr>` 且有 `default`（M1-T3 已落：`#/definitions/accessRules` + `checkAccess`）
-- [x] 拒绝文案 `err_*` 是数据字段，不是引擎字符串（M1-T3 已落：事件携带 `errKey`，文案在条目数据，引擎零文案）
-- [ ] 每条命令的 `verbs` 里中文与英文缩写并列
-- [ ] 别名两层（内容层 + 玩家层存档）
+- [x] 拒绝文案 `err_*` 是数据字段，不是引擎字符串（M1-T3 已落：事件携带 `errKey`，文案在条目数据，引擎零文案；M1-T5 首批条目含 `err_use` 实例）
+- [x] 每条命令的 `verbs` 里中文与英文缩写并列（M1-T5 已落：首批条目全部并列，`commands-content.test.ts` 机械校验每条目中英双形）
+- [ ] 别名两层（内容层 + 玩家层存档）——内容层已落（M1-T5 `verbs[]`），玩家层 nicks 待存档模型
 - [ ] 输入组件处理 **IME 合成事件**：合成期间按 Enter 不提交半成品拼音（G3）

@@ -1,6 +1,6 @@
 # 01 · 引擎对外契约
 
-> **状态**：全部**待实现**（现有 `packages/core` 是放置游戏遗留，抽象见 `00-overview.md` 当前状态）。
+> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`、`state/`、`time/`、`effects/` 待实现。
 > **依据**：ADR-0002、ADR-0017、ADR-0025 §一、ADR-0006、ADR-0018。
 
 ## 1. 注入端口（Ports）
@@ -138,7 +138,7 @@ schemas/                内容 JSON Schema
 
 - [ ] 引擎 `src/` 里搜不到 `Date.now` / `Math.random` / `setTimeout` / `new Date`
 - [ ] 引擎 `src/` 里搜不到任何题材词（跑 `engine-purity` 测试）
-- [ ] 引擎不 import `content/` 下任何 JSON，只经 `ContentRegistry`
+- [x] 引擎不 import `content/` 下任何 JSON，只经 `ContentRegistry`（M1-T5 已落：src/ 零内容导入，测试扮演宿主读文件喂注册表，`engine-purity` 守卫）
 - [ ] 每条命令带 `actorId` 与 `seq`
 - [ ] 每个 `GameEvent` 带 `seq`，且**不含已渲染文本**
 - [ ] `dispatch` 的返回区分 `rejected` / `invalid` / `transport`

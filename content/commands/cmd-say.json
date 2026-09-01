@@ -1,0 +1,7 @@
+{
+  "id": "cmd-say",
+  "verbs": ["说", "喊", "say"],
+  "argForm": "text",
+  "cmdset": "character",
+  "priority": 0
+}

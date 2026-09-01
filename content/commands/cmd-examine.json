@@ -1,0 +1,7 @@
+{
+  "id": "cmd-examine",
+  "verbs": ["端详", "打量", "examine"],
+  "argForm": "target-ordinal",
+  "cmdset": "character",
+  "priority": 0
+}

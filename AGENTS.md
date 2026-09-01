@@ -36,7 +36,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 Game content lives as JSON files under `content/`, validated by JSON Schema (`corepack pnpm content:check`). Batch edits by agents must follow `docs/agents/content.md` and the style guide at `content/style-guide.md`.
 
-> **Note**: `corepack pnpm content:check` is the committed pipeline contract (ADR-0003); the script (`scripts/check-content.mjs`, landed with issue #2) auto-discovers every JSON under `content/` and validates it against `schemas/` by directory convention — currently only `content/config/settings.json`. Schemas for collections without content yet remain design drafts (the script now reports them).
+> **Note**: `corepack pnpm content:check` is the committed pipeline contract (ADR-0003); the script (`scripts/check-content.mjs`, landed with issue #2) auto-discovers every JSON under `content/` and validates it against `schemas/` by directory convention — currently `content/config/` and `content/commands/` (M1-T5). Cross-file `$ref` between schemas is supported (all schemas are pre-registered by `$id`). Schemas for collections without content yet remain design drafts (the script reports them).
 > **Authoritative docs (descending precedence)**: **`docs/spec/` (living spec — HIGHEST)** > `CONTEXT.md` (glossary, **wuxia content pack scope, not the engine**) / `docs/agents/content.md` (content pipeline) > `docs/adr/` (decision history) > `content/style-guide.md` (writing style) > `docs/engine-reservations.md` (**reference / lowest**: a design inventory, not a decision).
 >
 > ⚠️ ADRs are a decision LOG, not the current spec — they override each other in a tangled web (0025 revises 0017; 0024 corrects 0022 and 0023). **On conflict, `docs/spec/` wins.**

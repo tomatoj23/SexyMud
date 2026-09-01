@@ -35,11 +35,11 @@ assets/               # 美术资产（MVP 允许为空）
 └── portraits/<集合>/<id>.png
 ```
 
-> ⚠️ `rooms/` `npcs/` `commands/` 是 ADR-0016（2026-09-01）新增的三个集合，**Schema 与 id 规则尚未定稿（M1 工作）**。**定稿前不得写入条目**——否则绕开 `content:check` 硬门禁，属违规。
+> ⚠️ `rooms/` `npcs/` 是 ADR-0016（2026-09-01）新增的两个集合，**Schema 与 id 规则尚未定稿（M1 工作）**。**定稿前不得写入条目**——否则绕开 `content:check` 硬门禁，属违规。`commands/` **已定稿**（M1-T5，`schemas/commands.schema.json`），字段约定见下文「命令集合」节。
 
 ## 硬性规则
 
-- **id 一经发布不可变更**：资产路径、存档引用都依赖它。条目集合命名格式 `<集合缩写>-<门派/区域>-<序号>`，如 `mrt-hs-001`（华山招式 1）、`mon-sy-014`（山魈 14）；**config 集合豁免序号段**，用 `<类别>-<序号>` 或语义名（如 `act-practice`、`res-experience`）。id 只用小写字母、数字、连字符。
+- **id 一经发布不可变更**：资产路径、存档引用都依赖它。条目集合命名格式 `<集合缩写>-<门派/区域>-<序号>`，如 `mrt-hs-001`（华山招式 1）、`mon-sy-014`（山魈 14）；**config 集合豁免序号段**，用 `<类别>-<序号>` 或语义名（如 `act-practice`、`res-experience`）；**commands 集合同理用语义名**（`cmd-look`、`cmd-rest`——命令是全局的，无门派/区域归属），**文件名 = 条目 id**。id 只用小写字母、数字、连字符。
 - 每个条目必须通过对应 Schema 校验后才能提交。校验命令：`corepack pnpm content:check`。
 - 叙事字段（`description`、事件文本等）必须遵守 `content/style-guide.md` 的武侠语体；世界背景类长文写入 `content/lore/*.md`。
 - 资产不内嵌 base64、不写绝对路径；引用走约定路径，确需覆盖时用条目的 `art` 字段（相对 `assets/` 的路径）。
@@ -58,6 +58,19 @@ assets/               # 美术资产（MVP 允许为空）
 - `effects`：效果引用列表（`["eff-xxx"]`），指向 `content/effects/` 的效果定义条目；效果 = primitive 组合（候选集限定 **13 项**，见 `docs/engine-reservations.md` §3），武功/怪物/层主共用。
 - `progression`：仅用于生产活动（采集、炼丹等），内容侧只放**等级参数** `maxLevel`（等级上限）与 `xpPerCycle`（每次产出获得的经验）。**玩家的当前等级与经验是运行时状态，存于存档，不写进内容条目**。等级与战力门槛（`powerMin`）共同决定可进入的采集区。
 - `rates`：活动直接产出的资源列表；**产出为物品（如药材）的活动可为空数组**，此时产出由物品表定义。
+
+## 命令集合（content/commands/，M1-T5 已定稿）
+
+每条命令一个 JSON 文件（文件名 = id），**引擎不认识任何动词，加命令 = 加内容文件**（spec/02 §2）。字段（`schemas/commands.schema.json` ／ 引擎 `CommandEntry`（`packages/core/src/command/entry.ts`）与本节三处同步）：
+
+- `id`：语义名 `cmd-<语义名>`（如 `cmd-look`、`cmd-rest`），**即分发键**（cmdset 成员与动词表都引用它）。
+- `verbs[]`：触发动词，**中文与英文缩写并列**（如 `["看","瞧","look","l"]`）——这是内容层别名层；玩家层别名存存档（spec/02 §6）。同一数组内长短别名可共存（解析按最长动词匹配）。
+- `argForm`：参数形态枚举 `none`／`text`／`target`／`target-ordinal`／`target-index`（引擎 `ArgForm`，spec/02 §1.2）。
+- `cmdset`＋`priority`＋`mergetype`：归属命令集（合并源名，如 `character`／`session`／`room`）与该集的合并规则。**合并规则属于命令集**：同一 `cmdset` 的所有条目必须声明一致的 `priority` 与 `mergetype`（省略 = `Union`），`ContentRegistry` 分组（`commandSetSources`）对不一致抛错。
+- `preconditions`：门禁映射（`condition.schema.json#/definitions/accessRules`）。**命令集合的 accessType 词汇表：`use`**——宿主装配 `CommandSpec` 时以 `commandSpecFromEntry(entry, { accessType: "use", func })` 传入；省略字段 = 无门禁。
+- `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。
+
+引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands })`（重复 id 抛错）→ `commandSetSources(registry.commands)`（按 cmdset 分组）→ `mergeCmdSets` → `verbEntries()` 即动词表。**引擎 src/ 永不 import 内容 JSON**。
 
 命名语汇（写内容时必须遵守，详见 `CONTEXT.md`）：
 

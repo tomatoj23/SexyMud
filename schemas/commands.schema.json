@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "commands.schema.json",
+  "title": "命令（content/commands/，每条目一文件）",
+  "description": "命令是内容（spec/02 §2；ADR-0016 §2、ADR-0021 §1）：动词、参数形态、归属命令集、合并规则、前置门禁、拒绝文案全是数据——**引擎不认识任何动词，加命令 = 加内容文件**。条目 id 即分发键（引擎 `CommandSpec.key` / cmdset 的 command key）。字段与引擎类型三处同步（spec/06 §4）：本文件 ／ `packages/core/src/command/entry.ts` 的 `CommandEntry` ／ `docs/agents/content.md` 的命令集合字段约定。",
+  "type": "object",
+  "required": ["id", "verbs", "argForm", "cmdset", "priority"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^cmd-[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "命令 id = 分发键，一经发布不可变更（资产路径、存档引用都依赖它）。命令是全局的、无门派/区域归属，故用语义名（cmd-look、cmd-say、cmd-rest），不用序号段。文件名 = 条目 id。"
+    },
+    "verbs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "触发本命令的动词清单（即内容层别名，spec/02 §6）：中文与英文缩写**并列**（如 [\"看\",\"瞧\",\"look\",\"l\"]——中文输入成本高，英文缩写服务老玩家肌肉记忆）。解析器按最长动词匹配（ADR-0024 §1），同一数组内长短别名可共存（「歇息」与「歇」）。跨命令同名动词由 cmdset 合并栈解决归属：后合并者胜（spec/02 §3）。"
+    },
+    "argForm": {
+      "enum": ["none", "text", "target", "target-ordinal", "target-index"],
+      "description": "参数形态（引擎 `ArgForm`，spec/02 §1.2）：none 无参 ／ text 自由文本 ／ target 裸名（默认第 1 个）／ target-ordinal 接受序数前缀形（「第 N 个 X」）／ target-index 接受点缀后缀形（「X·N」）。与 packages/core/src/command/parser.ts 的 ArgForm 枚举同步——加形态 = 引擎能力演进，需三处同步。"
+    },
+    "cmdset": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "归属命令集（合并源名，内容侧约定：session / player / character / inventory / room / objects / exits…，spec/02 §3 的七源表）。同一 cmdset 的全部条目必须声明**一致**的 priority 与 mergetype——合并规则属于命令集，不属于单条命令；ContentRegistry 分组时对不一致大声抛错。"
+    },
+    "priority": {
+      "type": "integer",
+      "description": "命令集合并优先级（spec/02 §3）：升序合并，高者后合并、压在上面（出口源用高于一切常规源的值保证永远可用）。与同一 cmdset 的其余条目一致。"
+    },
+    "mergetype": {
+      "enum": ["Union", "Intersect", "Replace", "Remove"],
+      "description": "命令集合并算子（引擎 `MergeType`，默认 Union，可省略）：Union 同键整体替换 ／ Intersect 只留共有键 ／ Replace 弃累积 ／ Remove 纯过滤（commands/ 集合承载常驻命令，滤集由宿主按世界状态动态组装）。加「黑屋里 look 变摸黑」= 加条目 + 条件，引擎零改动。与同一 cmdset 的其余条目一致（显式 Union 与省略等价）。"
+    },
+    "preconditions": {
+      "$ref": "condition.schema.json#/definitions/accessRules",
+      "description": "前置门禁（spec/02 §5）：accessType → 条件表达式，`default` 必填（false = 缺省拒绝最常用）。命令集合的 accessType 词汇表：**use**（询问方由宿主在装配 CommandSpec 时传入，content.md 命令集合节）。省略本字段 = 无门禁。"
+    }
+  },
+  "patternProperties": {
+    "^err_[a-z][a-z0-9-]*$": {
+      "type": "string",
+      "minLength": 1,
+      "description": "拒绝文案：键名 = err_ + accessType（「use」门拒绝读 err_use；默认门拒绝读 err_default）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。err_* 可整体省略（渲染层回退通用文案），但写了就必须非空。须遵守 content/style-guide.md（第二人称「你」、古典白话）。命令集合现用词汇表只有 err_use 与 err_default——出现其他键通常是 accessType 拼写错误（键名拼错的文案永远无人读取）。"
+    }
+  },
+  "additionalProperties": false
+}

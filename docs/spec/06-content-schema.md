@@ -1,6 +1,6 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**；**14 个** schema **需随本规格重估**（放置期设计）。`content/` 目前只有 `config/settings.json` 一个 JSON。
+> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；16 个 schema 中 `condition.schema.json`（M1-T3）与 `commands.schema.json`（M1-T5）为新落，其余 **14 个**放置期设计**需随本规格重估**。`content/` 现有 `config/`（3 个 JSON）与 `commands/`（首批 4 条）。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合
@@ -16,7 +16,7 @@
 | `event/` | `combat-text/` | |
 | `config/` | 结构性配置（每集合一文件） | |
 
-⚠️ `commands/`、`rooms/`、`npcs/` 三个集合的 schema **待 M1 补**（见 `00-overview.md` 当前状态）。
+⚠️ `rooms/`、`npcs/` 两个集合的 schema **待 M1 补**（见 `00-overview.md` 当前状态）；`commands/` schema **已落**（M1-T5，`schemas/commands.schema.json`，首批条目 4 条）。
 
 > `schemas/condition.schema.json`（M1-T3）是**被引用库**，不是集合 schema：条件内嵌于 commands / martial 等条目，没有 `content/condition/` 目录。集合 schema 以 `$ref` 引用它（单表达式 → `condition.schema.json`；门禁映射 → `#/definitions/accessRules`）。它不进 `content:check` 的正向映射，其 draft-07 合法性与递归结构由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试，即 spec/06 §3.1 缺口在该文件上的闭合）。
 
@@ -42,13 +42,14 @@ corepack pnpm content:check
 - 自动发现 `content/` 下全部 JSON，按目录约定映射到 `schemas/`：
   - `content/<集合>/<条目>.json` → `schemas/<集合>.schema.json`
   - `content/config/<名>.json` → `schemas/config.<名>.schema.json`
+- **跨文件 `$ref` 已支持**（M1-T5）：管线启动时按 `$id` 预注册 `schemas/` 下全部 schema（注册 ≠ 编译），集合 schema 可互相引用（如 `commands.schema.json` → `condition.schema.json#/definitions/accessRules`）。仍只有被内容映射（或被已编译 schema `$ref`）的 schema 才会被编译——无内容的 schema 不因此失败。
 - 退出码即结果
 
 ⚠️ **不得用 `npm run` 调用** —— 违反硬标准 3（ADR-0007）。
 
 ### 3.1 已知缺口
 
-- ~~只从 content 侧枚举，从不遍历 schemas/~~ —— **已修**：现会反向扫描并打印无内容可映射的 schema（报 NOTE，不失败）。**但这些 schema 仍不会被 compile**，所以其中的 draft-07 违规在补齐内容前仍不会暴露
+- ~~只从 content 侧枚举，从不遍历 schemas/~~ —— **已修**：现会反向扫描并打印无内容可映射的 schema（报 NOTE，不失败）。**但这些 schema 仍不会被直接编译**（被 `$ref` 引用的除外——它会随消费者一起编译，如 `condition.schema.json` 经 `commands.schema.json`），所以无消费者的 schema 其中的 draft-07 违规在补齐内容前仍不会暴露
 - `config.settings.schema.json` 的 `additionalProperties: {}` 无约束，写错键名不会被拦
 
 依据：ADR-0003、第三轮子代理审计

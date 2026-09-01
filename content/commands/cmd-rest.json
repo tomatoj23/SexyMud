@@ -1,0 +1,12 @@
+{
+  "id": "cmd-rest",
+  "verbs": ["歇", "歇息", "rest"],
+  "argForm": "none",
+  "cmdset": "character",
+  "priority": 0,
+  "preconditions": {
+    "default": true,
+    "use": { "not": [{ "has_state": "wounded" }] }
+  },
+  "err_use": "你伤势未愈，此刻无法安歇。"
+}

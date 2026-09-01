@@ -49,6 +49,13 @@ export type {
   MergeType,
   MergedCmdSet,
 } from "./command/cmdset.js";
+export { commandSetSources, commandSpecFromEntry } from "./command/entry.js";
+export type {
+  CommandEntry,
+  CommandSpecOptions,
+} from "./command/entry.js";
+export { createContentRegistry } from "./content/registry.js";
+export type { ContentRegistry } from "./content/registry.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
   CallOptions,
