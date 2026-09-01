@@ -1,6 +1,6 @@
 # 01 · 引擎对外契约
 
-> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`、`state/`、`time/`、`effects/` 待实现。
+> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1）**已落**；`time/`、`effects/` 待实现。
 > **依据**：ADR-0002、ADR-0017、ADR-0025 §一、ADR-0006、ADR-0018。
 
 ## 1. 注入端口（Ports）
@@ -136,15 +136,15 @@ schemas/                内容 JSON Schema
 
 ## 8. 自检清单
 
-- [ ] 引擎 `src/` 里搜不到 `Date.now` / `Math.random` / `setTimeout` / `new Date`
-- [ ] 引擎 `src/` 里搜不到任何题材词（跑 `engine-purity` 测试）
+- [x] 引擎 `src/` 里搜不到 `Date.now` / `Math.random` / `setTimeout` / `new Date`——`engine-purity` 测试强制（M1-T1）
+- [x] 引擎 `src/` 里搜不到任何题材词（跑 `engine-purity` 测试）
 - [x] 引擎不 import `content/` 下任何 JSON，只经 `ContentRegistry`（M1-T5 已落：src/ 零内容导入，测试扮演宿主读文件喂注册表，`engine-purity` 守卫）
-- [ ] 每条命令带 `actorId` 与 `seq`
-- [ ] 每个 `GameEvent` 带 `seq`，且**不含已渲染文本**
-- [ ] `dispatch` 的返回区分 `rejected` / `invalid` / `transport`
-- [ ] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围
-- [ ] `packages/core/tests` 可独立运行，不依赖 `apps/`
-- [ ] `Clock` 是 **tick 计数**而非毫秒
-- [ ] 效果／条件／事件／状态／命令／时间 **六条契约**已定义为类型与接口
-- [ ] 机制模块之间**不互相 import**，只通过契约交互
-- [ ] **没有**插件加载器 / 动态模块注册（见 `08-non-goals.md` A7）
+- [x] 每条命令带 `actorId` 与 `seq`（M1-T1：`Command` 接口；harness/测试全程断言）
+- [x] 每个 `GameEvent` 带 `seq`，且**不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案）
+- [x] `dispatch` 的返回区分 `rejected` / `invalid` / `transport`（M1-T1；M2-T1 补执行段拒绝通道 `CommandRejection`——func 期拒绝同样消耗 seq）
+- [x] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围（类型契约已定义：`GameListener`/`EventMeta`；驱动它的 Authority 实归宿主票）
+- [x] `packages/core/tests` 可独立运行，不依赖 `apps/`
+- [x] `Clock` 是 **tick 计数**而非毫秒（`TestClock` 可控推进）
+- [ ] 效果／条件／事件／状态／命令／时间 **六条契约**已定义为类型与接口——条件（`conditions.ts`）、事件（`GameEvent`）、命令（`CommandSpec` + cmdset）、状态（`state/tree.ts` 种子，M2-T1）已定义；效果与调度原语随各自里程碑
+- [ ] 机制模块之间**不互相 import**，只通过契约交互（尚无机制模块，随第一个机制票验证）
+- [x] **没有**插件加载器 / 动态模块注册（见 `08-non-goals.md` A7、ADR-0027：扩展靠契约）

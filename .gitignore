@@ -10,3 +10,9 @@ docs/research/ui-mockups/archive/
 
 # 设计会话记录已归档至 docs/archive/，入库保存，供后续查找决策依据
 # （正式文档 CONTEXT.md / ADR 生成后仍保留，不删除）
+
+# Agent 工作流临时文件：中文提交消息 / issue 评论先落 UTF-8 文件再由
+# git -F / gh api --input 消费，用后即删——防止 git add -A 误卷入
+.git-commit-msg.txt
+.issue-close-comment.json
+.deps-check.json
