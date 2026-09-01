@@ -47,6 +47,28 @@ const schemasDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../sc
 const RECEIVERS = ["actor-1", "actor-2", "actor-3"];
 
 /**
+ * The criterion is 「零武侠词」, which is stronger than "no word the wuxia
+ * pack happens to declare": a pack could be steeped in wuxia and still pass
+ * the cross-pack scan by using words the village does not contain. These are
+ * the give-away words. They live HERE, with the assertion that uses them —
+ * they are content-domain vocabulary, so they belong neither in the engine
+ * (whose purity scanner guards `src/`, not fixtures) nor in the pack-agnostic
+ * loader.
+ */
+const WUXIA_THEME_WORDS: readonly string[] = [
+  "江湖",
+  "门派",
+  "武功",
+  "内功",
+  "心法",
+  "招式",
+  "秘籍",
+  "掌门",
+  "大侠",
+  "少侠",
+];
+
+/**
  * A host's behaviour binding: which kernel behaviour each pack's command id
  * runs. The ids differ between packs, the adapters are the same three
  * objects — that binding table is the whole of "porting the engine to a new
@@ -183,7 +205,7 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     }
   });
 
-  it("passes the shipped schemas: content:check would accept a second, non-wuxia pack", () => {
+  it("passes the shipped schemas: a second, non-wuxia pack clears the same hard gate", () => {
     const conditionSchema = JSON.parse(
       readFileSync(resolve(schemasDir, "condition.schema.json"), "utf8"),
     );
@@ -397,6 +419,7 @@ describe("two packs, one engine, no leakage (spec/00 acceptance criterion 2)", (
     const haystack = transcript(steps) + loadPack(MINI_PACK_DIR).text;
 
     expect(foundIn(haystack, wuxiaVocabulary)).toEqual([]);
+    expect(WUXIA_THEME_WORDS.filter((word) => haystack.includes(word))).toEqual([]);
     // The mini pack's own vocabulary is what fills the session instead.
     expect(foundIn(haystack, miniVocabulary)).toEqual(
       expect.arrayContaining(["前", "内", "room-orb-001", "npc-orb-001", "巡检机器人"]),
