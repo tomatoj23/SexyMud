@@ -101,27 +101,32 @@
 
 ## 当前状态
 
-- ✅ 术语词典、文风指南、内容管线约定、**27 个 ADR**
-- ✅ **Schema 14 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ beast / combat-text / dungeon / effects / equipment / event / herb / martial / monster / pill / sect。**`commands` / `rooms` / `npcs` 的 schema 待 M1 补**。⚠️ `config.activities` 与 `config.resources` 两个 schema 已随放置领域模型一并删除
-- ✅ 兽数据归属已定：独立 `beast/` 集合，获取走 sect `exchange` 贡献兑换（ADR-0013）
-- ✅ **schema 与已定决策的冲突已修（2026-09-01）**：`dungeon` 完成「**波次 → 驻守**」重构（`waveCount`/`waveInterval`/`waveComposition` → `guards`/`respawn`，时间单位 `baseMs` → **`baseTicks`**，`unlocks` 末层改省略而非 `null`）；`config.settings` 按 `spec/06 §6` 的三分法重写（9 组、可带 `formula`、**禁 `null`**、时间键名带单位且用 tick）；`monster`/`event` 移除**造诣越权**；`equipment` 修正品阶/阶位混用
-- ✅ **`content/config/` 三个文件已建**：`dimensions.json`（10 个维度：伤害档/生命档/方式/motion/系别/招式标签/系别标签/品阶/槽位/**语义样式名**）与 `display-tiers.json`（**造诣 50 档，逐项比对 xkx100 §5.1 原表无误**，区间非均匀）。此前约 12 处文档引用指向这两个尚不存在的文件
-- 🚧 `content/` 其余集合待生产（见 issue #17）；`display-tiers.json` 的 **生产称谓 16 档待补**（xkx100 原表在调研记录中被省略，**不得杜撰中间项**）
-- ✅ **Monorepo 工程骨架**：`packages/core`（**三个源文件**：`types.ts` 端口与契约 / `index.ts` / `save/migrations.ts` 迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor` 占位；**两个测试文件**（引擎纯度 / 存档迁移），9 个用例通过
-- ✅ **`content:check` 已落地**：`scripts/check-content.mjs` 按目录约定映射 Schema 校验，退出码即结果。三道检查：① 按目录约定映射 Schema 校验（现覆盖 3 个 config 文件，新增内容自动纳入）② **已废概念门禁**——扫描内容里的禁用词（「境界」「护甲」「元素」等），命中即失败，清单与理由见 `scripts/banned-terms.json` ③ 反向扫描列出无内容可映射的 schema。待补：交叉引用 / 连通性校验（issue #3）
-- ✅ **MUD 转向已定案（2026-09-01）**：ADR-0016 交互模型 ／ ADR-0017 权威端抽象 ／ ADR-0018 客户端矩阵；ADR-0008 部分翻案（任务体系、NPC 集合）；`CONTEXT.md` 新增「世界与交互」术语段 7 条，`intent` 改判为 manual-source 优先
-- ✅ **ADR-0019 / 0020 已定案（2026-09-01）**：取消境界突破（进度主轴改为武功修习／空间探索／装备构筑）；七系从系数升级为结构签名 + 三层反馈定案
-- 🧹 **无关内容已清理（2026-09-01）**：删除 `docs/design/`（废弃设计稿）、`docs/research/ui-mockups/` + `idle-ui-references.md` + `ui-gen-prompts.md`（放置期视觉资产）、`prototype/`（结论已迁至 ADR-0006/0011）、`apps/web/dist/`、`docs/design-spec-BRIEF.md`（放置期规格，§11 已提取至 `docs/engine-reservations.md`）、`docs/archive/`（放置期设计会话记录）。恢复命令：`git checkout 79bd991 -- docs/design-spec-BRIEF.md docs/archive/`
-- ✅ **ADR-0023 已定案（2026-09-01）**：测试契约与输出层约定（命令测试骨架 / per-observer 渲染 / CJK 计宽 / tick 化定时 / 节点图 / 非模态输出）
-- ✅ **ADR-0024 已定案（2026-09-01）**：Evennia 源码级第二轮——**中文解析器必须自研**（Evennia 按空格分词，中文无空格）、确定性检查清单、`.call()` 三处缺陷不照抄、CJK 范围扩大、原型与条件表达式的边界修正
-- ✅ **ADR-0025 已定案（2026-09-01）**：Evennia 第三轮（源码 + 完整示例游戏 EvAdventure）——**不能后补的地基**：命令携带 `actorId`、事件侧 `seq` 与三类失败、**不需要 attribute handler**、调度六原语（含「观察时补偿结算」）、游戏内时间是 tick 纯函数、**实体 hook 九项**、输入加固用私有码位、测试权重压边界、配置三分法
-- ✅ **ADR-0026 已定案（2026-09-01）· 定位升级**：**我们做的是引擎**——中文优先的确定性文字 MUD 引擎 + 武侠内容包。三条硬标准从「纪律」升级为「产品定义」；确立取长补短分工（Evennia 给架构、xkx100 给中文叙事、我们补确定性/JSON 门禁/多端结构化输出）
-- ✅ **`docs/chinese-mud-concerns.md`**：中文 MUD 特有问题全景，**43 条**（A–G 七域），**6 条待定**（A6 / B8 / B9 / C5 / D1 / D4）+ **8 条新增待评估**（G 组，含 **IME 合成事件**）。E3 已实现（CJK 往返测试）。B8 与 D1 建议 M1 结束前定掉；G3（IME）建议在做 Web 输入时就处理；G8（竖排）已明确否掉
-- ✅ **换内容演练已完成（2026-09-01）**：结论是「通过词汇检验、未通过领域检验」——引擎读的是放置模型（`cycleSeconds`/`offlineCapHours`）且 `Clock` 是墙钟毫秒。五处耦合见 `docs/engine-purity-audit.md`
-- ✅ **领域模型已清零（2026-09-01）**：删除放置遗留的配置面、引擎门面与内容绑定加载器；**保留**纯度测试、`content:check`、迁移链。同时把 `docs/spec/01` 的端口与契约落成 `packages/core/src/types.ts`（Clock 改 tick 计数、命令带 `actorId`、事件带 `seq`、三类失败）
-- 🚧 **下一步 M1**：**先搭命令测试骨架（ADR-0023 §1）**，再自研中文解析器（最长动词匹配），然后 `commands/` `rooms/` `npcs/` 三个集合 + schema 三处同步（core 类型／编辑器／`content.md`）。起点见 `docs/spec/02-command-layer.md`
-- ✅ **术语清理已完成（2026-09-01）**：`CONTEXT.md` 删除「境界／修为／突破／闭关／突破丹」，新增「实战经验／武功等级／练功／潜能／造诣」，改写「显示档位／兽／内力／intent／离线结算／疗伤丹」；`style-guide.md` 改「静修／造诣档位」；HANDBOOK 与 10 个 schema 全表去放置语汇（波次／DPS／挂机／Melvor／断链 BRIEF 引用 ×33）
-- ✅ **境界已从代码删除（2026-09-01）**：`packages/core` 去掉 `realmId` / `currentRealm()` / `progress()` / `content.realm()` / `RealmConfig` / `RealmProgressSettings`；删除 `content/config/realms.json` 与 `config.realms.schema.json`；`settings.json` 去掉 `realmProgress`；`martial` schema 的 `realmIndexMin` → `martialLevelMin`，`dungeon` 的 `recommendedRealmIndex` → `recommendedPower` 区间，`pill` 去掉 `isBreakthrough`；（后续 `activities` / `resources` 两个 config 及其 schema 已随放置领域模型一并删除，故上述两个 id 亦不再存在。）**当时测试 24 全过、typecheck / content:check / build 通过**
-- ✅ **docs/martial 与 docs/quests 已同步**：武功前置门槛一律用 `martialLevelMin`（**造诣不再把门**）；任务六卷分卷依据改为造诣档位（不堪一击 / 初窥门径 / 驾轻就熟 / 炉火纯青 / 出神入化 / 返璞归真，六档均出自 xkx100 §5.1）
-- ✅ **包名已改（2026-09-01）**：`@idlerpg/*` → `@sexymud/*`（root `package.json` 亦改 `sexymud`），同步 `pnpm-lock.yaml` 与三处 import。`pnpm install` 通过（lockfile 无需重新解析）、软链接 `@sexymud` 已重建；9 测试 / content:check / typecheck / build 全过。全仓已无 `idlerpg` 残留
-- ⏸ 待决：奇遇形态未定（`event/` 仅有最小骨架；形态未定的概念不进术语表）
+### 当前事实
+
+- **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 入口 / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；2 个测试文件 / 9 用例（引擎纯度、存档迁移）
+- **Schema 14 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ 11 个集合
+- **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`
+- **`content:check` 三道**：① Schema 校验 ② **已废概念门禁**（命中即失败，清单见 `scripts/banned-terms.json`）③ 无内容可映射 schema 的反向扫描
+- 术语词典 / 文风指南 / 内容管线约定 / **27 个 ADR** 齐备；兽数据归 `beast/` 集合，获取走 sect `exchange` 贡献兑换
+
+### 待办
+
+| 项 | 说明 |
+|---|---|
+| 🚧 `content/` 其余集合 | 待生产（issue #17）。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
+| 🚧 `commands` / `rooms` / `npcs` schema | 待 M1 补 |
+| 🚧 `content:check` 交叉引用 / 连通性校验 | issue #3 |
+| 🚧 中文清单待定 6 条 | A6 全角标点归一化 / B8 避头尾折行 / B9 中英空格 / C5 四字格 / D1 中文排序 / D4 模糊命令建议。**B8 与 D1 建议 M1 结束前定掉**——一个影响折行器，一个影响所有列表 UI |
+| 🚧 中文清单 G 组待评估 8 条 | 含 **G3 IME 合成事件**（建议在做 Web 输入时就处理）、**G6 宿主侧存档编码往返**（`LocalSaveStore` 未覆盖）。G8 竖排已否 |
+| ⏸ 奇遇形态 | 未定（`event/` 仅有最小骨架；形态未定的概念不进术语表） |
+
+### 下一步（M1）
+
+1. **搭命令测试骨架**（ADR-0023 §1）——起点 `docs/spec/02-command-layer.md`
+2. **自研中文解析器**（最长动词匹配；Evennia 按空格分词，中文照抄不了）
+3. **`commands/` `rooms/` `npcs/` 三个集合** + schema 三处同步（core 类型／编辑器／`content.md`）
+
+> 🧹 放置期内容已删除；如需回溯：`git checkout 79bd991 -- docs/design-spec-BRIEF.md docs/archive/`
+>
+> **本节只记「当前为真」与「还没做」两件事。** ✅ 已完成项一律不在此列出 —— 见 `git log`。
