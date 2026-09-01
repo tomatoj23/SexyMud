@@ -7,6 +7,23 @@
  */
 export { SAVE_VERSION, migrateSnapshot } from "./save/migrations.js";
 export { createSeededRng } from "./rng.js";
+export {
+  checkAccess,
+  createPredicateRegistry,
+  defaultPredicateEntries,
+  defaultPredicateRegistry,
+  evaluateCondition,
+} from "./conditions.js";
+export type {
+  AccessCheck,
+  AccessGate,
+  AccessRules,
+  ConditionExpr,
+  ConditionSubject,
+  PredicateEntry,
+  PredicateFn,
+  PredicateRegistry,
+} from "./conditions.js";
 export { runCommand } from "./command/pipeline.js";
 export type {
   CommandContext,

@@ -1,4 +1,5 @@
 import type { Command, CommandResult, GameEvent } from "../types.js";
+import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
 import { runCommand } from "./pipeline.js";
 import type { CommandSpec, Message } from "./pipeline.js";
@@ -51,6 +52,15 @@ export interface HarnessOptions<W> {
    * conflicting registration fails at harness creation, not mid-session.
    */
   verbs?: readonly VerbEntry[];
+  /**
+   * Builds the condition subject for access-gated specs (spec/02 §5); passed
+   * through to the pipeline deps. Required only when a called spec declares
+   * an access gate — the world is deep-copied per call, so the subject is
+   * always derived from that call's world.
+   */
+  subjectOf?: (world: W, actorId: string) => ConditionSubject;
+  /** Predicate registry for access gates; defaults to the engine's built-ins. */
+  predicates?: PredicateRegistry;
 }
 
 export interface CallOptions {
@@ -105,6 +115,8 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         sink,
         inputs: [...(callOptions.inputs ?? [])],
         verbs,
+        subjectOf: options.subjectOf,
+        predicates: options.predicates,
       });
       return { result, messages };
     },

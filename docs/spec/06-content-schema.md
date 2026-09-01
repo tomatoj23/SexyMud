@@ -18,6 +18,8 @@
 
 ⚠️ `commands/`、`rooms/`、`npcs/` 三个集合的 schema **待 M1 补**（见 `00-overview.md` 当前状态）。
 
+> `schemas/condition.schema.json`（M1-T3）是**被引用库**，不是集合 schema：条件内嵌于 commands / martial 等条目，没有 `content/condition/` 目录。集合 schema 以 `$ref` 引用它（单表达式 → `condition.schema.json`；门禁映射 → `#/definitions/accessRules`）。它不进 `content:check` 的正向映射，其 draft-07 合法性与递归结构由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试，即 spec/06 §3.1 缺口在该文件上的闭合）。
+
 ## 2. 硬规则
 
 | 规则 | 说明 |

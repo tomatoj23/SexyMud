@@ -1,4 +1,6 @@
 import type { Clock, Command, CommandResult, GameEvent, Rng } from "../types.js";
+import { checkAccess, defaultPredicateRegistry } from "../conditions.js";
+import type { AccessGate, ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { parseArgForm } from "./parser.js";
 import type { ArgForm, VerbTable } from "./parser.js";
 
@@ -6,6 +8,9 @@ import type { ArgForm, VerbTable } from "./parser.js";
  * The command pipeline (ADR-0023 §1a): four stages, run in order.
  *
  *   at_pre_cmd → parse → func → at_post_cmd
+ *
+ * A spec-declared access gate (spec/02 §5) runs before them all — availability
+ * ("may this actor use this command at all") precedes contextual vetoing.
  *
  * The test harness drives these stages manually — it does NOT go through the
  * real dispatcher — so parsing and execution can be tested separately, or one
@@ -81,6 +86,13 @@ export interface CommandSpec<W = unknown> {
    * explicit `parse` hook, when present, takes precedence.
    */
   argForm?: ArgForm;
+  /**
+   * Access gate (spec/02 §5): checked before at_pre_cmd. A denial is a
+   * `rejected` result whose commandRefused event carries the semantics that
+   * LOCATE the entry's err_* copy (commandKey, accessType, errKey) — the
+   * engine never words refusals (spec/02 §5.4, spec/01 §5.1).
+   */
+  access?: AccessGate;
   /** Return explicitly `false` to veto (spec/03 §7: falsy aborts). */
   at_pre_cmd?(ctx: CommandContext<W>): boolean | void;
   /**
@@ -108,6 +120,14 @@ export interface CommandDeps<W = unknown> {
    * when a spec declares `argForm` — the parse stage cuts the verb with it.
    */
   verbs?: VerbTable;
+  /**
+   * Builds the condition subject for access gates from the world and the
+   * acting entity. Required when a spec declares an access gate: the engine
+   * has no entity model, so it cannot guess this mapping.
+   */
+  subjectOf?: (world: W, actorId: string) => ConditionSubject;
+  /** Predicate registry for access gates; defaults to the engine's built-ins. */
+  predicates?: PredicateRegistry;
 }
 
 /**
@@ -190,6 +210,35 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
       return deps.inputs?.shift() ?? null;
     },
   };
+
+  if (spec.access) {
+    if (!deps.subjectOf) {
+      // Wiring bug, not player input: a declared gate is unevaluable without
+      // a subject, so this fails loudly instead of silently granting access.
+      throw new Error(
+        `command "${spec.key}" declares an access gate but no subject provider was given (deps.subjectOf)`,
+      );
+    }
+    const check = checkAccess(
+      spec.access.rules,
+      spec.access.accessType,
+      deps.subjectOf(deps.world, command.actorId),
+      deps.predicates ?? defaultPredicateRegistry,
+    );
+    if (!check.ok) {
+      // Semantic only: commandKey + errKey locate the entry's err_* copy; the
+      // renderer reads the text from data — refusal is narrative, and the
+      // data words it (spec/02 §5.4).
+      ctx.emit(command.actorId, {
+        type: "commandRefused",
+        reason: "accessDenied",
+        commandKey: spec.key,
+        accessType: check.accessType,
+        errKey: check.errKey,
+      });
+      return { ok: false, seq: command.seq, kind: "rejected", reason: "accessDenied" };
+    }
+  }
 
   if (spec.at_pre_cmd) {
     const pre = spec.at_pre_cmd(ctx);

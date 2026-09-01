@@ -1,6 +1,6 @@
 # 02 · 命令层
 
-> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§2–§8 **待实现**（M1-T3~T6）。
+> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余**待实现**（M1-T4~T6）。
 > **依据**：ADR-0016 §2、ADR-0021 §1/§2/§4、ADR-0024 §1/§3、ADR-0022 §2（经 **ADR-0024 §8** 修正）、ADR-0025 §六。
 > （注：ADR-0024 的 **§7 修正的是 ADR-0022 §3**（原型继承），**§8 修正的是 ADR-0022 §2**（条件表达式）。本文件只涉及后者。）
 
@@ -76,13 +76,18 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 
 **不用字符串 DSL**（Evennia 的 lockstring 无法被 JSON Schema 校验，与 `content:check` 硬门禁冲突）。
 
+每个节点**恰有一个键**——组合器（`all`/`any`/`not`）或谓词名；裸布尔是退化叶子。组合器子节点可再嵌组合器（§5.1）：
+
 ```json
 {
-  "all": [ { "has_tag": "outdoors" }, { "attr_gte": ["strength", 50] } ],
-  "any": [ { "has_flag": "sectMember" } ],
-  "not": [ { "has_state": "wounded" } ]
+  "any": [
+    { "all": [ { "has_tag": "outdoors" }, { "attr_gte": ["strength", 50] } ] },
+    { "not": [ { "has_state": "wounded" } ] }
+  ]
 }
 ```
+
+（= 「在户外且力量≥50」或「未受伤」。ADR-0022 §2 早期示例的三键单对象形态已废——单键节点才使嵌套文法无歧义。）
 
 ### 5.1 ⚠️ 必须允许递归嵌套
 
@@ -92,8 +97,7 @@ Evennia 文法是**扁平**的 `f1 AND f2 OR f3`（优先级来自 Python：`and
 
 ### 5.2 外层结构
 
-- 外层是 `Map<accessType, expr>`（对应 lockstring 的分号分段 `edit:…; use:…`）
-- 保留 `default`（accessType 缺失时的返回值）
+- **外层是 `Map<accessType, expr>` 并保留 `default`**（accessType 缺失时的返回值）。`default` 是**完整条件**：布尔即直白策略位（`false` = 缺省拒绝，最常用），也可是任意表达式（如「未声明的类型须有 member 旗标」）。
 
 ### 5.3 谓词是引擎能力，不是内容
 
@@ -102,6 +106,13 @@ Evennia 文法是**扁平**的 `f1 AND f2 OR f3`（优先级来自 Python：`and
 ### 5.4 `err_*` 是净增益
 
 Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只有 Exit 的 `err_traverse` 是遍历失败处手工读的）。我们把它做成一等数据字段——**拒绝也是一种叙事**。
+
+### 5.5 落地形态（M1-T3）
+
+- **节点单键**：每个节点恰有一个键——组合器（`all`/`any`/`not`）或谓词名；裸布尔是退化叶子（某 accessType 直白放行/拒绝）。`not` 语义 = **无一为真**（单子节点即普通否定）。
+- **求值器与注册表**（`packages/core/src/conditions.ts`）：`evaluateCondition(expr, subject, registry)` 纯函数递归求值；谓词求值**只走注册表**（`createPredicateRegistry`，重名抛错），内置六谓词读 `ConditionSubject` 主题中立侧面（`attr`/`hasTag`/`hasFlag`/`hasState`/`locationId`/`hasSkill`——引擎定义问题，内容/宿主回答答案）。宿主以 `deps.subjectOf` 从世界+actor 构造 subject，以 `deps.predicates` 注入扩展注册表。
+- **管线接入**：`CommandSpec.access = { rules, accessType }` 在 `at_pre_cmd` **之前**求值（可用性先于情境否决）。拒绝产出 `rejected` + `commandRefused` 事件，事件只带语义（`commandKey`/`accessType`/`errKey`），渲染层按 `errKey` 读条目的 `err_*` 字段取文案——事件绝不含已渲染文本（spec/01 §5.1）。
+- **schema**（`schemas/condition.schema.json`，draft-07 `$ref` 自引用）：根 = 单表达式（武功先修用）；`#/definitions/accessRules` = 门禁映射（commands/exits 用）。它是**被引用库**，不映射任何 content/ 集合，其合法性由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试）。
 
 依据：ADR-0022 §2、ADR-0024 §8、ADR-0025 记录
 
@@ -131,9 +142,9 @@ Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只�
 - [ ] 引擎源码里搜不到任何动词（动词全在 `content/commands/`）——src 侧已由 `engine-purity` 文法字符集守卫，`content/commands/` 待 M1-T5
 - [ ] 命令集是**多源合并**，不是单表查询
 - [ ] 出口是**独立实体**，方向词是它的 `verbs`，优先级最高
-- [ ] 条件表达式 schema **允许递归嵌套**
-- [ ] 外层是 `Map<accessType, expr>` 且有 `default`
-- [ ] 拒绝文案 `err_*` 是数据字段，不是引擎字符串
+- [x] 条件表达式 schema **允许递归嵌套**（M1-T3 已落：`schemas/condition.schema.json`，`$ref` 自引用无深度限制）
+- [x] 外层是 `Map<accessType, expr>` 且有 `default`（M1-T3 已落：`#/definitions/accessRules` + `checkAccess`）
+- [x] 拒绝文案 `err_*` 是数据字段，不是引擎字符串（M1-T3 已落：事件携带 `errKey`，文案在条目数据，引擎零文案）
 - [ ] 每条命令的 `verbs` 里中文与英文缩写并列
 - [ ] 别名两层（内容层 + 玩家层存档）
 - [ ] 输入组件处理 **IME 合成事件**：合成期间按 Enter 不提交半成品拼音（G3）

@@ -97,13 +97,14 @@ Evennia 在线上传输的是**已渲染的字符串**（`data_out.text`）。�
 ```
 packages/core/          引擎（可独立发布的库，零题材词）
   src/
-    ports/              Clock / Rng / SaveStore / Authority 的接口定义
-    command/            解析、命令集合并、分发
+    types.ts            端口与对外契约（Clock / Rng / SaveStore / Authority、GameEvent）
+    conditions.ts       条件求值与谓词注册表（独立横切契约，M1-T3 已落——不并入 effects/）
+    command/            解析、命令集合并、分发（M1-T1/T2 已落）
+    save/               版本化存档迁移链
     world/              房间、出口、实体、hook
-    state/              typed 状态、derived、迁移链
+    state/              typed 状态、derived
     time/               tick、调度六原语、游戏内时间
-    effects/            条件求值、效果执行
-    events/             GameEvent 定义
+    effects/            效果执行
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑
 
