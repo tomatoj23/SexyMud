@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
+import { createPredicateRegistry, defaultPredicateRegistry } from "../src/conditions.js";
 
 /**
  * The command test harness from ADR-0023 §1 — the seam every command test
@@ -267,5 +268,79 @@ describe("command test harness (ADR-0023 §1)", () => {
     harness.call(spec, "confirm", { inputs: ["yes", "2"] });
 
     expect(consumed).toEqual(["yes", "2", "<none>"]);
+  });
+
+  it("maps an execution-stage rejection to a rejected result; the refusing func words its own refusal", () => {
+    const order: string[] = [];
+    const spec: CommandSpec<TestWorld> = {
+      key: "strike",
+      func: (ctx) => {
+        order.push("func");
+        // The executor owns the refusal semantics: gates beyond the entry's
+        // own, hook vetoes — it emits the event itself, with full context.
+        ctx.emit("actor-1", { type: "commandRefused", reason: "targetMissing", commandKey: "strike" });
+        return { kind: "rejected", reason: "targetMissing" };
+      },
+      at_post_cmd: () => {
+        order.push("post");
+      },
+    };
+
+    const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: ["actor-1"] });
+    const out = harness.call(spec, "strike");
+
+    expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "targetMissing" });
+    // Exactly the func's own refusal — the pipeline words no second one.
+    expect(out.messages).toEqual([
+      {
+        to: "actor-1",
+        event: {
+          seq: 1,
+          type: "commandRefused",
+          actorId: "actor-1",
+          reason: "targetMissing",
+          commandKey: "strike",
+        },
+      },
+    ]);
+    // A rejected command never reaches the post stage.
+    expect(order).toEqual(["func"]);
+  });
+
+  it("exposes the predicate registry to the execution stage (gates beyond the entry's own)", () => {
+    const seen: string[] = [];
+    const spec: CommandSpec<TestWorld> = {
+      key: "probe",
+      func: (ctx) => {
+        seen.push(ctx.predicates === defaultPredicateRegistry ? "default" : "custom");
+      },
+    };
+
+    createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [] }).call(spec, "probe");
+    const custom = createPredicateRegistry([["always", () => true]]);
+    createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], predicates: custom }).call(
+      spec,
+      "probe",
+    );
+
+    expect(seen).toEqual(["default", "custom"]);
+  });
+
+  it("liveWorld mode shares the world across calls: mutations persist (how a host drives a runtime)", () => {
+    const spec: CommandSpec<TestWorld> = {
+      key: "mutate",
+      func: (ctx) => {
+        ctx.world.rooms["room-1"] = { title: "changed" };
+      },
+    };
+    const world: TestWorld = { rooms: {} };
+
+    const harness = createCommandHarness<TestWorld>({ world, receivers: [], liveWorld: true });
+    harness.call(spec, "mutate");
+    harness.call(spec, "mutate");
+
+    // The SHARED object mutated — a live world runtime evolves across a
+    // session instead of being re-cloned per command.
+    expect(world.rooms["room-1"]).toEqual({ title: "changed" });
   });
 });

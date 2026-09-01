@@ -3,7 +3,6 @@ import { checkAccess, defaultPredicateRegistry } from "../conditions.js";
 import type { AccessGate, ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { parseArgForm } from "./parser.js";
 import type { ArgForm, VerbTable } from "./parser.js";
-
 /**
  * The command pipeline (ADR-0023 §1a): four stages, run in order.
  *
@@ -55,6 +54,14 @@ export interface CommandContext<W = unknown> {
   readonly world: W;
   readonly clock: Clock;
   readonly rng: Rng;
+  /**
+   * The predicate registry condition evaluation resolves through — the
+   * access gate here, and any gate an execution stage checks itself (the
+   * engine's traversal adapter asks the target room's enter gate with it,
+   * so host-extended predicates apply uniformly). Defaults to the engine's
+   * built-ins.
+   */
+  readonly predicates: PredicateRegistry;
   emit(recipientId: string, event: EventDraft): void;
   /**
    * Vetoes the command from a pre-stage hook and returns `false` (so the
@@ -72,6 +79,21 @@ export interface CommandContext<W = unknown> {
 
 /** Outcome of the parse stage. `ok: false` maps to the `invalid` failure. */
 export type ParseOutcome = { ok: true; args: unknown } | { ok: false; reason: string };
+
+/**
+ * The execution stage's refusal: a legitimate mid-execution failure — a
+ * gate beyond the entry's own (the target room's enter gate), a movement
+ * hook veto, a missing target. Same class as an access denial (spec/01
+ * §4): `rejected`, the seq IS consumed, and the refusal is game content.
+ *
+ * The refusing func HAS ALREADY emitted its refusal event(s) with full
+ * semantics — the executor owns the context (commandKey, errKey, ids) and
+ * the pipeline does not word a second, generic one. This differs from
+ * at_pre_cmd vetoes deliberately: pre-stage hooks are policy checks
+ * without execution context, so the pipeline words those; an executor
+ * that just checked a gate knows exactly which entry's copy to name.
+ */
+export type CommandRejection = { kind: "rejected"; reason: string };
 
 /**
  * A command as executable behaviour. Verbs live in content data, not here —
@@ -103,7 +125,14 @@ export interface CommandSpec<W = unknown> {
    * is the args (the pre-parser default kept for stage-by-stage tests).
    */
   parse?(ctx: CommandContext<W>, rawInput: string): ParseOutcome;
-  func(ctx: CommandContext<W>): void;
+  /**
+   * The execution stage. Returns void when the command ran, or a
+   * {@link CommandRejection} when it legitimately refused mid-execution —
+   * the refusal is then a rejected result and at_post_cmd does not run.
+   * On rejection the func has already emitted its refusal event(s); see
+   * {@link CommandRejection}.
+   */
+  func(ctx: CommandContext<W>): void | CommandRejection;
   at_post_cmd?(ctx: CommandContext<W>): void;
 }
 
@@ -197,6 +226,7 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
     world: deps.world,
     clock: deps.clock,
     rng: deps.rng,
+    predicates: deps.predicates ?? defaultPredicateRegistry,
     emit(recipientId, draft) {
       const event: GameEvent = { ...draft, seq: command.seq, actorId: command.actorId };
       events.push(event);
@@ -260,7 +290,13 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
   }
   ctx.args = outcome.args;
 
-  spec.func(ctx);
+  const rejection = spec.func(ctx);
+  if (rejection !== undefined) {
+    // The execution stage refused and has already worded its refusal as
+    // semantic events; the pipeline carries the failure class only. Like
+    // every rejected result, the seq is consumed (spec/01 §4).
+    return { ok: false, seq: command.seq, ...rejection };
+  }
 
   if (spec.at_post_cmd) {
     spec.at_post_cmd(ctx);

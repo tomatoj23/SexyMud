@@ -28,6 +28,7 @@ export { runCommand } from "./command/pipeline.js";
 export type {
   CommandContext,
   CommandDeps,
+  CommandRejection,
   CommandSpec,
   EventDraft,
   Message,
@@ -57,6 +58,21 @@ export type {
 export { createContentRegistry } from "./content/registry.js";
 export type { ContentRegistry, MonsterRecord } from "./content/registry.js";
 export type { ExitEntry, NpcEntry, PlacementEntry, RoomEntry } from "./world/entry.js";
+export { MOVE_TYPES, createEntity } from "./world/entity.js";
+export type {
+  AnnounceMoveContext,
+  Entity,
+  EntityHooks,
+  MoveHookContext,
+  MoveInfo,
+  MoveType,
+} from "./world/entity.js";
+export { createWorldRuntime } from "./world/runtime.js";
+export type { WorldRuntime, WorldRuntimeOptions } from "./world/runtime.js";
+export { moveTo } from "./world/move.js";
+export type { MovePorts, MoveRequest, MoveResult, MoveVetoStage } from "./world/move.js";
+export { traversalSpec } from "./world/traverse.js";
+export type { EntityState, WorldState } from "./state/tree.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
   CallOptions,

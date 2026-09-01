@@ -1,5 +1,5 @@
 import type { AccessRules } from "../conditions.js";
-import type { CommandContext, CommandSpec } from "./pipeline.js";
+import type { CommandContext, CommandRejection, CommandSpec } from "./pipeline.js";
 import type { ArgForm } from "./parser.js";
 import type { CmdSetSource } from "./cmdset.js";
 import type { MergeType } from "./cmdset.js";
@@ -146,9 +146,11 @@ export interface CommandSpecOptions<W = unknown> {
    * The command's behaviour. The engine never words game output itself; func
    * emits semantic events through the context. (A future effects pipeline
    * will resolve behaviour from content references — until then hosts bind
-   * behaviour per command key.)
+   * behaviour per command key, or bind the engine's factory adapters:
+   * traversalSpec for exits.) May return a CommandRejection when the
+   * execution legitimately refused — same contract as CommandSpec.func.
    */
-  func(ctx: CommandContext<W>): void;
+  func(ctx: CommandContext<W>): void | CommandRejection;
 }
 
 /**

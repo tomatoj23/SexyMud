@@ -1,7 +1,7 @@
 # 03 · 世界模型
 
-> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；§5–§7（标签运行时、原型继承、实体 hook）**待实现**——房间与人物先以内容形态落地，实体运行时（移动 hook 等）是后续票；形态定案见 §4.2（ADR-0028），§7 ＋ 状态树种子（spec/04 §1）＝ **M2**（已拆票），§5–§6 ＝ **M3**。
-> **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、xkx100 调研。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
+> **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、**ADR-0028**、xkx100 调研。
 
 ## 1. 集合划分
 
@@ -98,12 +98,21 @@
 8. **`at_object_creation` vs `at_object_post_creation` 两层**：前者是默认值，后者让 **JSON 内容覆盖默认值**。**顺序错了，JSON 内容永远赢不了代码默认值。**
 9. **动态命令集时机**（等价 Evennia 的 `at_cmdset_get`）—— 出口靠它把自己变成命令，实体状态变化时按需重建可用动作。
 
+### 7.3 落地形态（M2-T1）
+
+- **`Entity` 接口 ＋ `createEntity`**（`packages/core/src/world/entity.ts`）：移动族 8 hook（移动侧 `at_pre_move`／`announce_move_from`／`announce_move_to`／`at_post_move` ＋ 容器侧 `at_pre_object_leave`／`at_pre_object_receive`／`at_object_leave`／`at_object_receive`）全部按任意实体设计；引擎默认行为只有两个 announce（逐接收者发语义事件 `departed`／`arrived`），无默认否决。位置（`locationId`）可为房间 id **或实体 id**（实体即容器——get/give/drop 的去向），容器 hook 只在位置是实体时触发（房间是内容，无 hook）。
+- **`moveType` 五值**（`MOVE_TYPES`）：teleport／traverse／get／give／drop——引擎语义枚举，`MoveInfo` 携带它进每个 hook。
+- **`moveTo`**（`packages/core/src/world/move.ts`）：纯 hook 编排（否决点全部先于播报）＋唯一的位置写点，**零权限检查**（§7 第 2 项落点确认）。否决返回 `{ok: false, stage}`，stage 是语义码（哪个 hook 拒绝）。
+- **`WorldRuntime`**（`packages/core/src/world/runtime.ts`）：ContentRegistry ＋ 状态树 ＋ hook 载体实例三合一；`occupantsOf` 按 id 升序（确定性）；`subjectOf` 从树状态构造条件主题（flags/location 真实回答，未落地槽位答「无」）。
+- **穿行适配器 `traversalSpec`**（`packages/core/src/world/traverse.ts`，引擎出厂，ADR-0028 §3）：出口 traverse 门禁（管线 access 段）→ 目标房 enter 门禁（`checkAccess`，事件带 `roomId` 定位房间文案）→ `moveTo("traverse")`。两道门禁拒绝均 `rejected` ＋ `commandRefused` 语义事件；执行段拒绝通道见 spec/02 §4.1。
+- **测试**：`tests/entity-move.test.ts`（合成内容：hook 次序／三否决点／零门禁／逐接收者／状态树／响亮失败）＋ `tests/traversal-chain.test.ts`（真实内容：柳青镇全链路、第二假玩家多接收者、异房不收、两道门禁文案来自 JSON、确定性重放）。
+
 ### 命名约定（照抄，高度一致且好用）
 
 | 前缀 | 含义 |
 |---|---|
 | `at_*` | hook |
-| `at_pre_*` | **可否决**（返回假值中止） |
+| `at_pre_*` | **可否决**（返回**显式 `false`** 中止；void 副作用返回＝继续——与管线 `at_pre_cmd` 同律，防 Evennia「真值静默跳过」坑） |
 | `at_post_*` | 事后通知 |
 | `announce_*` | 广播文本专用 hook |
 | `return_*` | **返回数据给调用者，不发消息** |
@@ -120,8 +129,8 @@
 - [ ] 原型合并：`attrs`/`tags` 互补，其余整体替换
 - [ ] `content:check` 有**原型环检测**
 - [ ] `prototypeKey` 不参与继承
-- [ ] 移动 hook 带 **`moveType`**
-- [ ] 移动入口**不做权限检查**（外置）
+- [x] 移动 hook 带 **`moveType`**——M2-T1 已落：`MOVE_TYPES` 五值枚举，`MoveInfo` 进每个 hook
+- [x] 移动入口**不做权限检查**（外置）——M2-T1 已落：`moveTo` 零门禁；穿行适配器编排 traverse → enter → moveTo（ADR-0028 §3）
 - [ ] `return_appearance` **纯返回不发消息**
 - [ ] `at_object_post_creation` 存在，让 JSON 赢过代码默认值
-- [ ] 消息渲染**按接收者逐一遍历**
+- [x] 消息**按接收者逐一遍历发射**（引擎侧）——M2-T1 已落：announce 逐接收者逐事件（`departed`／`arrived`，含移动者本人）；渲染层的按观者渲染仍是 spec/05 的事

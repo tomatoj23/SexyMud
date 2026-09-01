@@ -36,7 +36,15 @@ export function createTestClock(startTick = 0): TestClock {
 }
 
 export interface HarnessOptions<W> {
-  /** Pure-object world snapshot; deep-copied per call (no transaction rollback). */
+  /**
+   * The world. Pure-object mode (default): deep-copied per call, no
+   * transaction rollback — each call runs on a fresh fixture. Live mode
+   * (`liveWorld: true`): passed by reference every call, so state a command
+   * mutates (a move) is visible to the next call — how a host drives a
+   * world runtime across a session. A runtime cannot be deep-copied at all
+   * (structuredClone drops its hook-carrying entity instances), so runtime
+   * worlds always run live.
+   */
   world: W;
   /**
    * Explicitly declared receivers (ADR-0023 §1f). Output to any other
@@ -71,6 +79,8 @@ export interface HarnessOptions<W> {
   subjectOf?: (world: W, actorId: string) => ConditionSubject;
   /** Predicate registry for access gates; defaults to the engine's built-ins. */
   predicates?: PredicateRegistry;
+  /** Live-world mode: share the world by reference across calls. Default false. */
+  liveWorld?: boolean;
 }
 
 export interface CallOptions {
@@ -130,7 +140,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
       const result = runCommand(spec, command, {
         clock,
         rng,
-        world: structuredClone(options.world),
+        world: options.liveWorld ? options.world : structuredClone(options.world),
         sink,
         inputs: [...(callOptions.inputs ?? [])],
         verbs,
