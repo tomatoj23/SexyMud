@@ -1,4 +1,6 @@
+import type { CmdSetSource } from "../command/cmdset.js";
 import type { EventDraft } from "../command/pipeline.js";
+import type { EntityState } from "../state/tree.js";
 
 /**
  * The Entity interface and its hook families (spec/03 §7, ADR-0028).
@@ -10,9 +12,13 @@ import type { EventDraft } from "../command/pipeline.js";
  * ANY entity: item containers, stateful NPCs, materialized rooms. The
  * kernel's completeness lives in these hooks, not in features (ADR-0027).
  *
- * Three families live here: the movement family (at_pre_move through
- * at_object_receive, M2-T1), the message receiver (at_msg_receive, M2-T3)
- * and the say pair (at_pre_say / at_post_say, M2-T3).
+ * Six families live here: the movement family (at_pre_move through
+ * at_object_receive, M2-T1), the message receiver (at_msg_receive, M2-T3),
+ * the say pair (at_pre_say / at_post_say, M2-T3), the transfer pairs
+ * (at_pre_get/give/drop + at_post_* — the seams the future item system
+ * rides, M2-T4), the creation two-layer (at_object_creation seeds code
+ * defaults, at_object_post_creation lets JSON content override them, M2-T4)
+ * and the dynamic cmdset hook (at_cmdset_get, M2-T4).
  *
  * Naming follows the Evennia convention the spec pins (spec/03 §7): `at_*`
  * hook, `at_pre_*` vetoable by returning an explicit false, `at_post_*`
@@ -106,6 +112,55 @@ export interface Entity {
   at_pre_say?(ctx: SayHookContext): boolean | void;
   /** Speaker side (spec/03 §7.7's say half): after-the-fact notification, post-broadcast. */
   at_post_say?(ctx: SayHookContext): void;
+  /**
+   * Transferred-entity side (spec/03 §7.7's get half, M2-T4): THIS entity is
+   * about to be picked up. Vetoable before the movement chain runs — the
+   * behaviour-level refusal ("too heavy to lift") precedes at_pre_move and
+   * everything beneath it.
+   */
+  at_pre_get?(ctx: GetHookContext): boolean | void;
+  /** Transferred-entity side: after the pickup completed (post-move notification). */
+  at_post_get?(ctx: GetHookContext): void;
+  /**
+   * Transferred-entity side (spec/03 §7.7's give half, M2-T4): THIS entity is
+   * about to be handed from one entity to another. The two parties' own
+   * vetoes are the movement chain's container hooks (at_pre_object_leave on
+   * the giver, at_pre_object_receive on the receiver) — three refusal points
+   * around one handover.
+   */
+  at_pre_give?(ctx: GiveHookContext): boolean | void;
+  /** Transferred-entity side: after the handover completed. */
+  at_post_give?(ctx: GiveHookContext): void;
+  /**
+   * Transferred-entity side (spec/03 §7.7's drop half, M2-T4): THIS entity is
+   * about to be put down at its holder's location.
+   */
+  at_pre_drop?(ctx: DropHookContext): boolean | void;
+  /** Transferred-entity side: after the entity was put down. */
+  at_post_drop?(ctx: DropHookContext): void;
+  /**
+   * Creation layer one (spec/03 §7.8, M2-T4): seed the CODE defaults onto the
+   * entity's fresh tree state. Runs first, inside createObject — the whole
+   * point of the two-layer seam is that whatever happens next can override.
+   */
+  at_object_creation?(ctx: CreationHookContext): void;
+  /**
+   * Creation layer two (spec/03 §7.8, M2-T4): apply the JSON CONTENT over the
+   * code defaults. Runs second, after at_object_creation — reverse the order
+   * and content can never win over the defaults. Today the host applies its
+   * content here; the materialization ticket (items, stateful NPCs) turns
+   * that application into an engine factory, on this same seam.
+   */
+  at_object_post_creation?(ctx: CreationHookContext): void;
+  /**
+   * The dynamic cmdset hook (spec/03 §7.9, Evennia's at_cmdset_get, M2-T4):
+   * asked ON EVERY DISPATCH, with the entity's live state and the host's
+   * assembled base sources in hand — return the adjusted sources (filtered,
+   * extended, reordered: a silenced entity drops verbs, an empowered one
+   * gains them). A void return passes the base sources through untouched.
+   * The engine keeps no cache: state changes surface on the next dispatch.
+   */
+  at_cmdset_get?(ctx: CmdsetHookContext): readonly CmdSetSource[] | void;
 }
 
 /**
@@ -137,6 +192,73 @@ export interface SayHookContext {
   readonly locationId: string;
   readonly text: string;
   emit(recipientId: string, draft: EventDraft): void;
+}
+
+/**
+ * What the get-family hooks see (spec/03 §7.7's get half): the transferred
+ * entity (the hook's host), who picks it up — the move's destination IS the
+ * getter — and where it lies right now, plus the emit port (a hook may emit
+ * its own semantic events, the same seam every hook family carries).
+ */
+export interface GetHookContext {
+  readonly entityId: string;
+  readonly getterId: string;
+  readonly fromLocationId: string;
+  emit(recipientId: string, draft: EventDraft): void;
+}
+
+/**
+ * What the give-family hooks see (spec/03 §7.7's give half): the
+ * transferred entity plus BOTH parties — give is the one transfer with a
+ * second hand. The movement's from/to are the giver and the receiver
+ * themselves (entities as containers).
+ */
+export interface GiveHookContext {
+  readonly entityId: string;
+  readonly giverId: string;
+  readonly receiverId: string;
+  emit(recipientId: string, draft: EventDraft): void;
+}
+
+/**
+ * What the drop-family hooks see (spec/03 §7.7's drop half): the
+ * transferred entity, who puts it down, and where it lands — the dropper's
+ * own location, whatever that is (a room, or another container: dropping
+ * while inside a chest drops into the chest).
+ */
+export interface DropHookContext {
+  readonly entityId: string;
+  readonly dropperId: string;
+  readonly toLocationId: string;
+  emit(recipientId: string, draft: EventDraft): void;
+}
+
+/**
+ * What both creation layers see (spec/03 §7.8): the entity's state in the
+ * tree, WRITABLE — seeding that state is creation's entire job. Layer one
+ * (at_object_creation) writes code defaults; layer two
+ * (at_object_post_creation) applies JSON content over them. The emit port
+ * lets either layer announce (an objectCreated event, a spawn flourish).
+ */
+export interface CreationHookContext {
+  readonly entityId: string;
+  state: EntityState;
+  emit(recipientId: string, draft: EventDraft): void;
+}
+
+/**
+ * What at_cmdset_get sees (spec/03 §7.9): the entity's live state — flags
+ * and location read from the tree, the facets state-driven filtering needs —
+ * plus the base sources the host assembled for this dispatch (content
+ * commands, this room's exits). The hook returns adjusted sources or void
+ * for "as assembled"; see assembleSources (world/cmdset.ts), the seam's
+ * single entry point.
+ */
+export interface CmdsetHookContext {
+  readonly entityId: string;
+  readonly locationId: string;
+  readonly flags: readonly string[];
+  readonly sources: readonly CmdSetSource[];
 }
 
 /** The hook surface without identity — what createEntity overrides. */

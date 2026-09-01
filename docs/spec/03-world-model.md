@@ -1,6 +1,6 @@
 # 03 · 世界模型
 
-> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5；M2-T3：`at_msg_receive` 可否决 + `fromObj` 可空的广播原语 + `at_pre_say`／`at_post_say` 配对 + say 出厂适配器，见 §7.4）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5；M2-T3：`at_msg_receive` 可否决 + `fromObj` 可空的广播原语 + `at_pre_say`／`at_post_say` 配对 + say 出厂适配器，见 §7.4；M2-T4：get／give／drop 转移配对 + creation 两层 + 动态 cmdset 接缝，见 §7.6）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
 > **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、**ADR-0028**、xkx100 调研。
 
 ## 1. 集合划分
@@ -122,6 +122,15 @@
 - **`lookSpec` 出厂适配器**（ADR-0028 §2）：`cmd-look` 内容条目经 `commandSpecFromEntry` 绑定引擎行为（argForm 非 none 的大声抛错——带参的看是另一种行为），`call()` 全链路。可见 → 向观者发**一条** `appearance` 语义事件：roomId／出口清单／静态在场清单／动态占用清单——房名、长描述、实体名字全部留在内容数据（渲染层按 id 经注册表取，与 `err_*` 文案同律），事件零已渲染文本（spec/01 §5.1）；人称立场（你／他）归渲染层；look 是观者的私有感知，同房他人不收事件（与移动播报相反）。不可见 → `rejected`（seq 已消耗）+ `commandRefused` 事件（`reason: "notVisible"`——与门禁拒绝的 `accessDenied` 分立，感知失败与准入拒绝是两类玩家体验；`commandKey`／`accessType: "look"`／`errKey`／`roomId` 定位文案）。
 - **测试**：`tests/look-behavior.test.ts`（真实内容：大堂双假玩家 + 掌柜的放置；后院孙彪（放置）与假玩家（状态树）同场——汇合点；`look` 英文动词走同一分发；合成遮蔽房（无灯不可见、执灯可见、同一会话内揭幕）；`default: false` 不使房间对住客变黑；零文本断言（事件串不含房名／描述／NPC 名／`err_look` 文案）；确定性重放）。
 
+### 7.6 落地形态（M2-T4：接缝补全）
+
+**接缝先行、合成驱动**（issue #10）：三块 hook 结构落地，无物品系统——首个真实消费者是物化票（物品、需要状态的 NPC），届时零改形。
+
+- **转移三配对 `getObject`／`giveObject`／`dropObject`**（`packages/core/src/world/transfer.ts`，§7 第 7 项的 get/give/drop 部分）：薄行为层**包在 `moveTo` 外**——`at_pre_get/give/drop`（被转移实体的行为级否决，**先于整条移动链**，拒绝零成本）→ `moveTo("get"/"give"/"drop")`（M2-T1 全链：`at_pre_move`、容器双侧否决、播报、位置写点、`at_post_move`）→ `at_post_get/give/drop`（事后通知）。与 say 的 pre/广播/post 三明治同构；Evennia 默认 get/give/drop 命令正是此形。**三方否决结构**：give 的一次交接被三个 hook 环绕——被给实体（`at_pre_give`）＋ 给者（`at_pre_object_leave`，M2-T1 容器 hook）＋ 收者（`at_pre_object_receive`）；get/drop 各两方。veto stage 报行为 hook 名或透传移动链 stage。目标解析（`get 剑` → 实体 id）**不随本票**——编排收显式 id，「拿得着吗」归命令层门禁（`moveTo` 零权限律的同一推导）。播报即引擎默认 announce 事件、`moveType` 随行——渲染层按因分流叙事零引擎改动（§7 第 1 项的回报兑现）。
+- **creation 两层 `createObject`**（`packages/core/src/world/creation.ts`，§7 第 8 项）：`addEntity`（注册＋种子状态进树，位置不可解析大声抛）→ `at_object_creation`（**第一层：代码默认值**，写树状态）→ `at_object_post_creation`（**第二层：JSON 内容覆盖**——post 层运行时默认值已可见，覆盖是有语境的决定）。**顺序即契约**：反了 JSON 永远赢不了代码默认值。本票引擎只保证两层与顺序；「内容是什么形状」归宿主（测试用合成 JSON 数据在 post 层应用），物化票把「应用内容条目」做成出厂能力挂同一接缝。存档加载**不走** createObject——恢复是重放树不是创建（M2-T5 的事）。creation 无否决语义（只有播种顺序），失败＝wiring 抛错。
+- **动态 cmdset `assembleSources`**（`packages/core/src/world/cmdset.ts`，§7 第 9 项，等价 Evennia `at_cmdset_get`）：宿主组装基准源（内容命令＋本房出口）→ 过**实体的 `at_cmdset_get`**（语境：实体活状态 flags/location 的**拷贝**——只读不写，状态变化是效果系统的事，本缝只反应）→ 返回调整后源（过滤／增补／重排：静默滤动词、赋能加命令）。**时机即契约**：源**逐分发**重组、引擎零缓存（Evennia `_CMDSET_MERGE_CACHE` 是已记录的坑，spec/08）——实体状态变化（往树里写个 flag）→ 下一次分发的可用动作集即变，无需任何 API 调用或事件。void 返回＝基准源**原引用**透传（无 hook 实体零成本）。分工：宿主组基准、`at_cmdset_get` 调整、`mergeCmdSets`（command/cmdset.ts 纯合并）折叠——assemble 是「实体状态驱动的组装」，feed merge。
+- **测试**：`tests/entity-seams.test.ts`（全合成：三缝 hook 全链次序／三 pre 各自显式 false 否决与 void 放行／容器否决透传且 post 不跑／默认 announce 带 moveType 的三接收者事件／give 三方、drop 到丢者位置、响亮失败；creation 两层次序／JSON 赢过代码默认值／未覆盖处保留默认值／注册即查询可见／hook 可发事件／无 hook 正常／非法位置抛；cmdset 语境供给（基准源＋活状态）／**状态变化下一次 dispatch 即变**（invalid:unknownVerb → 恢复）／hook 可增源不只滤／无 hook 原引用透传／确定性／未知实体抛）。
+
 ### 命名约定（照抄，高度一致且好用）
 
 | 前缀 | 含义 |
@@ -148,5 +157,7 @@
 - [x] 移动入口**不做权限检查**（外置）——M2-T1 已落：`moveTo` 零门禁；穿行适配器编排 traverse → enter → moveTo（ADR-0028 §3）
 - [x] `return_appearance` **纯返回不发消息**——M2-T2 已落：`returnAppearance` 纯组装（静态在场直读 × 状态树占用），`at_look` 内做可见性（显式 `look` 门禁，缺省可见）
 - [x] `at_msg_receive` **可否决 + `fromObj` 可空**——M2-T3 已落：`broadcastMessage` 逐接收者过筛（显式 false 仅屏蔽该接收者），`fromEntityId` 可空（系统消息路径有测试）
-- [ ] `at_object_post_creation` 存在，让 JSON 赢过代码默认值
+- [x] `at_pre_get/give/drop` pre 可否决 + post 配对——M2-T4 已落：三编排包 `moveTo` 外（`at_pre_*` 先于移动链、`at_post_*` 随后），逐缝测试在 `tests/entity-seams.test.ts`
+- [x] `at_object_post_creation` 存在，让 JSON 赢过代码默认值——M2-T4 已落：`createObject` 两层（creation 默认值 → post 应用内容），顺序即契约（JSON 赢有测试）
+- [x] 动态命令集时机（等价 `at_cmdset_get`）——M2-T4 已落：`assembleSources` 逐分发重组、零缓存，实体状态变化下一次分发即变（合成测试）
 - [x] 消息**按接收者逐一遍历发射**（引擎侧）——M2-T1 已落：announce 逐接收者逐事件（`departed`／`arrived`，含移动者本人）；M2-T3：say 经 `broadcastMessage` 同律逐接收者（含说者，各过 `at_msg_receive`）；渲染层的按观者渲染仍是 spec/05 的事

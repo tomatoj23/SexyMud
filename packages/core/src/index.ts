@@ -61,8 +61,13 @@ export type { ExitEntry, NpcEntry, PlacementEntry, RoomEntry } from "./world/ent
 export { MOVE_TYPES, createEntity } from "./world/entity.js";
 export type {
   AnnounceMoveContext,
+  CmdsetHookContext,
+  CreationHookContext,
+  DropHookContext,
   Entity,
   EntityHooks,
+  GetHookContext,
+  GiveHookContext,
   MoveHookContext,
   MoveInfo,
   MoveType,
@@ -73,6 +78,22 @@ export { createWorldRuntime } from "./world/runtime.js";
 export type { WorldRuntime, WorldRuntimeOptions } from "./world/runtime.js";
 export { moveTo } from "./world/move.js";
 export type { MovePorts, MoveRequest, MoveResult, MoveVetoStage } from "./world/move.js";
+export { dropObject, getObject, giveObject } from "./world/transfer.js";
+export type {
+  DropRequest,
+  DropResult,
+  DropVetoStage,
+  GetRequest,
+  GetResult,
+  GetVetoStage,
+  GiveRequest,
+  GiveResult,
+  GiveVetoStage,
+  TransferPorts,
+} from "./world/transfer.js";
+export { createObject } from "./world/creation.js";
+export type { CreationPorts, CreationRequest } from "./world/creation.js";
+export { assembleSources } from "./world/cmdset.js";
 export { traversalSpec } from "./world/traverse.js";
 export { atLook, lookSpec, returnAppearance } from "./world/look.js";
 export type { ExitDigest, LookOutcome, RoomAppearance, StaticPresence } from "./world/look.js";
