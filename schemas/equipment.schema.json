@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "equipment.schema.json",
   "title": "装备：底材与词缀（content/equipment/，每条目一文件）",
-  "description": "底材 = 分层条目（高层掉另一个底材，不是同一条目加 itemLevel）；词缀条目内含 3 阶数值表（对「每条目一文件」的有意例外）。由 oneOf 分流。依据 ADR-0012、。",
+  "description": "底材 = 分层条目（高层掉另一个底材，不是同一条目加 itemLevel）；词缀条目内含 3 阶数值表（对「每条目一文件」的有意例外）。由 oneOf 分流。依据 ADR-0012。",
   "type": "object",
   "oneOf": [
     { "$ref": "#/definitions/base" },

@@ -186,9 +186,17 @@ const unusedSchemas = readdirSync(join(root, "schemas"))
   .filter((path) => !usedSchemas.has(path))
   .sort();
 
+// A $ref library (condition, common) is referenced BY other schemas rather
+// than selected by a directory, so it will never have a content mapping —
+// calling it a "design draft" is wrong, and the distinction is one this
+// check prints on every run.
+const LIBRARY_KEYS = new Set(["$schema", "$id", "title", "description", "definitions", "$ref"]);
+const isLibrary = (schema) => Object.keys(schema).every((key) => LIBRARY_KEYS.has(key));
+const librarySchemas = unusedSchemas.filter((path) => isLibrary(schemasByPath.get(path)));
+
 if (unusedSchemas.length > 0) {
   console.log(
-    `NOTE     ${unusedSchemas.length} schema(s) have no content mapping (design drafts until their collections land; compile problems surface as WARN below, not failures): ${unusedSchemas.join(", ")}`,
+    `NOTE     ${unusedSchemas.length} schema(s) have no content mapping — ${librarySchemas.length} of them are $ref libraries (${librarySchemas.join(", ")}) and never will be; the other ${unusedSchemas.length - librarySchemas.length} are design drafts until their collections land; compile problems surface as WARN below, not failures: ${unusedSchemas.join(", ")}`,
   );
 }
 

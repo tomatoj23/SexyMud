@@ -22,7 +22,7 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema（**19 个**；`config` 拆 3 类：dimensions / display-tiers / settings；两个**被引用库**：`condition`（条件表达式）、`common`（条目通用字段 tags／flags／prototypeKey／prototypeParent，14 个条目集合统一 `$ref`）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 12 个无内容映射（含 2 个被引用库）→ 其中 **11 个**放置期集合 schema 随内容落地启用（`monster.schema.json` 已进编译但重估未做） |
+| `schemas/` | JSON Schema（**19 个**；`config` 拆 3 类：dimensions / display-tiers / settings；两个**被引用库**：`condition`（条件表达式）、`common`（条目通用字段 tags／flags／prototypeKey／prototypeParent，14 个条目集合统一 `$ref`）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 **12 个**无内容映射（= 2 个被引用库 + 10 个尚无内容的放置期集合）；放置期集合 schema 共 **11 个**（那 10 个 + `monster.schema.json`，它已进编译但重估未做） |
 | `docs/research/xkx100-*.md` | **一手调研**：房间/NPC/物品/任务结构、武功体系、**战斗文本模板与 50 档造诣完整列表** | 参考（高价值） |
 
 **冲突处置顺序**：**`docs/spec/`（活规格，最高）** > `CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/`（决策历史）> `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
@@ -108,7 +108,7 @@
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
 - **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / **第二内容包验收：非武侠迷你包经同一装配路径跑通走/看/说（M2-T6）** / **标签与原型 T1：四字段 schema 与类型落地（`content/entry.ts` 的 `EntryCommon`，M3-T1）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；20 个测试文件 / 393 用例全绿
-- **Schema 19 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ **2 个被引用库**（`condition` 条件表达式、`common` 条目通用字段〔M3-T1，14 个集合 `$ref` 引用〕）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）。**口径限定**：19 总数／14 待重估（= 19 − 3 新落 − 2 库，含 config 三类）/ 12 无内容映射（含 2 库）——三个数字划分标准不同，都对，别去统一它们
+- **Schema 19 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ **2 个被引用库**（`condition` 条件表达式、`common` 条目通用字段〔M3-T1，14 个集合 `$ref` 引用〕）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）。**口径限定**：19 总数／14 待重估（= 3 config + 11 放置期集合）/ 12 无内容映射（= 2 库 + 10 个无内容集合；`monster` 有内容故不计入）——三个数字划分标准不同，都对，别去统一它们
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
 - **第二内容包（M2-T6，`packages/core/tests/fixtures/mini-pack/`）**：非武侠（近轨灯塔站 3 房间／4 出口／2 命令／1 人物，方向词 前/后/内/外），与 `content/` 走**同一装载函数**（换包 = 换目录），经同一引擎跑通走/看/说——**验收标准 2 首次机械化，引擎零改动**，换包只换宿主的「命令 id → 出厂行为」绑定表

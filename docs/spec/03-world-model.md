@@ -66,7 +66,7 @@
 
 ### 5.1 落地形态（M3）
 
-- **形状唯一** `{ <维度>: [<键>…] }`（ADR-0029 §1）：维度名与键取值由 `content/config/dimensions.json` **封闭、schema 硬校验**——不在维度表里的维度写不进内容。`equipment` 的 `string[]` 孤例改齐。第二分量叫**维度**，不叫 `category`（与 CONTEXT.md「归属」的禁用词撞）。
+- **形状唯一** `{ <维度>: [<键>…] }`（ADR-0029 §1）：维度名与键取值由 `content/config/dimensions.json` **封闭**——但**封闭由注册表执行、schema 只管形状**（维度名 lowerCamelCase、键列表非空去重）：主机传了维度表就硬校验、没传就跳过，故「不在维度表里的维度写不进内容」以**拿到维度表**为前提。`equipment` 的 `string[]` 孤例改齐。第二分量叫**维度**，不叫 `category`（与 CONTEXT.md「归属」的禁用词撞）。
 - **两侧都住**：内容条目 → 注册表内建倒排索引 `byTag(dimension, key) → id[]`，覆盖**所有已加载集合中带 tags 的条目**（引擎不认识集合，只认带 tags 的条目）；运行时实体 → `EntityState` 加 `tags` 槽（与 `flags` 并列），`subjectOf` 据此回答 `hasTag`——`hasTag` 由**桩**（恒 `false`）变真实现，`has_tag` 谓词第一次有真实数据可读。
 - **并集那条缝**：「自身 ∪ 其内容条目」**接缝先行、合成驱动**（M2-T4 先例）。今天只有玩家是动态占用、而玩家没有内容条目，这一半**无真实消费者**，等物化票（物品、有状态的 NPC）缝合。
 - **内容条目侧也分两层**：`tags`（有维度、进索引）与 `flags`（裸布尔、不进索引）。`spec/06` 的 `tags: ['quest']` 改 `flags: ['quest']`——它的语义是**布尔判断**不是归类。
@@ -105,7 +105,7 @@
 - **环检测双保险**：`content:check`（离线，内容作者提前发现）＋ 注册表展平时（运行时，**不信任输入**）。环是**引用**性质（ADR-0003 分层），两边都管。
 - **归一化交给 schema**（直接要求规范形态），加载期不做 Evennia 那种 `homogenize_prototype`。
 - **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：合并律、多亲优先级、字典序、自环/二环/长环/菱形非环、`prototypeKey` ≠ `id`、引用未声明者、展平后不含 `prototypeParent`）＋ 迷你包（**真实继承链**，经同一装配路径）。`content:check` 的环检测沿既有先例**不新增单元测试**（四道检查都没有）。
-- **落地（M3-T1，#14）**：`prototypeKey`／`prototypeParent` 与 `tags`／`flags` 一起进 `schemas/common.schema.json`（见 §5.1 落地条）：四个字段是**同一份条目层契约**的两半，14 个条目集合统一引用，一律**可选**。schema 表达不了的三件事（`prototypeKey` 是否等于本条目 id、父是否声明过原型、是否成环）留给注册表展平（#16）与 `content:check` 环检测（#19）。
+- **落地（M3-T1，#14）**：`prototypeKey`／`prototypeParent` 与 `tags`／`flags` 一起进 `schemas/common.schema.json`（见 §5.1 落地条）：四个字段是**同一份实体层契约**的两半（条目带，出口也带——出口即命令），14 个条目集合统一引用，一律**可选**。schema 表达不了的三件事（`prototypeKey` 是否等于本条目 id、父是否声明过原型、是否成环）留给注册表展平（#16）与 `content:check` 环检测（#19）。
 
 ## 7. ★ 实体 hook：第一天必须定对的九项
 
@@ -172,7 +172,7 @@
 - [x] 房间四要素齐全（出口图 / 描述 / 放置清单 / 规则）——M1-T6 已落：schema 承载四要素（规则 = 房间 `preconditions`（enter）+ 出口门禁），首批内容全部具实
 - [x] 出口是独立实体，方向词是它的命令（M1-T6 已落：`ExitEntry extends CommandEntry`，`02-command-layer.md` §4.1）
 - [x] 人物引用怪物数值，**没有复制**（M1-T6 已落：npcs schema 结构性禁止战斗数值字段，`monsterId` 引用经注册表校验）
-- [ ] 标签**不带值**（形状 `{<维度>: [键…]}`，取值由维度表封闭、schema 硬校验）；归属用字段不用目录分层
+- [ ] 标签**不带值**（形状 `{<维度>: [键…]}`，取值由维度表封闭、**由注册表**硬校验，schema 只管形状）；归属用字段不用目录分层
 - [ ] `(维度, 键)` 倒排索引可跨内容批量查询（注册表 `byTag`，覆盖所有带 tags 的条目）
 - [ ] 内容条目侧 `tags` 与 `flags` 两层并存；`flags` 不进索引、不可批量查询
 - [ ] 运行时实体有 `tags` 槽，`hasTag` 不再是桩；「自身 ∪ 内容条目」的并集接缝已就位（合成驱动）
