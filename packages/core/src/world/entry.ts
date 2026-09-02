@@ -16,9 +16,10 @@ import type { EntryCommon } from "../content/entry.js";
  * changing all three.
  *
  * Rooms and npcs are entry collections, so both extend EntryCommon: the
- * entry-level tail (tags / flags / prototypeKey / prototypeParent) is shared,
- * while the sub-structures they contain — an exit, a placement row — are PARTS
- * of a room entry and carry none of it.
+ * shared tail (tags / flags / prototypeKey / prototypeParent) is an ENTITY-level
+ * contract, not a collection-level one. An exit is an entity (it is a command,
+ * spec/02 §4) and therefore carries it too; a PLACEMENT ROW is the one
+ * sub-structure in a room that is not an entity, and it carries none of it.
  */
 
 /**
@@ -39,7 +40,13 @@ import type { EntryCommon } from "../content/entry.js";
  * Being a command, an exit also carries the four entry-common fields
  * (tags / flags / prototypeKey / prototypeParent) through CommandEntry —
  * "an exit IS a command" is the reason, and the room schema's exit definition
- * admits them for exactly that reason (three-way sync). Of those four, the
+ * admits them for exactly that reason (three-way sync).
+ *
+ * Of the four, `tags` is the one with a consumer: an exit joins the `byTag`
+ * inverted index (decided 2026-09-02, spec/03 §5.1). Its id is already a
+ * dispatch key, so it shares one id space with entry ids and mixes into
+ * query results harmlessly — and a tag one can write but never query would be
+ * a dead field. `flags` stays unindexed, exactly as it is for entries. The
  * prototype pair has no consumer today: flattening runs per collection, and a
  * room's exits are replaced wholesale rather than complement-merged
  * (spec/03 §6). A placement row, by contrast, is not an entity at all and

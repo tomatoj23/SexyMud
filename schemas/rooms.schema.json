@@ -61,7 +61,7 @@
   "definitions": {
     "exit": {
       "type": "object",
-      "description": "出口：独立实体（不是房间的普通字段，spec/02 §4），它把自己注册成命令。字段 = 命令条目形态（verbs/argForm/cmdset/priority/mergetype/preconditions/err_*，三处同步同 commands.schema.json）+ 边字段（direction/targetRoomId）+ 四个通用字段（tags/flags/prototypeKey/prototypeParent，见 common.schema.json）。引擎侧类型 ExitEntry extends CommandEntry（packages/core/src/world/entry.ts），经 commandSetSources 分组、commandSpecFromEntry 装配，与命令走同一条路——**出口带四个通用字段正是「出口即命令」的推论**：它继承命令条目的全部形态，四个字段是那形态的一部分（三处同步要求类型与 schema 一致）。⚠️ 其中 `prototypeKey`/`prototypeParent` 对出口**今天无消费者**：展平按集合做（ADR-0030 §3），而房间的 `exits` 不在互补合并之列、走整体替换（spec/03 §6）——出口继承若将来要做，是独立决策。",
+      "description": "出口：独立实体（不是房间的普通字段，spec/02 §4），它把自己注册成命令。字段 = 命令条目形态（verbs/argForm/cmdset/priority/mergetype/preconditions/err_*，三处同步同 commands.schema.json）+ 边字段（direction/targetRoomId）+ 四个通用字段（tags/flags/prototypeKey/prototypeParent，见 common.schema.json）。引擎侧类型 ExitEntry extends CommandEntry（packages/core/src/world/entry.ts），经 commandSetSources 分组、commandSpecFromEntry 装配，与命令走同一条路——**出口带四个通用字段正是「出口即命令」的推论**：它继承命令条目的全部形态，四个字段是那形态的一部分（三处同步要求类型与 schema 一致）。其中 `tags`/`flags` 有消费者（出口 `tags` **进 `byTag` 倒排索引**，2026-09-02 定案见 spec/03 §5.1——出口 id 与条目 id 同空间、混排按 id 升序；`flags` 与条目侧同律、**不进索引**），而 `prototypeKey`/`prototypeParent` 对出口**今天无消费者**：展平按集合做（ADR-0030 §3），房间的 `exits` 不在互补合并之列、走整体替换（spec/03 §6）——出口继承若将来要做，是独立决策。",
       "required": ["id", "direction", "targetRoomId", "verbs", "argForm", "cmdset", "priority"],
       "properties": {
         "id": {

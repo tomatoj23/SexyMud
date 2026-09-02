@@ -12,8 +12,10 @@
  *
  * The four are all OPTIONAL: today's content declares none of them, and the
  * engine must not require a collection to opt into tagging or inheritance.
- * They are also all ENTRY-level: an exit or a placement row is part of a room
- * entry, not an entry of its own, and carries none of them.
+ * They are ENTITY-level rather than collection-level: an entry carries them,
+ * and so does an exit — an exit is a command (spec/02 §4), so it inherits the
+ * whole command shape, this tail included. The one thing in a room that is
+ * not an entity and carries none of them is a PLACEMENT ROW.
  *
  * What the engine does with them is the next tickets' work — the inverted
  * index (M3-T2) and load-time prototype flattening (M3-T3). This file only
