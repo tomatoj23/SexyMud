@@ -226,6 +226,12 @@ interface TagIndexes {
  * (#17 — the runtime's hasTag union reads tagsOf, the batch queries read
  * byTag, and a disagreement between them would be untestable).
  *
+ * The claim is scoped to content AS LOADED: like every other getter here
+ * (`room(id)` included) `tagsOf` hands out an internal reference, and the
+ * registry's whole contract is that loaded content is immutable — a host
+ * mutating an entry it handed over desyncs everything downstream, not just
+ * these two maps.
+ *
  * Validation lives HERE rather than in the schema because closure is a
  * content-pack fact: a schema cannot read dimensions.json without hardcoding
  * one pack's vocabulary (ADR-0004: no hardcoded enums), so the check moves to
