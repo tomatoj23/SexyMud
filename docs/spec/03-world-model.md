@@ -72,7 +72,7 @@
 - **内容条目侧也分两层**：`tags`（有维度、进索引）与 `flags`（裸布尔、不进索引）。`spec/06` 的 `tags: ['quest']` 改 `flags: ['quest']`——它的语义是**布尔判断**不是归类。
 - **维度表随包、由主机传入**：传了就硬校验，**没传就跳过**；`byTag` 不依赖维度表（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`element`（字段取值池，含 `none`）与 `elementTag`（标签维度）不合并，子集校验留 `content:check` 待办。
 - **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：形状与取值校验、索引查询、维度非法、缺维度表时跳过、规范序）＋ 接缝 2 `call()` 全链路（合成一个挂 `has_tag` 门禁的出口，直接往状态树写/删标签，断言放行/拒绝与语义事件——照 look 票「执灯可见」直接写 `flags` 的先例）。
-- **落地（M3-T2，#15）**：`content/registry.ts` 的 `createContentRegistry(content, options)` 内建 `(维度, 键)` 倒排索引 → **`byTag(维度, 键) → id[]`**，覆盖**所有带 `tags` 的实体**——四个集合的条目 ＋ 出口（出口不在任何集合里，索引必须显式遍历 `exitsById`），结果 **id 升序、跨集合合并**；维度表由主机**可选**传入 `options.dimensions`——**传了就硬校验**（未知维度／越界键大声失败）、**没传就跳过**，`byTag` 不依赖它（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`flags` 不进索引（机械证明：拿 flag 的值去问 `byTag`，**任何维度都问不到**）。⚠️ **索引必须建在展平之后**（M3-T3／#16）：继承来的 `tags` 也要可查，否则「把标签放进原型」就是绕过索引的后门——这条已作为注释钉在注册表源码里。同批（follow-up）把四个集合与出口的 id 收进**同一个唯一性空间**：`addUnique` 共享一张 `id → 集合` 表，跨集合重名抛 `id "x" is claimed by both "room" and "exit"`，同集合重名仍是原句 `duplicate <集合> id`。接缝：`tests/content-registry.test.ts`（既有缝，合成条目驱动，11 + 3 例）
+- **落地（M3-T2，#15）**：`content/registry.ts` 的 `createContentRegistry(content, options)` 内建 `(维度, 键)` 倒排索引 → **`byTag(维度, 键) → id[]`**，覆盖**所有带 `tags` 的实体**——四个集合的条目 ＋ 出口（出口不在任何集合里，索引必须显式遍历 `exitsById`），结果 **id 升序、跨集合合并**；维度表由主机**可选**传入 `options.dimensions`——**传了就硬校验**（未知维度／越界键大声失败）、**没传就跳过**，`byTag` 不依赖它（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`flags` 不进索引（机械证明：拿 flag 的值去问 `byTag`，**任何维度都问不到**）。⚠️ **索引必须建在展平之后**（M3-T3／#16 **已落**）：继承来的 `tags` 也要可查，否则「把标签放进原型」就是绕过索引的后门——这条已作为注释钉在注册表源码里（展平调用在 `buildTagIndex` 之前，顺序写进文件头）。同批（follow-up）把四个集合与出口的 id 收进**同一个唯一性空间**：`addUnique` 共享一张 `id → 集合` 表，跨集合重名抛 `id "x" is claimed by both "room" and "exit"`，同集合重名仍是原句 `duplicate <集合> id`。接缝：`tests/content-registry.test.ts`（既有缝，合成条目驱动，11 + 3 例）
 - **落地（M3-T1，#14）**：`tags`／`flags`／`prototypeKey`／`prototypeParent` 作为**条目通用字段**落成两处——`schemas/common.schema.json`（唯一定义，14 个条目集合 `$ref` 引用）与引擎 `EntryCommon`（`packages/core/src/content/entry.ts`，各条目类型 `extends` 它）；第三处同步在 `docs/agents/content.md` 的「条目字段约定」。schema 只管**形状**（维度名 lowerCamelCase、键列表非空且去重、四字段一律可选——唯一例外是 `equipment` 词缀的 `tags` 必填——且只在**实体层**：条目带，**出口**也带〔出口即命令，类型与 schema 必须一致〕，`objects[]` 放置清单项不带），**取值**封闭与原型展平是下面两票的事。形状本身的守卫是 `tests/tags-prototype-schema.test.ts`（逐集合一条用例）。
 
 ## 6. 原型继承
@@ -106,7 +106,8 @@
 - **环检测双保险**：`content:check`（离线，内容作者提前发现）＋ 注册表展平时（运行时，**不信任输入**）。环是**引用**性质（ADR-0003 分层），两边都管。
 - **归一化交给 schema**（直接要求规范形态），加载期不做 Evennia 那种 `homogenize_prototype`。
 - **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：合并律、多亲优先级、字典序、自环/二环/长环/菱形非环、`prototypeKey` ≠ `id`、引用未声明者、展平后不含 `prototypeParent`）＋ 迷你包（**真实继承链**，经同一装配路径）。`content:check` 的环检测沿既有先例**不新增单元测试**（四道检查都没有）。
-- **落地（M3-T1，#14）**：`prototypeKey`／`prototypeParent` 与 `tags`／`flags` 一起进 `schemas/common.schema.json`（见 §5.1 落地条）：四个字段是**同一份实体层契约**的两半（条目带，出口也带——出口即命令），14 个条目集合统一引用，一律**可选**。schema 表达不了的三件事（`prototypeKey` 是否等于本条目 id、父是否声明过原型、是否成环）留给注册表展平（#16）与 `content:check` 环检测（#19）。
+- **落地（M3-T3，#16）**：`packages/core/src/content/prototype.ts` 的 `flattenCollection(条目数组, 集合名)` = 展平器，由 `createContentRegistry` 在 **id 去重之后、引用完整性之前**按集合各调一次，四步顺序 `id 去重（跨集合同一空间）→ 展平 → 引用完整性校验 → 建 byTag 索引` 已在注册表落地（注册表文件头写明「顺序是契约，不是排布」）。**合并律**：`tags`／`attrs` **互补合并**（`tags` 按维度取键的并集；`attrs` 按键取并集、同键由高优先级赢），其余键**整体替换**；多亲左→右、自身最后（自身 > 最右父 > … > 最左父）；合并产生的数组**字典序升序 + 去重**。展平结果**剥掉 `prototypeParent`**、**只保留自身声明的 `prototypeKey`**（父的不继承）→ 未声明者展平后即不可被继承。加载期大声失败四种：`prototypeKey` ≠ 本条目 id（对每个条目都查，与遍历顺序无关）、父 id 不在本集合（**同集合内**继承）、父未声明 `prototypeKey`、原型成环（自环／二环／长环抓；**菱形不是环**——同一祖先被两条路径到达只算一次）。**没声明 `prototypeParent` 的条目原样穿过展平**（同一个对象引用，零拷贝、零重排）——今天所有内容都属于这一类，故零原型的包在加载期不付任何代价；`prototypeParent: []` 算**已声明**，照样走展平并剥掉（留着它会让运行时以为还有继承没做）。`attrs` 仍**不进 schema**，只由合成测试行使（ADR-0030 §7）。接缝：`tests/content-registry.test.ts`（既有缝，合成条目驱动 17 例）。⚠️ 两处未随本票落地：①**环检测的离线那一半（`content:check`）尚无票认领**，双保险今天只有运行时一道；②**出口的 `prototype*` 仍无消费者**（展平按集合做、房间的 `exits` 整体替换），且 `schemas/rooms.schema.json` 把 `exits` 定为**必填**，故 schema 合法内容永远不会从原型继承出口——将来若想让基类带出口，得先允许 `exits` 省略，否则同一出口对象被两个房间持有会在出口 id 去重处报 `duplicate exit id`
+- **落地（M3-T1，#14）**：`prototypeKey`／`prototypeParent` 与 `tags`／`flags` 一起进 `schemas/common.schema.json`（见 §5.1 落地条）：四个字段是**同一份实体层契约**的两半（条目带，出口也带——出口即命令），14 个条目集合统一引用，一律**可选**。schema 表达不了的三件事（`prototypeKey` 是否等于本条目 id、父是否声明过原型、是否成环）留给注册表展平（**#16 已落**）与 `content:check` 环检测（**尚无票认领**）。
 
 ## 7. ★ 实体 hook：第一天必须定对的九项
 
@@ -177,10 +178,10 @@
 - [x] `(维度, 键)` 倒排索引可跨内容批量查询（注册表 `byTag`，覆盖所有带 tags 的**实体**：条目 ＋ **出口**，id 升序混排）——M3-T2 已落
 - [x] 内容条目侧 `tags` 与 `flags` 两层并存；`flags` 不进索引、不可批量查询——M3-T2 已落（拿 flag 的值去问 `byTag`，任何维度都问不到）
 - [ ] 运行时实体有 `tags` 槽，`hasTag` 不再是桩；「自身 ∪ 内容条目」的并集接缝已就位（合成驱动）
-- [ ] 原型合并：`attrs`/`tags` 互补，其余整体替换；合并后**字典序升序 + 去重**
-- [ ] 展平在**加载期、注册表内**，顺序为 `id 去重 → 展平 → 引用完整性校验`
-- [ ] `content:check` 有**原型环检测**；注册表展平时也防环（双保险）
-- [ ] `prototypeKey` 不参与继承；展平结果**不含 `prototypeParent`**
+- [x] 原型合并：`attrs`/`tags` 互补，其余整体替换；合并后**字典序升序 + 去重**——M3-T3 已落：`content/prototype.ts` 的 `flattenCollection`（`tags` 按维度取键并集、`attrs` 按键取并集同键高优先级赢，其余键整体替换；多亲左→右、自身最后）
+- [x] 展平在**加载期、注册表内**，顺序为 `id 去重 → 展平 → 引用完整性校验`——M3-T3 已落：四步顺序（末步索引见 §5.1）钉在 `content/registry.ts` 文件头与展平调用处
+- [ ] `content:check` 有**原型环检测**；注册表展平时也防环（双保险）——**半落**：展平器的环检测已落（自环／二环／长环，菱形不误报）；`content:check` 那道离线检测**尚无票认领**
+- [x] `prototypeKey` 不参与继承；展平结果**不含 `prototypeParent`**——M3-T3 已落：合并时父的 `prototypeKey` 不入结果、`prototypeParent` 一律剥掉，「未声明 ⇒ 不可被继承」是构造性保证
 - [x] 移动 hook 带 **`moveType`**——M2-T1 已落：`MOVE_TYPES` 五值枚举，`MoveInfo` 进每个 hook
 - [x] 移动入口**不做权限检查**（外置）——M2-T1 已落：`moveTo` 零门禁；穿行适配器编排 traverse → enter → moveTo（ADR-0028 §3）
 - [x] `return_appearance` **纯返回不发消息**——M2-T2 已落：`returnAppearance` 纯组装（静态在场直读 × 状态树占用），`at_look` 内做可见性（显式 `look` 门禁，缺省可见）

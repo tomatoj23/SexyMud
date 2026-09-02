@@ -611,3 +611,319 @@ describe("createContentRegistry: byTag (issue #15)", () => {
     expect(backward.byTag("zone", "town")).toEqual(forward.byTag("zone", "town"));
   });
 });
+
+/**
+ * A command entry carrying `attrs` — the one field with no schema behind it
+ * (ADR-0030 §7): the flattener merges it by the same law as `tags`, so its
+ * only exercise is synthetic data that never passes through content:check.
+ */
+type CommandWithAttrs = CommandEntry & { attrs?: Record<string, unknown> };
+
+/** A prototype: an entry that declares itself inheritable (ADR-0030 §4). */
+function protoRoom(overrides: Partial<RoomEntry> = {}): RoomEntry {
+  const room = roomEntry(overrides);
+  return { ...room, prototypeKey: room.id };
+}
+
+/**
+ * Load-time prototype flattening (issue #16; spec/03 §6.1, ADR-0030).
+ *
+ * Seam: createContentRegistry, driven by synthetic entries (the factories
+ * above). Flattening is invisible from outside the registry, so every case
+ * here asserts on what an entry looks like AFTER the registry hands it back —
+ * that is the contract: nothing downstream ever sees an inheritance.
+ */
+describe("createContentRegistry: 原型展平 (issue #16)", () => {
+  it("合并律：tags 互补合并，其余键整体替换，未声明的键从父继承", () => {
+    const base = protoRoom({
+      id: "room-base",
+      zoneId: "zone-lq",
+      tags: { zone: ["town"], elementTag: ["fire"] },
+      objects: [{ id: "npc-x-001", count: 1 }],
+    });
+    const child = roomEntry({
+      id: "room-child",
+      prototypeParent: ["room-base"],
+      tags: { zone: ["wild"], elementTag: ["fire", "water"] },
+    });
+    const registry = createContentRegistry(
+      { rooms: [base, child], npcs: [npcEntry()] },
+      { dimensions },
+    );
+    const flattened = registry.room("room-child");
+
+    // Complementary: the parent's town and the child's wild survive together.
+    expect(flattened.tags).toEqual({ zone: ["town", "wild"], elementTag: ["fire", "water"] });
+    // Every other key: not a union. Undeclared → inherited wholesale...
+    expect(flattened.zoneId).toBe("zone-lq");
+    expect(flattened.objects).toEqual([{ id: "npc-x-001", count: 1 }]);
+    // ...and declared → the child's own value, which is the factory default.
+    expect(flattened.name).toBe("耳房");
+    expect(flattened.description).toBe("一间堆着杂物的耳房。");
+  });
+
+  it("整体替换不是并集：子声明了数组键就整条换掉（放置清单、动词）", () => {
+    const base = protoRoom({
+      id: "room-base",
+      objects: [{ id: "npc-x-001", count: 1 }],
+    });
+    const child = roomEntry({
+      id: "room-child",
+      prototypeParent: ["room-base"],
+      objects: [{ id: "mon-x-001", count: 2 }],
+    });
+    const registry = createContentRegistry({
+      rooms: [base, child],
+      npcs: [npcEntry()],
+      monsters: [{ id: "mon-x-001" }],
+    });
+    // Not [{npc...},{mon...}]: a placement list is replaced, never unioned.
+    expect(registry.room("room-child").objects).toEqual([{ id: "mon-x-001", count: 2 }]);
+
+    const baseCommand = entry({ id: "cmd-base", prototypeKey: "cmd-base", verbs: ["look", "see"] });
+    const childCommand = entry({ id: "cmd-child", prototypeParent: ["cmd-base"], verbs: ["see"] });
+    const commands = createContentRegistry({ commands: [baseCommand, childCommand] });
+    expect(commands.command("cmd-child").verbs).toEqual(["see"]);
+  });
+
+  it("多亲优先级：左→右递增，最右父赢；自身声明 > 所有父", () => {
+    const parents = [
+      protoRoom({ id: "room-p1", zoneId: "zone-one" }),
+      protoRoom({ id: "room-p2", zoneId: "zone-two" }),
+      protoRoom({ id: "room-p3", zoneId: "zone-three" }),
+    ];
+    const child = roomEntry({
+      id: "room-child",
+      prototypeParent: ["room-p1", "room-p2", "room-p3"],
+    });
+    const withOwn = roomEntry({
+      id: "room-own",
+      prototypeParent: ["room-p1", "room-p2", "room-p3"],
+      zoneId: "zone-self",
+    });
+    const registry = createContentRegistry({ rooms: [...parents, child, withOwn] });
+
+    expect(registry.room("room-child").zoneId).toBe("zone-three");
+    expect(registry.room("room-own").zoneId).toBe("zone-self");
+  });
+
+  it("attrs 按与 tags 同律合并：键取并集，同键高优先级赢（不进 schema，裸对象行使）", () => {
+    const base: CommandWithAttrs = {
+      ...entry({ id: "cmd-base", prototypeKey: "cmd-base" }),
+      attrs: { hp: 10, faction: "江湖" },
+    };
+    const child: CommandWithAttrs = {
+      ...entry({ id: "cmd-child", prototypeParent: ["cmd-base"] }),
+      attrs: { hp: 20 },
+    };
+    const registry = createContentRegistry({ commands: [base, child] });
+
+    expect((registry.command("cmd-child") as CommandWithAttrs).attrs).toEqual({
+      hp: 20,
+      faction: "江湖",
+    });
+  });
+
+  it("字典序 + 去重：合并后的键列表与装载顺序无关", () => {
+    const base = protoRoom({
+      id: "room-base",
+      tags: { zone: ["wild", "town"], elementTag: ["fire"] },
+    });
+    const child = protoRoom({
+      id: "room-child",
+      prototypeParent: ["room-base"],
+      tags: { zone: ["town", "town", "wild"], elementTag: ["water"] },
+    });
+    const rooms = [base, child];
+
+    const forward = createContentRegistry({ rooms }, { dimensions });
+    const backward = createContentRegistry({ rooms: [...rooms].reverse() }, { dimensions });
+
+    // Order carries no meaning in a tag list — one canonical order, deduped.
+    expect(forward.room("room-child").tags).toEqual({
+      zone: ["town", "wild"],
+      elementTag: ["fire", "water"],
+    });
+    expect(JSON.stringify(backward.rooms)).toBe(JSON.stringify(forward.rooms));
+  });
+
+  it("展平结果不含 prototypeParent；prototypeKey 只留自己声明的那个（构造性不可继承）", () => {
+    const grand = protoRoom({ id: "room-grand", zoneId: "zone-lq" });
+    const parent = protoRoom({ id: "room-parent", prototypeParent: ["room-grand"] });
+    const child = roomEntry({ id: "room-child", prototypeParent: ["room-parent"] });
+    const registry = createContentRegistry({ rooms: [grand, parent, child] });
+
+    for (const room of registry.rooms) {
+      expect(room.prototypeParent).toBeUndefined();
+    }
+    // parent declared one; child did not, and did not inherit parent's.
+    expect(registry.room("room-parent").prototypeKey).toBe("room-parent");
+    expect(registry.room("room-child").prototypeKey).toBeUndefined();
+    // Inherited all the same: the key was consumed, the value came through.
+    expect(registry.room("room-child").zoneId).toBe("zone-lq");
+  });
+
+  it("prototypeParent: [] 也是一条声明：展平后照样剥掉（与「没写」不同）", () => {
+    const declaredEmpty = roomEntry({ id: "room-empty", prototypeParent: [] });
+    const registry = createContentRegistry({ rooms: [declaredEmpty, roomEntry()] });
+    // The key was declared, so it was consumed — leaving it behind would tell
+    // a reader there is still inheriting left to do.
+    expect("prototypeParent" in registry.room("room-empty")).toBe(false);
+    expect(registry.room("room-empty").prototypeParent).toBeUndefined();
+  });
+
+  it("展平先于引用完整性：继承来的引用挂在继承者名下报错（继承者先装载）", () => {
+    const base = protoRoom({ id: "room-base", objects: [{ id: "npc-nowhere", count: 1 }] });
+    const child = roomEntry({ id: "room-child", prototypeParent: ["room-base"] });
+    // Child first in the load order: the placement list it INHERITED is
+    // reported under the child's id, which is only possible if flattening ran
+    // before the check (otherwise the child would have no objects at all).
+    expect(() => createContentRegistry({ rooms: [child, base] })).toThrow(
+      /room "room-child" places unknown entity "npc-nowhere"/,
+    );
+
+    const npcBase = {
+      ...npcEntry({ id: "npc-base" }),
+      prototypeKey: "npc-base",
+      monsterId: "mon-nowhere",
+    };
+    const npcChild = npcEntry({ id: "npc-child", prototypeParent: ["npc-base"] });
+    expect(() => createContentRegistry({ npcs: [npcChild, npcBase] })).toThrow(
+      /npc "npc-child" references unknown monster "mon-nowhere"/,
+    );
+  });
+
+  it("引用未声明 prototypeKey 的条目当父 → 大声失败（显式声明才可被继承）", () => {
+    const grand = protoRoom({ id: "room-grand" });
+    const parent = roomEntry({ id: "room-parent", prototypeParent: ["room-grand"] });
+    const child = roomEntry({ id: "room-child", prototypeParent: ["room-parent"] });
+
+    expect(() => createContentRegistry({ rooms: [grand, parent, child] })).toThrow(
+      /room "room-child" inherits from "room-parent", which declares no prototypeKey/,
+    );
+  });
+
+  it("prototypeKey 不等于自己的 id → 大声失败（schema 表达不了，注册表兜）", () => {
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry({ id: "room-x-001", prototypeKey: "proto-cabin" })] }),
+    ).toThrow(/room "room-x-001" declares prototypeKey "proto-cabin" instead of its own id/);
+    // Checked for every entry, not just the ones a walk happens to reach.
+    expect(() =>
+      createContentRegistry({
+        rooms: [roomEntry(), roomEntry({ id: "room-x-002", prototypeKey: "room-x-003" })],
+      }),
+    ).toThrow(/declares prototypeKey "room-x-003" instead of its own id/);
+  });
+
+  it("同集合内继承：父 id 只在本集合里解析，跨集合引用即未知", () => {
+    expect(() =>
+      createContentRegistry({
+        commands: [entry({ id: "cmd-base", prototypeKey: "cmd-base" })],
+        rooms: [roomEntry({ prototypeParent: ["cmd-base"] })],
+      }),
+    ).toThrow(/room "room-x-001" inherits from unknown room id "cmd-base"/);
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry({ prototypeParent: ["room-nowhere"] })] }),
+    ).toThrow(/inherits from unknown room id "room-nowhere"/);
+  });
+
+  it("环：自环 / 二环 / 长环都抛错，且报错指出环", () => {
+    const selfLoop = protoRoom({ id: "room-a", prototypeParent: ["room-a"] });
+    expect(() => createContentRegistry({ rooms: [selfLoop] })).toThrow(
+      /room prototype cycle: room-a → room-a/,
+    );
+
+    const twoCycle = [
+      protoRoom({ id: "room-a", prototypeParent: ["room-b"] }),
+      protoRoom({ id: "room-b", prototypeParent: ["room-a"] }),
+    ];
+    expect(() => createContentRegistry({ rooms: twoCycle })).toThrow(
+      /room prototype cycle: room-a → room-b → room-a/,
+    );
+
+    const longCycle = [
+      protoRoom({ id: "room-a", prototypeParent: ["room-b"] }),
+      protoRoom({ id: "room-b", prototypeParent: ["room-c"] }),
+      protoRoom({ id: "room-c", prototypeParent: ["room-a"] }),
+    ];
+    expect(() => createContentRegistry({ rooms: longCycle })).toThrow(
+      /room prototype cycle: room-a → room-b → room-c → room-a/,
+    );
+  });
+
+  it("菱形不是环：两条路径汇于同一祖先不得误报", () => {
+    const diamond = [
+      protoRoom({ id: "room-d", tags: { zone: ["town"] } }),
+      protoRoom({ id: "room-b", prototypeParent: ["room-d"], tags: { elementTag: ["fire"] } }),
+      protoRoom({ id: "room-c", prototypeParent: ["room-d"], tags: { elementTag: ["water"] } }),
+      roomEntry({ id: "room-a", prototypeParent: ["room-b", "room-c"] }),
+    ];
+    const registry = createContentRegistry({ rooms: diamond }, { dimensions });
+
+    // d reached by two routes: merged once, not a cycle.
+    expect(registry.room("room-a").tags).toEqual({
+      zone: ["town"],
+      elementTag: ["fire", "water"],
+    });
+  });
+
+  it("exits 是整体替换：子声明了 exits 就拿自己的，原型的出口不渗漏进来", () => {
+    const base = protoRoom({
+      id: "room-base",
+      exits: [exitEntry({ id: "exit-base-north", targetRoomId: "room-x-002" })],
+    });
+    const child = roomEntry({
+      id: "room-child",
+      prototypeParent: ["room-base"],
+      exits: [exitEntry({ id: "exit-child-east", targetRoomId: "room-x-002" })],
+    });
+    const registry = createContentRegistry({
+      rooms: [base, child, roomEntry({ id: "room-x-002", exits: [] })],
+    });
+
+    // Not the union of two exit lists: exits is a key like any other.
+    expect(registry.room("room-child").exits.map((exit) => exit.id)).toEqual(["exit-child-east"]);
+    expect(() => registry.exit("exit-base-north")).not.toThrow();
+  });
+
+  it("展平先于建索引：继承来的 tags 进 byTag（把标签放进原型不是绕过索引的后门）", () => {
+    const base = protoRoom({ id: "room-base", tags: { zone: ["town"] } });
+    const child = roomEntry({ id: "room-child", prototypeParent: ["room-base"] });
+    const merged = roomEntry({
+      id: "room-merged",
+      prototypeParent: ["room-base"],
+      tags: { zone: ["wild"] },
+    });
+    const registry = createContentRegistry({ rooms: [base, child, merged] }, { dimensions });
+
+    expect(registry.byTag("zone", "town")).toEqual(["room-base", "room-child", "room-merged"]);
+    expect(registry.byTag("zone", "wild")).toEqual(["room-merged"]);
+  });
+
+  it("确定性：同一组条目以不同装载顺序喂入 → 展平结果字节相同", () => {
+    const rooms = [
+      protoRoom({ id: "room-base", zoneId: "zone-lq", tags: { zone: ["wild"] } }),
+      protoRoom({
+        id: "room-mid",
+        prototypeParent: ["room-base"],
+        tags: { zone: ["town"], elementTag: ["fire"] },
+      }),
+      roomEntry({ id: "room-leaf", prototypeParent: ["room-mid", "room-base"] }),
+    ];
+    const forward = createContentRegistry({ rooms }, { dimensions });
+    const backward = createContentRegistry({ rooms: [...rooms].reverse() }, { dimensions });
+
+    expect(JSON.stringify(backward.rooms)).toBe(JSON.stringify(forward.rooms));
+    expect(forward.room("room-leaf").tags).toEqual({ zone: ["town", "wild"], elementTag: ["fire"] });
+  });
+
+  it("不带 prototypeParent 的条目原样穿过展平：同一个对象引用（今天的真实内容零原型）", () => {
+    const rooms = [roomEntry(), roomEntry({ id: "room-x-002", tags: { zone: ["town"] } })];
+    const registry = createContentRegistry({ rooms }, { dimensions });
+    // A pack with no prototypes pays nothing: nothing is copied, nothing is
+    // rewritten — not even a tag list reordered.
+    expect(registry.room("room-x-001")).toBe(rooms[0]);
+    expect(registry.room("room-x-002")).toBe(rooms[1]);
+    expect(registry.byTag("zone", "town")).toEqual(["room-x-002"]);
+  });
+});

@@ -1,6 +1,9 @@
 import type { CommandEntry } from "../command/entry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
 import type { EntryCommon } from "./entry.js";
+import { compareIds } from "./order.js";
+import { flattenCollection } from "./prototype.js";
+import type { FlattenableEntry } from "./prototype.js";
 
 /**
  * The content registry (spec/00, ADR-0003): the single channel through which
@@ -28,6 +31,16 @@ import type { EntryCommon } from "./entry.js";
  * index (`byTag`, ADR-0029 §2) and, when the host hands it a dimensions
  * table, closes the tag vocabulary against it (ADR-0029 §5) — see the
  * comments on buildTagIndex.
+ *
+ * The load order is a contract, not an arrangement (spec/03 §6.1):
+ *
+ *   id de-duplication (one space, entries and exits) → prototype flattening →
+ *   referential integrity → build the byTag index
+ *
+ * Flattening comes BEFORE integrity so that an inherited exit, placement or
+ * monsterId is checked like a declared one — otherwise "put it in a prototype"
+ * would be a back door around every check below. The index comes LAST so that
+ * an inherited tag is as queryable as a declared one.
  */
 
 /**
@@ -149,23 +162,24 @@ function addUnique<T extends { id: string }>(
   byId.set(entry.id, entry);
 }
 
-/** Two ids in the canonical order every sorted exposure uses (ADR-0024 §2). */
-function compareIds(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /** The ids of a collection, id-ascending (the canonical exposure order). */
 function sortedValues<T extends { id: string }>(byId: Map<string, T>): readonly T[] {
   return [...byId.values()].sort((a, b) => compareIds(a.id, b.id));
+}
+
+/** Re-indexes a collection by id, keeping the order it came back in. */
+function byId<T extends { id: string }>(entries: readonly T[]): Map<string, T> {
+  return new Map(entries.map((entry) => [entry.id, entry] as const));
 }
 
 /**
  * What the index needs of an entity: an id to return and the tags to index.
  * Collections are irrelevant here — the index holds ENTRIES (commands, rooms,
  * npcs, monsters) and EXITS side by side, which is exactly why this type is
- * not "Entry".
+ * not "Entry". It is the same shape the flattener asks for (it is the shape
+ * every entry type has), so it is named there and borrowed here.
  */
-type TaggedEntity = EntryCommon & { readonly id: string };
+type TaggedEntity = FlattenableEntry;
 
 /** dimension → key → ids, all sorted once at build time. */
 type TagIndex = ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
@@ -264,25 +278,36 @@ export function createContentRegistry(
   // first taker of an id is whoever the host handed over first.
   const idOwners = new Map<string, string>();
 
-  const commandsById = new Map<string, CommandEntry>();
+  let commandsById = new Map<string, CommandEntry>();
   for (const entry of content.commands ?? []) {
     addUnique(commandsById, entry, "command", idOwners);
   }
 
-  const roomsById = new Map<string, RoomEntry>();
+  let roomsById = new Map<string, RoomEntry>();
   for (const room of content.rooms ?? []) {
     addUnique(roomsById, room, "room", idOwners);
   }
 
-  const npcsById = new Map<string, NpcEntry>();
+  let npcsById = new Map<string, NpcEntry>();
   for (const npc of content.npcs ?? []) {
     addUnique(npcsById, npc, "npc", idOwners);
   }
 
-  const monstersById = new Map<string, MonsterRecord>();
+  let monstersById = new Map<string, MonsterRecord>();
   for (const monster of content.monsters ?? []) {
     addUnique(monstersById, monster, "monster", idOwners);
   }
+
+  // Flattening: after de-duplication (ids are the keys it resolves parents
+  // against, and it changes none of them — the one id space above stays
+  // valid), before every check below (spec/03 §6.1). Per collection: parents
+  // resolve in the child's own collection and nowhere else (ADR-0030 §3).
+  // Exits are NOT flattened — they live inside rooms, arrive through the
+  // already-flattened room, and a room's `exits` is replaced wholesale.
+  commandsById = byId(flattenCollection([...commandsById.values()], "command"));
+  roomsById = byId(flattenCollection([...roomsById.values()], "room"));
+  npcsById = byId(flattenCollection([...npcsById.values()], "npc"));
+  monstersById = byId(flattenCollection([...monstersById.values()], "monster"));
 
   // Exits are entities with GLOBAL ids (dispatch keys) living inside room
   // files: index them across all rooms, rejecting duplicates — two exits
@@ -356,10 +381,10 @@ export function createContentRegistry(
   }
 
   // Tag indexing comes LAST: it must see the finished, validated entity set,
-  // exits included — and it must come AFTER prototype flattening (M3-T3/#16,
-  // once that lands), because a tag can be INHERITED and an inherited tag has
-  // to be as queryable as a declared one. Flattening runs per collection, so
-  // the exits below stay as loaded (spec/03 §6).
+  // exits included, and it must come AFTER prototype flattening — a tag can be
+  // INHERITED, and an inherited tag has to be as queryable as a declared one,
+  // or "put the tag in a prototype" would be a back door around the index.
+  // Exits stay as loaded: flattening runs per collection (spec/03 §6).
   const tagIndex = buildTagIndex(
     [
       ...commandsById.values(),
