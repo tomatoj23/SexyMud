@@ -626,6 +626,23 @@ function protoRoom(overrides: Partial<RoomEntry> = {}): RoomEntry {
 }
 
 /**
+ * A room that declares NO exits of its own.
+ *
+ * `rooms.schema.json` makes `exits` REQUIRED, so this shape can only reach the
+ * registry from a host that assembled entries without the offline gate — the
+ * "host-assembled data" path the registry documents and several cases here
+ * already cover (empty ids, empty directions). It is also the ONLY way an
+ * INHERITED exit list can be observed at all: a schema-valid room always
+ * declares `exits`, and whole replacement means it wipes whatever its
+ * prototype carried.
+ */
+function roomWithoutExits(overrides: Partial<RoomEntry> = {}): RoomEntry {
+  const clone: Record<string, unknown> = { ...roomEntry(overrides) };
+  delete clone["exits"];
+  return clone as unknown as RoomEntry;
+}
+
+/**
  * Load-time prototype flattening (issue #16; spec/03 §6.1, ADR-0030).
  *
  * Seam: createContentRegistry, driven by synthetic entries (the factories
@@ -884,6 +901,37 @@ describe("createContentRegistry: 原型展平 (issue #16)", () => {
     // Not the union of two exit lists: exits is a key like any other.
     expect(registry.room("room-child").exits.map((exit) => exit.id)).toEqual(["exit-child-east"]);
     expect(() => registry.exit("exit-base-north")).not.toThrow();
+  });
+
+  it("展平先于引用完整性：继承来的出口也要被校验（房间省略 exits = 绕过 schema 的装配数据）", () => {
+    const base = protoRoom({
+      id: "room-base",
+      exits: [exitEntry({ id: "exit-base-north", targetRoomId: "room-nowhere" })],
+    });
+    const child = roomWithoutExits({ id: "room-child", prototypeParent: ["room-base"] });
+    // Child first in the load order: the exit it INHERITED is checked under
+    // the child's id. Without flattening the child would have no exits at all
+    // and nothing would be reported for it.
+    expect(() => createContentRegistry({ rooms: [child, base] })).toThrow(
+      /exit "exit-base-north" of room "room-child" targets unknown room "room-nowhere"/,
+    );
+  });
+
+  it("出口不可继承是构造性的：两个房间共用同一个出口对象必然撞出口 id", () => {
+    const base = protoRoom({
+      id: "room-base",
+      exits: [exitEntry({ id: "exit-base-north", targetRoomId: "room-x-002" })],
+    });
+    const child = roomWithoutExits({ id: "room-child", prototypeParent: ["room-base"] });
+    // The exit is VALID here — what fails is that two rooms now hold the same
+    // exit entity, and an exit id is one dispatch key for the whole world.
+    // This is why "a base prototype carries the exits" is not a deferred
+    // feature but a contradiction: each room's edges need their own ids.
+    expect(() =>
+      createContentRegistry({
+        rooms: [base, child, roomEntry({ id: "room-x-002", exits: [] })],
+      }),
+    ).toThrow(/duplicate exit id "exit-base-north"/);
   });
 
   it("展平先于建索引：继承来的 tags 进 byTag（把标签放进原型不是绕过索引的后门）", () => {
