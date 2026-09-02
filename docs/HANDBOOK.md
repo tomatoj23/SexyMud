@@ -118,7 +118,7 @@
 | 项 | 说明 |
 |---|---|
 | 🚧 `content/` 其余集合 | 待生产。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
-| 🚧 世界模型实体运行时 | **M2 六张票已全关**：T1 实体+移动 tracer（#7，已落）、T2 看（#8，已落：`return_appearance` 纯组装 + `at_look` 可见性 + `lookSpec` 出厂适配器）、T3 说（#9，已落：`at_msg_receive` 可否决 + `fromObj` 可空的 `broadcastMessage` 投递缝 + `at_pre_say`／`at_post_say` 配对 + `saySpec` 出厂适配器）、T4 接缝补全（#10，已落：`getObject`/`giveObject`/`dropObject` 三配对包 `moveTo` 外 + `createObject` creation 两层〔顺序即契约，JSON 赢代码默认值〕+ `assembleSources` 动态 cmdset〔逐分发重组零缓存〕，全合成驱动测试）、T5 快照 v1（#11，已落：`serializeWorld`/`restoreWorld` 载荷即状态树〔规范序＝同世界同字节〕+ `derived` 一张表驱动类型与排除、加载后重算 + `attachEntity` 恢复＝重放树不跑 creation + NPC 构造性不入档 + 未来版本与七类损坏载荷大声失败（逐条测试行使）；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空）、T6 非武侠迷你包验收（#12，已落：迷你包经同一装配路径跑通走/看/说 + 门禁拒绝 + 零武侠词 + 两包互不渗漏；验收标准 2 首次机械化）；形态定案 ADR-0028；余下＝标签（spec/03 §5）与原型（spec/03 §6），排 M3 |
+| 🚧 世界模型实体运行时 | **M2 六张票已全关**：T1 实体+移动 tracer（#7，已落）、T2 看（#8，已落：`return_appearance` 纯组装 + `at_look` 可见性 + `lookSpec` 出厂适配器）、T3 说（#9，已落：`at_msg_receive` 可否决 + `fromObj` 可空的 `broadcastMessage` 投递缝 + `at_pre_say`／`at_post_say` 配对 + `saySpec` 出厂适配器）、T4 接缝补全（#10，已落：`getObject`/`giveObject`/`dropObject` 三配对包 `moveTo` 外 + `createObject` creation 两层〔顺序即契约，JSON 赢代码默认值〕+ `assembleSources` 动态 cmdset〔逐分发重组零缓存〕，全合成驱动测试）、T5 快照 v1（#11，已落：`serializeWorld`/`restoreWorld` 载荷即状态树〔规范序＝同世界同字节〕+ `derived` 一张表驱动类型与排除、加载后重算 + `attachEntity` 恢复＝重放树不跑 creation + NPC 构造性不入档 + 未来版本与七类损坏载荷大声失败（逐条测试行使）；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空）、T6 非武侠迷你包验收（#12，已落：迷你包经同一装配路径跑通走/看/说 + 门禁拒绝 + 零武侠词 + 两包互不渗漏；验收标准 2 首次机械化）；形态定案 ADR-0028；余下＝标签（spec/03 §5）与原型（spec/03 §6）——**设计已定案（ADR-0029／ADR-0030）、已拆 M3 六票（#14–#19，规格快照 #13）** |
 | 🚧 世界连通性校验（可达性） | 引用完整性已由**注册表加载期校验**承担（ADR-0003 分层：形状归 content:check、引用归注册表，M1-T5/T6 落地并由测试行使）；「全图可达」需起始房间概念，随世界引导（bootstrap）票再补 |
 | 🚧 `monster.schema.json` 重估 | 已随 `mon-lq-001` 进入编译，但仍是放置期设计，需随秘境票重估 |
 | 🚧 `combat-text.schema.json` 联合类型 | draft-07 清扫已呈现 `dimensionRef` 的 `"type": ["string","array"]`（strictTypes WARN，Ajv 日志级不抛错）；随 combat-text 内容落地重估时修复（或管线定夺 allowUnionTypes） |
@@ -130,7 +130,8 @@
 
 1. **M1 六张 tracer 票已全部关闭**（#1–#6）：命令测试骨架 → 中文解析器 → 条件表达式 → cmdset 合并栈 → commands/ 内容集合 → rooms/+npcs/ 世界集合 + 出口即命令
 2. **M2 已拆票**（ADR-0028 定形态）：~~实体运行时+移动全链路（tracer）~~（**#7 已关，6059e63**）→ ~~看~~（**#8 已关，4795ec8**）→ ~~说~~（**#9 已关，8ddfa86**）→ ~~接缝补全~~（**#10 已关，083fa78**）→ ~~快照 v1~~（**#11 已关**）→ ~~非武侠迷你包验收~~（**#12 已关，500d2b0**，验收标准 2 首次机械化）；阻塞边：T1 → {T2,T3,T4,T5}，{T2,T3} → T6
-3. M3 ＝ 标签运行时 ＋ 原型继承（spec/03 §5–§6）；M4 ＝ 时间与调度（spec/04 §2–§4，战斗前夜）
+3. **M3 已拆票**（设计定案见 `spec/03` §5.1／§6.1 + **ADR-0029**／**ADR-0030**；规格快照＝**#13**）：T1 schema 与类型落地（**#14**）→ T2 内容侧标签（**#15**）／ T3 原型展平（**#16**）→ T4 编排（**#18**）、T5 运行时标签（**#17**）→ T6 迷你包验收（**#19**）；**阻塞边：T1 → {T2,T3}，T2 → {T4,T5}，{T4,T5} → T6**。注：票号不连续（#17＝T5、#18＝T4），因为并行建票；票正文的阻塞边写的是 **M3-Tn 简称**不是数字，故不受影响
+4. M4 ＝ 时间与调度（spec/04 §2–§4，战斗前夜）
 
 > **两条已绑定的验收条件**（不是待办，做对应动作时必须带上）：写折行器时**必须一次做对避头尾**（B8，`spec/05` §10）；写第一个输入组件时**必须处理 IME 合成**（G3，`spec/02` §8）。
 

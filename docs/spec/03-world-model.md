@@ -1,6 +1,6 @@
 # 03 · 世界模型
 
-> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5；M2-T3：`at_msg_receive` 可否决 + `fromObj` 可空的广播原语 + `at_pre_say`／`at_post_say` 配对 + say 出厂适配器，见 §7.4；M2-T4：get／give／drop 转移配对 + creation 两层 + 动态 cmdset 接缝，见 §7.6）**；§5–§6（标签运行时、原型继承）**待实现**＝**M3**。形态定案见 §4.2（ADR-0028）。
+> **状态**：§1–§4 **内容侧已实现**（M1-T6：`schemas/rooms.schema.json` + `schemas/npcs.schema.json` + 首批内容（柳青镇 4 房间／3 人物／1 怪物）+ 引擎类型 `RoomEntry`／`ExitEntry`／`NpcEntry`（`packages/core/src/world/entry.ts`）+ 注册表加载期引用完整性 + 出口即命令全链路）；**§7 实体 hook 运行时已实现（M2-T1：`Entity` 接口 + 移动族 8 hook + `moveTo` + 引擎出厂穿行适配器 + 状态树种子，见 §7.3；M2-T2：`return_appearance` 纯组装 + `at_look` 可见性 + look 出厂适配器，见 §7.5；M2-T3：`at_msg_receive` 可否决 + `fromObj` 可空的广播原语 + `at_pre_say`／`at_post_say` 配对 + say 出厂适配器，见 §7.4；M2-T4：get／give／drop 转移配对 + creation 两层 + 动态 cmdset 接缝，见 §7.6）**；§5–§6（标签运行时、原型继承）**设计已定案**（见 §5.1／§6.1，ADR-0029／ADR-0030），**实现＝M3**。形态定案见 §4.2（ADR-0028）。
 > **依据**：ADR-0016 §3、ADR-0021 §2、ADR-0022 §3（经 ADR-0024 §7 修正）、ADR-0022 §4、**ADR-0020 §社会层**、ADR-0025 §五、**ADR-0028**、xkx100 调研。
 
 ## 1. 集合划分
@@ -56,12 +56,22 @@
 
 ## 5. 标签纪律
 
-- 标签 **key + category**，**不带值**（需要带值用属性）
+- 标签 **维度 + 键**，**不带值**（需要带值用属性）
 - Evennia 的 tag `data` 是**全局的、最后写入者赢**，是反模式
-- 引擎维护 `(key, category)` 倒排索引，支持跨内容批量查询（「所有带 `outdoors` 的房间施加天气」）
+- 引擎维护 `(维度, 键)` 倒排索引，支持跨内容批量查询（「所有带 `outdoors` 的房间施加天气」）
 - **归属字段化，不做目录分层**（`zoneId` / `sectId` / `regionId`）
+- 标签与**标记位**并存、互不取代：标记位回答「有没有」，标签回答「归在哪一类」
 
-依据：ADR-0008、ADR-0021 §5、ADR-0025 §二
+依据：ADR-0008、ADR-0021 §5、ADR-0025 §二、**ADR-0029**
+
+### 5.1 落地形态（M3）
+
+- **形状唯一** `{ <维度>: [<键>…] }`（ADR-0029 §1）：维度名与键取值由 `content/config/dimensions.json` **封闭、schema 硬校验**——不在维度表里的维度写不进内容。`equipment` 的 `string[]` 孤例改齐。第二分量叫**维度**，不叫 `category`（与 CONTEXT.md「归属」的禁用词撞）。
+- **两侧都住**：内容条目 → 注册表内建倒排索引 `byTag(dimension, key) → id[]`，覆盖**所有已加载集合中带 tags 的条目**（引擎不认识集合，只认带 tags 的条目）；运行时实体 → `EntityState` 加 `tags` 槽（与 `flags` 并列），`subjectOf` 据此回答 `hasTag`——`hasTag` 由**桩**（恒 `false`）变真实现，`has_tag` 谓词第一次有真实数据可读。
+- **并集那条缝**：「自身 ∪ 其内容条目」**接缝先行、合成驱动**（M2-T4 先例）。今天只有玩家是动态占用、而玩家没有内容条目，这一半**无真实消费者**，等物化票（物品、有状态的 NPC）缝合。
+- **内容条目侧也分两层**：`tags`（有维度、进索引）与 `flags`（裸布尔、不进索引）。`spec/06` 的 `tags: ['quest']` 改 `flags: ['quest']`——它的语义是**布尔判断**不是归类。
+- **维度表随包、由主机传入**：传了就硬校验，**没传就跳过**；`byTag` 不依赖维度表（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`element`（字段取值池，含 `none`）与 `elementTag`（标签维度）不合并，子集校验留 `content:check` 待办。
+- **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：形状与取值校验、索引查询、维度非法、缺维度表时跳过、规范序）＋ 接缝 2 `call()` 全链路（合成一个挂 `has_tag` 门禁的出口，直接往状态树写/删标签，断言放行/拒绝与语义事件——照 look 票「执灯可见」直接写 `flags` 的先例）。
 
 ## 6. 原型继承
 
@@ -82,7 +92,18 @@
 ⚠️ **动态值**：Evennia 的 protfunc（`$random()`）**违反确定性**——改为种子化白名单求值节点。
 ⚠️ 合并非纯函数（原地改 dict），我们要保证**可复现的输出顺序**。
 
-依据：ADR-0022 §3、ADR-0024 §7
+依据：ADR-0022 §3、ADR-0024 §7、**ADR-0030**
+
+### 6.1 落地形态（M3）
+
+- **加载期展平，在注册表内**（ADR-0030 §1–§2）：顺序 = **`id` 去重 → 展平 → 引用完整性校验**。顺序不是审美——继承来的 `exits`、放置清单、`monsterId` **也必须被引用校验**，否则「把字段放进原型」就是绕过校验的后门。主机侧做展平则 M2-T6 的「同一装配路径」从**结构保证**退化成**纪律**。
+- **同集合内继承**，不跨集合；原型条目**塞在被继承的集合里**，不开 `prototypes/` 集合（形状差别为零，只是多一个 `prototypeKey`）。
+- **`prototypeKey` 的值 = 条目 `id`**（schema 表达不了，由注册表校验）；继承引用写 `prototypeParent: [<父条目 id>]`。展平结果**剥掉 `prototypeParent`**（已消费的指令）、**保留 `prototypeKey`**（条目的属性）→ **没自己声明 `prototypeKey` 的条目展平后就没有它，也就不可被继承**：构造性保证，不是约定。
+- **合并律**：`tags`（及 `attrs`）**互补合并**，其余键**整体替换**；多亲左→右优先（自身 > 最右父 > … > 最左父）。合并后数组**字典序升序 + 去重**（顺序不承载语义；否掉「按维度表顺序」——表顺序会变，会破坏「同内容同字节」）。
+- **`attrs` 不进 schema**（ADR-0030 §7）：展平器按与 `tags` 同律实现其互补合并（规则对称、成本近零），但 schema 不开口子——`additionalProperties: false` 加上一个没有读写方的字段，等于提前承诺一个还没设计的形状。由**合成测试**行使（测试数据是裸对象，不经 schema）。
+- **环检测双保险**：`content:check`（离线，内容作者提前发现）＋ 注册表展平时（运行时，**不信任输入**）。环是**引用**性质（ADR-0003 分层），两边都管。
+- **归一化交给 schema**（直接要求规范形态），加载期不做 Evennia 那种 `homogenize_prototype`。
+- **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：合并律、多亲优先级、字典序、自环/二环/长环/菱形非环、`prototypeKey` ≠ `id`、引用未声明者、展平后不含 `prototypeParent`）＋ 迷你包（**真实继承链**，经同一装配路径）。`content:check` 的环检测沿既有先例**不新增单元测试**（四道检查都没有）。
 
 ## 7. ★ 实体 hook：第一天必须定对的九项
 
@@ -149,10 +170,14 @@
 - [x] 房间四要素齐全（出口图 / 描述 / 放置清单 / 规则）——M1-T6 已落：schema 承载四要素（规则 = 房间 `preconditions`（enter）+ 出口门禁），首批内容全部具实
 - [x] 出口是独立实体，方向词是它的命令（M1-T6 已落：`ExitEntry extends CommandEntry`，`02-command-layer.md` §4.1）
 - [x] 人物引用怪物数值，**没有复制**（M1-T6 已落：npcs schema 结构性禁止战斗数值字段，`monsterId` 引用经注册表校验）
-- [ ] 标签**不带值**；归属用字段不用目录分层（schema 侧随各集合落地时执行；`(key, category)` 倒排索引是运行时能力，待实体系统）
-- [ ] 原型合并：`attrs`/`tags` 互补，其余整体替换
-- [ ] `content:check` 有**原型环检测**
-- [ ] `prototypeKey` 不参与继承
+- [ ] 标签**不带值**（形状 `{<维度>: [键…]}`，取值由维度表封闭、schema 硬校验）；归属用字段不用目录分层
+- [ ] `(维度, 键)` 倒排索引可跨内容批量查询（注册表 `byTag`，覆盖所有带 tags 的条目）
+- [ ] 内容条目侧 `tags` 与 `flags` 两层并存；`flags` 不进索引、不可批量查询
+- [ ] 运行时实体有 `tags` 槽，`hasTag` 不再是桩；「自身 ∪ 内容条目」的并集接缝已就位（合成驱动）
+- [ ] 原型合并：`attrs`/`tags` 互补，其余整体替换；合并后**字典序升序 + 去重**
+- [ ] 展平在**加载期、注册表内**，顺序为 `id 去重 → 展平 → 引用完整性校验`
+- [ ] `content:check` 有**原型环检测**；注册表展平时也防环（双保险）
+- [ ] `prototypeKey` 不参与继承；展平结果**不含 `prototypeParent`**
 - [x] 移动 hook 带 **`moveType`**——M2-T1 已落：`MOVE_TYPES` 五值枚举，`MoveInfo` 进每个 hook
 - [x] 移动入口**不做权限检查**（外置）——M2-T1 已落：`moveTo` 零门禁；穿行适配器编排 traverse → enter → moveTo（ADR-0028 §3）
 - [x] `return_appearance` **纯返回不发消息**——M2-T2 已落：`returnAppearance` 纯组装（静态在场直读 × 状态树占用），`at_look` 内做可见性（显式 `look` 门禁，缺省可见）
