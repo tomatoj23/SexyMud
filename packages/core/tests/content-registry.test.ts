@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandEntry } from "../src/command/entry.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
+import type { DimensionTable } from "../src/content/registry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../src/world/entry.js";
 
 /**
@@ -349,5 +350,202 @@ describe("createContentRegistry: world collections (issue #6)", () => {
     );
     // Non-combat npcs carry no monsterId and need no monsters.
     expect(() => createContentRegistry({ npcs: [npcEntry()] })).not.toThrow();
+  });
+});
+
+/** A synthetic dimensions table (ADR-0029 §5): dimension → closed key set. */
+const dimensions: DimensionTable = {
+  zone: ["town", "wild"],
+  elementTag: ["fire", "water"],
+};
+
+/**
+ * The (dimension, key) inverted index (issue #15; spec/03 §5.1, ADR-0029 §2/§5).
+ *
+ * Seam: createContentRegistry, driven by synthetic entries (the same
+ * factories the rest of this file uses). Two things decided up front shape
+ * every case here: the index covers ENTITIES — the four collections' entries
+ * AND exits, whose ids share one id space (decided 2026-09-02 on #15) — and
+ * `flags` never reaches it. The real content pack declares no tags yet; the
+ * mini pack's own dimensions table is #19's work.
+ */
+describe("createContentRegistry: byTag (issue #15)", () => {
+  it("跨集合查询：房间与怪物带同一标签，结果合并且 id 升序", () => {
+    const registry = createContentRegistry(
+      {
+        rooms: [
+          roomEntry({ id: "room-x-002", tags: { zone: ["town"] } }),
+          roomEntry({ tags: { zone: ["town"] } }),
+        ],
+        monsters: [{ id: "mon-x-001", tags: { zone: ["town"] } }],
+      },
+      { dimensions },
+    );
+    expect(registry.byTag("zone", "town")).toEqual(["mon-x-001", "room-x-001", "room-x-002"]);
+  });
+
+  it("出口进索引：出口 id 与条目 id 同空间，混排后仍是 id 升序", () => {
+    const registry = createContentRegistry(
+      {
+        rooms: [
+          roomEntry({
+            id: "room-x-002",
+            tags: { zone: ["town"] },
+            exits: [
+              exitEntry({ id: "exit-x-002-south", targetRoomId: "room-x-001", tags: { zone: ["town"] } }),
+            ],
+          }),
+          roomEntry(),
+        ],
+      },
+      { dimensions },
+    );
+    expect(registry.byTag("zone", "town")).toEqual(["exit-x-002-south", "room-x-002"]);
+  });
+
+  it("四个集合的条目都进索引（命令 / 房间 / 人物 / 怪物）", () => {
+    const registry = createContentRegistry(
+      {
+        commands: [entry({ id: "cmd-tagged", tags: { zone: ["wild"] } })],
+        rooms: [roomEntry({ tags: { zone: ["wild"] } })],
+        npcs: [npcEntry({ tags: { zone: ["wild"] } })],
+        monsters: [{ id: "mon-x-001", tags: { zone: ["wild"] } }],
+      },
+      { dimensions },
+    );
+    expect(registry.byTag("zone", "wild")).toEqual([
+      "cmd-tagged",
+      "mon-x-001",
+      "npc-x-001",
+      "room-x-001",
+    ]);
+  });
+
+  it("一维度多键、一键多维度各自独立命中", () => {
+    const registry = createContentRegistry(
+      {
+        rooms: [
+          roomEntry({
+            id: "room-x-001",
+            tags: { zone: ["town", "wild"], elementTag: ["fire"] },
+          }),
+          roomEntry({ id: "room-x-002", tags: { elementTag: ["fire"] } }),
+        ],
+      },
+      { dimensions },
+    );
+    expect(registry.byTag("zone", "town")).toEqual(["room-x-001"]);
+    expect(registry.byTag("zone", "wild")).toEqual(["room-x-001"]);
+    expect(registry.byTag("elementTag", "fire")).toEqual(["room-x-001", "room-x-002"]);
+  });
+
+  it("不带 tags 的实体不出现在任何查询结果里", () => {
+    const registry = createContentRegistry(
+      { rooms: [roomEntry(), roomEntry({ id: "room-x-002" })] },
+      { dimensions },
+    );
+    for (const dimension of Object.keys(dimensions)) {
+      for (const key of dimensions[dimension] ?? []) {
+        expect(registry.byTag(dimension, key)).toEqual([]);
+      }
+    }
+  });
+
+  it("flags 不进索引 —— 拿 flag 的值去问 byTag，任何维度都问不到（ADR-0029 §4）", () => {
+    const registry = createContentRegistry(
+      {
+        rooms: [
+          roomEntry({ id: "room-flagged", flags: ["quest"], tags: { zone: ["town"] } }),
+          roomEntry({
+            exits: [exitEntry({ id: "exit-flagged", flags: ["lit"], tags: { zone: ["town"] } })],
+          }),
+        ],
+      },
+      { dimensions },
+    );
+    for (const dimension of Object.keys(dimensions)) {
+      expect(registry.byTag(dimension, "quest")).toEqual([]);
+      expect(registry.byTag(dimension, "lit")).toEqual([]);
+    }
+    // The same two DO come back through their tags — the emptiness above is
+    // about flags being unindexed, not about the entity never being indexed.
+    expect(registry.byTag("zone", "town")).toEqual(["exit-flagged", "room-flagged"]);
+  });
+
+  it("未知维度与越界键 → 大声失败（拿到维度表才校验）", () => {
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry({ tags: { zone: ["town"] } })] }, { dimensions: {} }),
+    ).toThrow(/entity "room-x-001" tags unknown dimension "zone"/);
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry({ tags: { zone: ["nowhere"] } })] }, { dimensions }),
+    ).toThrow(/entity "room-x-001" tags key "nowhere" outside dimension "zone"/);
+  });
+
+  it("维度校验覆盖出口 —— 出口不是绕过维度表的后门", () => {
+    expect(() =>
+      createContentRegistry(
+        { rooms: [roomEntry({ exits: [exitEntry({ tags: { zone: ["nowhere"] } })] })] },
+        { dimensions },
+      ),
+    ).toThrow(/entity "exit-x-001-north" tags key "nowhere" outside dimension "zone"/);
+  });
+
+  it("没传维度表 → 不校验取值，但 byTag 照常工作（ADR-0029 §5）", () => {
+    const registry = createContentRegistry({
+      rooms: [roomEntry({ tags: { whatever: ["anything"] } })],
+    });
+    expect(registry.byTag("whatever", "anything")).toEqual(["room-x-001"]);
+  });
+
+  it("byTag 不依赖维度表：未知的 (维度, 键) 返回空数组而不是抛错", () => {
+    const registry = createContentRegistry(
+      { rooms: [roomEntry({ tags: { zone: ["town"] } })] },
+      { dimensions },
+    );
+    expect(registry.byTag("zone", "nope")).toEqual([]);
+    expect(registry.byTag("nope", "town")).toEqual([]);
+  });
+
+  it("确定性：装载顺序不同 → 查询结果相同", () => {
+    const commands = [
+      entry({ id: "cmd-b", tags: { zone: ["town"] } }),
+      entry({ id: "cmd-a", tags: { zone: ["town"] } }),
+    ];
+    const rooms = [
+      roomEntry({
+        id: "room-x-003",
+        tags: { zone: ["town"] },
+        exits: [
+          exitEntry({ id: "exit-x-003-north", targetRoomId: "room-x-001", tags: { zone: ["town"] } }),
+        ],
+      }),
+      roomEntry({ id: "room-x-002", tags: { zone: ["town"] } }),
+      roomEntry({ tags: { zone: ["town"] } }),
+    ];
+    const npcs = [npcEntry({ id: "npc-x-002", tags: { zone: ["town"] } }), npcEntry()];
+    const monsters = [{ id: "mon-x-001", tags: { zone: ["town"] } }];
+
+    const forward = createContentRegistry({ commands, rooms, npcs, monsters }, { dimensions });
+    const backward = createContentRegistry(
+      {
+        commands: [...commands].reverse(),
+        rooms: [...rooms].reverse(),
+        npcs: [...npcs].reverse(),
+        monsters: [...monsters].reverse(),
+      },
+      { dimensions },
+    );
+
+    expect(forward.byTag("zone", "town")).toEqual([
+      "cmd-a",
+      "cmd-b",
+      "exit-x-003-north",
+      "mon-x-001",
+      "npc-x-002",
+      "room-x-001",
+      "room-x-002",
+      "room-x-003",
+    ]);
+    expect(backward.byTag("zone", "town")).toEqual(forward.byTag("zone", "town"));
   });
 });
