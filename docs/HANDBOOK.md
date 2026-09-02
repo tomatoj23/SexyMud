@@ -91,7 +91,7 @@
 | **配置三分法** | STRUCTURE（装配图，不进 settings）／ TUNING（数字，进 `settings.json`）／ POLICY（决策，另开 `policy.json`）。**禁用 `null` 表「无限」**；时间单位写进键名；每组加 `formula` | ADR-0025 |
 | **扩展模型** | 三层：**内核**（实体/移动/命令/事件/时间/持久化，**完备但最简**）+ **六条契约**（效果/条件/事件/状态/命令/时间）+ **可选机制模块**。模块间**只通过契约交互，不互相 import**（N² 降为 N） | ADR-0027 |
 | **不做插件系统** | 现在不做（YAGNI，边界未验证）。扩展靠契约。待第二套内容包出现时，把已实现的机制**抽**成模块——**先做对，再拆开** | ADR-0027 |
-| **标签模型** | **维度 + 键，不带值**：形状唯一 `{<维度>: [键…]}`，取值由维度表封闭；**两侧都住**（内容条目 → 注册表倒排索引 `byTag`**〔M3-T2 已落〕**，运行时实体 → 状态树 `tags` 槽〔M3-T5〕）；与**标记位**并存互不取代；维度表随内容包走，**传了才校验、没传跳过** | ADR-0029 |
+| **标签模型** | **维度 + 键，不带值**：形状唯一 `{<维度>: [键…]}`，取值由维度表封闭；**两侧都住**（内容条目 → 注册表倒排索引 `byTag`**〔M3-T2 已落〕**，运行时实体 → 状态树 `tags` 槽〔M3-T5〕）；与**标记位**并存互不取代；维度表随内容包走，**传了才校验、没传跳过**；四个集合与出口的 id **同属一个唯一性空间**（跨集合重名加载期大声失败——否则 `byTag` 会把两个实体静默并成一行） | ADR-0029 |
 | **原型继承** | **加载期展平、注册表内、同集合**，顺序 `id 去重 → 展平 → 引用完整性校验`；`prototypeKey` = 条目 id，展平剥掉 `prototypeParent`；环检测双保险 | ADR-0030 |
 | **世界运行时** | **静态在场/动态占用二分**：NPC 不物化（放置清单直读），运行时实体 = 持有可变状态者（M2 只有玩家）；**走/看/说/穿行由引擎出厂**（注入缝保留）；门禁外置：traverse 门禁 → enter 门禁 → `moveTo`（零权限检查） | ADR-0028 |
 
@@ -107,7 +107,7 @@
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / **第二内容包验收：非武侠迷你包经同一装配路径跑通走/看/说（M2-T6）** / **标签与原型 T1：四字段 schema 与类型落地（`content/entry.ts` 的 `EntryCommon`，M3-T1）** / **标签与原型 T2：内容侧标签倒排索引 `byTag` + 维度表硬校验（`content/registry.ts`，M3-T2）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；20 个测试文件 / 404 用例全绿
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / **第二内容包验收：非武侠迷你包经同一装配路径跑通走/看/说（M2-T6）** / **标签与原型 T1：四字段 schema 与类型落地（`content/entry.ts` 的 `EntryCommon`，M3-T1）** / **标签与原型 T2：内容侧标签倒排索引 `byTag` + 维度表硬校验（`content/registry.ts`，M3-T2）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；20 个测试文件 / 407 用例全绿
 - **Schema 19 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ **2 个被引用库**（`condition` 条件表达式、`common` 条目通用字段〔M3-T1，14 个集合 `$ref` 引用〕）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）。**口径限定**：19 总数／14 待重估（= 3 config + 11 放置期集合）/ 12 无内容映射（= 2 库 + 10 个无内容集合；`monster` 有内容故不计入）——三个数字划分标准不同，都对，别去统一它们
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON

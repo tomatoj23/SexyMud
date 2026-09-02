@@ -46,6 +46,7 @@ assets/               # 美术资产（MVP 允许为空）
 ## 硬性规则
 
 - **id 一经发布不可变更**：资产路径、存档引用都依赖它。条目集合命名格式 `<集合缩写>-<门派/区域>-<序号>`，如 `mrt-hs-001`（华山招式 1）、`mon-sy-014`（山魈 14）；**config 集合豁免序号段**，用 `<类别>-<序号>` 或语义名（如 `act-practice`、`res-experience`）；**commands 集合同理用语义名**（`cmd-look`、`cmd-rest`——命令是全局的，无门派/区域归属），**文件名 = 条目 id**。id 只用小写字母、数字、连字符。
+- **id 全局唯一，跨集合也算**：四个集合的条目与**出口**的 id 同属**一个唯一性空间**，由注册表在加载期强制——跨集合重名大声失败并点名两侧类型（`id "x" is claimed by both "room" and "exit"`），同集合重名报 `duplicate <集合> id`。这不是洁癖：`byTag` 把条目 id 与出口 id **混在同一张结果里**，重名会让两个实体静默并成一行。
 - 每个条目必须通过对应 Schema 校验后才能提交。校验命令：`corepack pnpm content:check`。
 - 叙事字段（`description`、事件文本等）必须遵守 `content/style-guide.md` 的武侠语体；世界背景类长文写入 `content/lore/*.md`。
 - 资产不内嵌 base64、不写绝对路径；引用走约定路径，确需覆盖时用条目的 `art` 字段（相对 `assets/` 的路径）。

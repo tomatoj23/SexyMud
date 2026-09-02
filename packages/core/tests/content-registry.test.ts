@@ -353,6 +353,68 @@ describe("createContentRegistry: world collections (issue #6)", () => {
   });
 });
 
+/**
+ * One id space (issue #15 follow-up): entries and exits share it, so a room
+ * and an exit claiming one id used to be accepted — silent, because nothing
+ * mixed them into one list. `byTag` does, which turns that into a silent
+ * merge of two entities into one result row. The registry now rejects it at
+ * load, naming BOTH sides, because "which two things collided" is the whole
+ * content of the error.
+ */
+describe("createContentRegistry: one id space (#15 follow-up)", () => {
+  it("跨集合重名大声失败，报错点名两侧类型（命令 / 房间 / 出口 / 人物 / 怪物）", () => {
+    // Commands load first, so the command is the first taker of the id.
+    expect(() =>
+      createContentRegistry({
+        commands: [entry({ id: "x-shared" })],
+        rooms: [roomEntry({ id: "x-shared" })],
+      }),
+    ).toThrow(/id "x-shared" is claimed by both "command" and "room"/);
+
+    expect(() =>
+      createContentRegistry({
+        commands: [entry({ id: "x-shared" })],
+        rooms: [roomEntry({ exits: [exitEntry({ id: "x-shared" })] })],
+      }),
+    ).toThrow(/id "x-shared" is claimed by both "command" and "exit"/);
+
+    expect(() =>
+      createContentRegistry({
+        rooms: [roomEntry({ id: "x-shared", exits: [exitEntry({ id: "x-shared" })] })],
+      }),
+    ).toThrow(/id "x-shared" is claimed by both "room" and "exit"/);
+
+    expect(() =>
+      createContentRegistry({
+        npcs: [npcEntry({ id: "x-shared" })],
+        monsters: [{ id: "x-shared" }],
+      }),
+    ).toThrow(/id "x-shared" is claimed by both "npc" and "monster"/);
+  });
+
+  it("同集合重名仍是原来那句（跨集合那条没把同集合的文案带偏）", () => {
+    expect(() =>
+      createContentRegistry({ commands: [entry({ id: "cmd-a" }), entry({ id: "cmd-a" })] }),
+    ).toThrow(/duplicate command id "cmd-a"/);
+    // Two rooms claiming one id: still a duplicate, not a "claimed by both".
+    expect(() => createContentRegistry({ rooms: [roomEntry(), roomEntry()] })).toThrow(
+      /duplicate room id "room-x-001"/,
+    );
+  });
+
+  it("一个 id 被两个不同集合声明时，抛错先于任何引用完整性检查（输入顺序无关）", () => {
+    // The exit's target room is missing too — the id clash is reported, not
+    // whichever check happens to run first.
+    expect(() =>
+      createContentRegistry({
+        rooms: [
+          roomEntry({ id: "x-shared", exits: [exitEntry({ id: "x-shared", targetRoomId: "room-nowhere" })] }),
+        ],
+      }),
+    ).toThrow(/is claimed by both "room" and "exit"/);
+  });
+});
+
 /** A synthetic dimensions table (ADR-0029 §5): dimension → closed key set. */
 const dimensions: DimensionTable = {
   zone: ["town", "wild"],

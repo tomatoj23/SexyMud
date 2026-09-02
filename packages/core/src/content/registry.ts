@@ -116,18 +116,36 @@ export interface ContentRegistry {
   byTag(dimension: string, key: string): readonly string[];
 }
 
-/** Adds `id` to `byId`, throwing on duplicates or an empty id. */
+/**
+ * Adds `entry` to `byId`, throwing if its id is already taken — **by
+ * anything at all**, not just by another entry of the same collection.
+ *
+ * `owners` is one id space shared by every collection and by exits, because
+ * that is what the ids really are: `byTag` returns entry ids and exit ids
+ * MIXED in one list (ADR-0029 §2, #15), so two entities sharing an id would
+ * silently collapse into one result row, and an exit id is a dispatch key
+ * (spec/02 §4) that already has to be unique across the world. Previously
+ * the collections were checked independently, which made "one id, one thing"
+ * a content convention; it is now enforced at load.
+ */
 function addUnique<T extends { id: string }>(
   byId: Map<string, T>,
   entry: T,
   what: string,
+  owners: Map<string, string>,
 ): void {
   if (typeof entry.id !== "string" || entry.id === "") {
     throw new Error(`content registry: ${what} entry with an empty id`);
   }
-  if (byId.has(entry.id)) {
-    throw new Error(`content registry: duplicate ${what} id "${entry.id}"`);
+  const owner = owners.get(entry.id);
+  if (owner !== undefined) {
+    throw new Error(
+      owner === what
+        ? `content registry: duplicate ${what} id "${entry.id}"`
+        : `content registry: id "${entry.id}" is claimed by both "${owner}" and "${what}"`,
+    );
   }
+  owners.set(entry.id, what);
   byId.set(entry.id, entry);
 }
 
@@ -241,24 +259,29 @@ export function createContentRegistry(
   },
   options: ContentRegistryOptions = {},
 ): ContentRegistry {
+  // ONE id space for everything loaded here — the four collections and the
+  // exits (see addUnique). Declared before any collection is filled so the
+  // first taker of an id is whoever the host handed over first.
+  const idOwners = new Map<string, string>();
+
   const commandsById = new Map<string, CommandEntry>();
   for (const entry of content.commands ?? []) {
-    addUnique(commandsById, entry, "command");
+    addUnique(commandsById, entry, "command", idOwners);
   }
 
   const roomsById = new Map<string, RoomEntry>();
   for (const room of content.rooms ?? []) {
-    addUnique(roomsById, room, "room");
+    addUnique(roomsById, room, "room", idOwners);
   }
 
   const npcsById = new Map<string, NpcEntry>();
   for (const npc of content.npcs ?? []) {
-    addUnique(npcsById, npc, "npc");
+    addUnique(npcsById, npc, "npc", idOwners);
   }
 
   const monstersById = new Map<string, MonsterRecord>();
   for (const monster of content.monsters ?? []) {
-    addUnique(monstersById, monster, "monster");
+    addUnique(monstersById, monster, "monster", idOwners);
   }
 
   // Exits are entities with GLOBAL ids (dispatch keys) living inside room
@@ -269,7 +292,7 @@ export function createContentRegistry(
   for (const room of roomsById.values()) {
     const directions = new Set<string>();
     for (const exit of room.exits ?? []) {
-      addUnique(exitsById, exit, "exit");
+      addUnique(exitsById, exit, "exit", idOwners);
       // The direction is the edge's key (spec/03 §2): two exits of one room
       // claiming the same direction disagree about where it leads.
       if (typeof exit.direction !== "string" || exit.direction === "") {
