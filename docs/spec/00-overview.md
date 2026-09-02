@@ -109,7 +109,7 @@ TerminalView 实现                   style-guide.md（文风约束）
 | **`08-non-goals.md`** | **明确不做的事** | **每次做设计决策前，必读** |
 
 配套（非本目录）：
-- `docs/adr/` — 决策历史（28 篇）
+- `docs/adr/` — 决策历史（30 篇）
 - `docs/chinese-mud-concerns.md` — 中文特有问题全景（35 条，5 条待定）
 - `CONTEXT.md` — **武侠内容包**术语词典（作用域：内容层，不是引擎）
 - `content/style-guide.md` — 叙事文风约束

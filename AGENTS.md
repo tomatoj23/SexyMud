@@ -9,7 +9,7 @@
 2. **`docs/spec/08-non-goals.md`** —— **明确不做的事。做设计决策前必读。**
 3. 再按要做的子系统读 `docs/spec/01`~`07`，每份末尾有自检清单。
 
-**归档/历史**：`docs/HANDBOOK.md`（总览与定案速查）· `docs/adr/`（**28 篇**决策历史）· `docs/chinese-mud-concerns.md`（中文问题全景 35 条）· `docs/engine-purity-audit.md`（2026-09-01 一次性审计快照，非现状）· `docs/engine-reservations.md`（引擎预留清单）。
+**归档/历史**：`docs/HANDBOOK.md`（总览与定案速查）· `docs/adr/`（**30 篇**决策历史）· `docs/chinese-mud-concerns.md`（中文问题全景 35 条）· `docs/engine-purity-audit.md`（2026-09-01 一次性审计快照，非现状）· `docs/engine-reservations.md`（引擎预留清单）。
 
 > ⚠️ **ADR 是决策日志，不是当前规格。** ADR 之间有网状覆盖关系（0025 修订 0017、0024 修正 0022 与 0023）。**冲突时以 `docs/spec/` 为准。**
 
