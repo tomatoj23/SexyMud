@@ -38,7 +38,11 @@
     "preconditions": {
       "$ref": "condition.schema.json#/definitions/accessRules",
       "description": "前置门禁（spec/02 §5）：accessType → 条件表达式，`default` 必填（false = 缺省拒绝最常用）。命令集合的 accessType 词汇表：**use**（询问方由宿主在装配 CommandSpec 时传入，content.md 命令集合节）。省略本字段 = 无门禁。"
-    }
+    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "patternProperties": {
     "^err_[a-z][a-z0-9-]*$": {

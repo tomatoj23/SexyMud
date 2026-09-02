@@ -21,11 +21,15 @@ const schemasDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../sc
 const conditionSchema = JSON.parse(readFileSync(resolve(schemasDir, "condition.schema.json"), "utf8"));
 const roomsSchema = JSON.parse(readFileSync(resolve(schemasDir, "rooms.schema.json"), "utf8"));
 const npcsSchema = JSON.parse(readFileSync(resolve(schemasDir, "npcs.schema.json"), "utf8"));
+// The entry-field library (tags / flags / prototypeKey / prototypeParent) is
+// the second cross-file $ref every collection schema makes (M3-T1).
+const commonSchema = JSON.parse(readFileSync(resolve(schemasDir, "common.schema.json"), "utf8"));
 
-/** Compiles one world schema with the condition library pre-registered for $ref. */
+/** Compiles one world schema with both libraries pre-registered for $ref. */
 function compile(schema: object) {
   const ajv = new Ajv({ allErrors: true });
   ajv.addSchema(conditionSchema);
+  ajv.addSchema(commonSchema);
   return ajv.compile(schema);
 }
 

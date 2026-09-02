@@ -22,7 +22,7 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema（**18 个**；`config` 拆 3 类：dimensions / display-tiers / settings；`condition` 是被引用库）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 其余 11 个集合 schema 随内容落地启用（`monster.schema.json` 已进编译但重估未做） |
+| `schemas/` | JSON Schema（**19 个**；`config` 拆 3 类：dimensions / display-tiers / settings；两个**被引用库**：`condition`（条件表达式）、`common`（条目通用字段 tags／flags／prototypeKey／prototypeParent，14 个条目集合统一 `$ref`）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 12 个无内容映射（含 2 个被引用库）→ 其中 **11 个**放置期集合 schema 随内容落地启用（`monster.schema.json` 已进编译但重估未做） |
 | `docs/research/xkx100-*.md` | **一手调研**：房间/NPC/物品/任务结构、武功体系、**战斗文本模板与 50 档造诣完整列表** | 参考（高价值） |
 
 **冲突处置顺序**：**`docs/spec/`（活规格，最高）** > `CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/`（决策历史）> `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
@@ -107,8 +107,8 @@
 ### 当前事实
 
 - **定位**：中文优先的确定性**文字 MUD 引擎** + 武侠内容包（不是"一个武侠游戏"）。三条硬标准从「纪律」升级为「产品定义」（ADR-0026）
-- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / **第二内容包验收：非武侠迷你包经同一装配路径跑通走/看/说（M2-T6）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；19 个测试文件 / 316 用例全绿
-- **Schema 18 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ `condition`（被引用库）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）
+- **包**：`@sexymud/*` —— `packages/core`（端口与契约 / 命令层 / 世界内容契约 / **实体运行时 + 移动 hook（M2-T1）** / **看行为：`return_appearance` + `at_look` + look 出厂适配器（M2-T2）** / **说行为：`at_msg_receive` + `broadcastMessage` 投递缝 + say 出厂适配器（M2-T3）** / **接缝补全：get/give/drop 转移配对 + creation 两层 + 动态 cmdset `assembleSources`（M2-T4）** / **状态树种子 + 快照 v1（`serializeWorld`／`restoreWorld` + `derived` 契约 + `attachEntity` 重挂，M2-T5）** / **第二内容包验收：非武侠迷你包经同一装配路径跑通走/看/说（M2-T6）** / **标签与原型 T1：四字段 schema 与类型落地（`content/entry.ts` 的 `EntryCommon`，M3-T1）** / 存档迁移链）+ `apps/web`（React + Vite 壳）+ `apps/editor`（占位）；20 个测试文件 / 393 用例全绿
+- **Schema 19 个**：`config` 拆 3 类（dimensions / display-tiers / settings）+ **2 个被引用库**（`condition` 条件表达式、`common` 条目通用字段〔M3-T1，14 个集合 `$ref` 引用〕）+ `commands`／`rooms`／`npcs`（M1-T5/T6 新落）+ 11 个集合（放置期设计）。**口径限定**：19 总数／14 待重估（= 19 − 3 新落 − 2 库，含 config 三类）/ 12 无内容映射（含 2 库）——三个数字划分标准不同，都对，别去统一它们
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
 - **第二内容包（M2-T6，`packages/core/tests/fixtures/mini-pack/`）**：非武侠（近轨灯塔站 3 房间／4 出口／2 命令／1 人物，方向词 前/后/内/外），与 `content/` 走**同一装载函数**（换包 = 换目录），经同一引擎跑通走/看/说——**验收标准 2 首次机械化，引擎零改动**，换包只换宿主的「命令 id → 出厂行为」绑定表
@@ -120,7 +120,7 @@
 | 项 | 说明 |
 |---|---|
 | 🚧 `content/` 其余集合 | 待生产。⚠️ `display-tiers.json` 的**生产称谓 16 档待补**——xkx100 原表在调研记录中被省略，**不得杜撰中间项** |
-| 🚧 世界模型实体运行时 | **M2 六张票已全关**：T1 实体+移动 tracer（#7，已落）、T2 看（#8，已落：`return_appearance` 纯组装 + `at_look` 可见性 + `lookSpec` 出厂适配器）、T3 说（#9，已落：`at_msg_receive` 可否决 + `fromObj` 可空的 `broadcastMessage` 投递缝 + `at_pre_say`／`at_post_say` 配对 + `saySpec` 出厂适配器）、T4 接缝补全（#10，已落：`getObject`/`giveObject`/`dropObject` 三配对包 `moveTo` 外 + `createObject` creation 两层〔顺序即契约，JSON 赢代码默认值〕+ `assembleSources` 动态 cmdset〔逐分发重组零缓存〕，全合成驱动测试）、T5 快照 v1（#11，已落：`serializeWorld`/`restoreWorld` 载荷即状态树〔规范序＝同世界同字节〕+ `derived` 一张表驱动类型与排除、加载后重算 + `attachEntity` 恢复＝重放树不跑 creation + NPC 构造性不入档 + 未来版本与七类损坏载荷大声失败（逐条测试行使）；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空）、T6 非武侠迷你包验收（#12，已落：迷你包经同一装配路径跑通走/看/说 + 门禁拒绝 + 零武侠词 + 两包互不渗漏；验收标准 2 首次机械化）；形态定案 ADR-0028；余下＝标签（spec/03 §5）与原型（spec/03 §6）——**设计已定案（ADR-0029／ADR-0030）、已拆 M3 六票（#14–#19，规格快照 #13）** |
+| 🚧 世界模型实体运行时 | **M2 六张票已全关**：T1 实体+移动 tracer（#7，已落）、T2 看（#8，已落：`return_appearance` 纯组装 + `at_look` 可见性 + `lookSpec` 出厂适配器）、T3 说（#9，已落：`at_msg_receive` 可否决 + `fromObj` 可空的 `broadcastMessage` 投递缝 + `at_pre_say`／`at_post_say` 配对 + `saySpec` 出厂适配器）、T4 接缝补全（#10，已落：`getObject`/`giveObject`/`dropObject` 三配对包 `moveTo` 外 + `createObject` creation 两层〔顺序即契约，JSON 赢代码默认值〕+ `assembleSources` 动态 cmdset〔逐分发重组零缓存〕，全合成驱动测试）、T5 快照 v1（#11，已落：`serializeWorld`/`restoreWorld` 载荷即状态树〔规范序＝同世界同字节〕+ `derived` 一张表驱动类型与排除、加载后重算 + `attachEntity` 恢复＝重放树不跑 creation + NPC 构造性不入档 + 未来版本与七类损坏载荷大声失败（逐条测试行使）；`SAVE_VERSION` 保持 1、迁移链机制就绪但为空）、T6 非武侠迷你包验收（#12，已落：迷你包经同一装配路径跑通走/看/说 + 门禁拒绝 + 零武侠词 + 两包互不渗漏；验收标准 2 首次机械化）；形态定案 ADR-0028；余下＝标签（spec/03 §5）与原型（spec/03 §6）——**设计已定案（ADR-0029／ADR-0030）、已拆 M3 六票（#14–#19，规格快照 #13）；T1 schema 与类型落地（#14）已关**（`schemas/common.schema.json` 唯一定义 + 14 个集合 `$ref` + 引擎 `EntryCommon` + `content.md` 同步；`tests/tags-prototype-schema.test.ts` 77 例逐集合守卫形状） |
 | 🚧 世界连通性校验（可达性） | 引用完整性已由**注册表加载期校验**承担（ADR-0003 分层：形状归 content:check、引用归注册表，M1-T5/T6 落地并由测试行使）；「全图可达」需起始房间概念，随世界引导（bootstrap）票再补 |
 | 🚧 `monster.schema.json` 重估 | 已随 `mon-lq-001` 进入编译，但仍是放置期设计，需随秘境票重估 |
 | 🚧 `combat-text.schema.json` 联合类型 | draft-07 清扫已呈现 `dimensionRef` 的 `"type": ["string","array"]`（strictTypes WARN，Ajv 日志级不抛错）；随 combat-text 内容落地重估时修复（或管线定夺 allowUnionTypes） |
@@ -132,7 +132,7 @@
 
 1. **M1 六张 tracer 票已全部关闭**（#1–#6）：命令测试骨架 → 中文解析器 → 条件表达式 → cmdset 合并栈 → commands/ 内容集合 → rooms/+npcs/ 世界集合 + 出口即命令
 2. **M2 已拆票**（ADR-0028 定形态）：~~实体运行时+移动全链路（tracer）~~（**#7 已关，6059e63**）→ ~~看~~（**#8 已关，4795ec8**）→ ~~说~~（**#9 已关，8ddfa86**）→ ~~接缝补全~~（**#10 已关，083fa78**）→ ~~快照 v1~~（**#11 已关**）→ ~~非武侠迷你包验收~~（**#12 已关，500d2b0**，验收标准 2 首次机械化）；阻塞边：T1 → {T2,T3,T4,T5}，{T2,T3} → T6
-3. **M3 已拆票**（设计定案见 `spec/03` §5.1／§6.1 + **ADR-0029**／**ADR-0030**；规格快照＝**#13**）：T1 schema 与类型落地（**#14**）→ T2 内容侧标签（**#15**）／ T3 原型展平（**#16**）→ T4 编排（**#18**）、T5 运行时标签（**#17**）→ T6 迷你包验收（**#19**）；**阻塞边：T1 → {T2,T3}，T2 → {T4,T5}，{T4,T5} → T6**。注：票号不连续（#17＝T5、#18＝T4），因为并行建票；票正文的阻塞边写的是 **M3-Tn 简称**不是数字，故不受影响
+3. **M3 已拆票**（设计定案见 `spec/03` §5.1／§6.1 + **ADR-0029**／**ADR-0030**；规格快照＝**#13**）：~~T1 schema 与类型落地（**#14**）~~（**已关**）→ T2 内容侧标签（**#15**）／ T3 原型展平（**#16**）→ T4 编排（**#18**）、T5 运行时标签（**#17**）→ T6 迷你包验收（**#19**）；**阻塞边：T1 → {T2,T3}，T2 → {T4,T5}，{T4,T5} → T6**。注：票号不连续（#17＝T5、#18＝T4），因为并行建票；票正文的阻塞边写的是 **M3-Tn 简称**不是数字，故不受影响
 4. M4 ＝ 时间与调度（spec/04 §2–§4，战斗前夜）
 
 > **两条已绑定的验收条件**（不是待办，做对应动作时必须带上）：写折行器时**必须一次做对避头尾**（B8，`spec/05` §10）；写第一个输入组件时**必须处理 IME 合成**（G3，`spec/02` §8）。

@@ -209,9 +209,13 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     const conditionSchema = JSON.parse(
       readFileSync(resolve(schemasDir, "condition.schema.json"), "utf8"),
     );
+    const commonSchema = JSON.parse(
+      readFileSync(resolve(schemasDir, "common.schema.json"), "utf8"),
+    );
     const compile = (schema: object) => {
       const ajv = new Ajv({ allErrors: true });
       ajv.addSchema(conditionSchema);
+      ajv.addSchema(commonSchema);
       return ajv.compile(schema);
     };
     const validateCommands = compile(

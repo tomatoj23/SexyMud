@@ -72,6 +72,7 @@
 - **内容条目侧也分两层**：`tags`（有维度、进索引）与 `flags`（裸布尔、不进索引）。`spec/06` 的 `tags: ['quest']` 改 `flags: ['quest']`——它的语义是**布尔判断**不是归类。
 - **维度表随包、由主机传入**：传了就硬校验，**没传就跳过**；`byTag` 不依赖维度表（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`element`（字段取值池，含 `none`）与 `elementTag`（标签维度）不合并，子集校验留 `content:check` 待办。
 - **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：形状与取值校验、索引查询、维度非法、缺维度表时跳过、规范序）＋ 接缝 2 `call()` 全链路（合成一个挂 `has_tag` 门禁的出口，直接往状态树写/删标签，断言放行/拒绝与语义事件——照 look 票「执灯可见」直接写 `flags` 的先例）。
+- **落地（M3-T1，#14）**：`tags`／`flags`／`prototypeKey`／`prototypeParent` 作为**条目通用字段**落成两处——`schemas/common.schema.json`（唯一定义，14 个条目集合 `$ref` 引用）与引擎 `EntryCommon`（`packages/core/src/content/entry.ts`，各条目类型 `extends` 它）；第三处同步在 `docs/agents/content.md` 的「条目字段约定」。schema 只管**形状**（维度名 lowerCamelCase、键列表非空且去重、四字段一律可选——唯一例外是 `equipment` 词缀的 `tags` 必填——且只在**实体层**：条目带，**出口**也带〔出口即命令，类型与 schema 必须一致〕，`objects[]` 放置清单项不带），**取值**封闭与原型展平是下面两票的事。形状本身的守卫是 `tests/tags-prototype-schema.test.ts`（逐集合一条用例）。
 
 ## 6. 原型继承
 
@@ -104,6 +105,7 @@
 - **环检测双保险**：`content:check`（离线，内容作者提前发现）＋ 注册表展平时（运行时，**不信任输入**）。环是**引用**性质（ADR-0003 分层），两边都管。
 - **归一化交给 schema**（直接要求规范形态），加载期不做 Evennia 那种 `homogenize_prototype`。
 - **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：合并律、多亲优先级、字典序、自环/二环/长环/菱形非环、`prototypeKey` ≠ `id`、引用未声明者、展平后不含 `prototypeParent`）＋ 迷你包（**真实继承链**，经同一装配路径）。`content:check` 的环检测沿既有先例**不新增单元测试**（四道检查都没有）。
+- **落地（M3-T1，#14）**：`prototypeKey`／`prototypeParent` 与 `tags`／`flags` 一起进 `schemas/common.schema.json`（见 §5.1 落地条）：四个字段是**同一份条目层契约**的两半，14 个条目集合统一引用，一律**可选**。schema 表达不了的三件事（`prototypeKey` 是否等于本条目 id、父是否声明过原型、是否成环）留给注册表展平（#16）与 `content:check` 环检测（#19）。
 
 ## 7. ★ 实体 hook：第一天必须定对的九项
 

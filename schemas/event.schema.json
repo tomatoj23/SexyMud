@@ -37,10 +37,10 @@
     },
     "regionId": { "type": "string" },
     "weight": { "type": "number", "minimum": 0, "description": "抽取权重（若为随机触发）" },
-    "tags": {
-      "type": "object",
-      "additionalProperties": { "type": "array", "items": { "type": "string" } }
-    }
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "additionalProperties": false
 }

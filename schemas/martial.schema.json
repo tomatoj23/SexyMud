@@ -70,14 +70,10 @@
       "description": "招式文本变体：引用 content/combat-text/ 的模板 id，战斗中随机抽（CONTEXT.md 招式文本变体词条）",
       "items": { "type": "string" }
     },
-    "tags": {
-      "type": "object",
-      "description": "维度键（对象形态 { moveTag: [...], elementTag: [...] }），取值来自 dimensions（ADR-0011）",
-      "additionalProperties": {
-        "type": "array",
-        "items": { "type": "string" }
-      }
-    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" },
     "art": {
       "type": "string",
       "description": "覆盖默认资产路径时的相对 assets/ 路径（content.md）"

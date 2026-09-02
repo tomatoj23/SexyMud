@@ -1,5 +1,6 @@
 import type { CommandEntry } from "../command/entry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
+import type { EntryCommon } from "./entry.js";
 
 /**
  * The content registry (spec/00, ADR-0003): the single channel through which
@@ -32,8 +33,12 @@ import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
  * over as-is: structurally they carry an id, which is all referential
  * integrity needs. A future full MonsterEntry type deepens this shape
  * compatibly.
+ *
+ * It extends EntryCommon because a monster is an entry collection like any
+ * other: its tags must reach the inverted index (M3-T2) even before the rest
+ * of its shape is pinned down.
  */
-export interface MonsterRecord {
+export interface MonsterRecord extends EntryCommon {
   readonly id: string;
 }
 

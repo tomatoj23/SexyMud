@@ -48,11 +48,10 @@
       "description": "效果引用列表，指向 content/effects/；与武功共用同一批效果定义",
       "items": { "type": "string" }
     },
-    "tags": {
-      "type": "object",
-      "description": "维度键（对象形态），取值来自 dimensions",
-      "additionalProperties": { "type": "array", "items": { "type": "string" } }
-    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" },
     "art": { "type": "string", "description": "覆盖默认 assets/portraits/monster/<id>.png 时的相对路径" },
     "description": {
       "type": "string",

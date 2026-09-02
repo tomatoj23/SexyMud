@@ -16,14 +16,10 @@
       "minItems": 1,
       "items": { "$ref": "#/definitions/primitive" }
     },
-    "tags": {
-      "type": "object",
-      "description": "维度键（对象形态），取值来自 content/config/dimensions.json（ADR-0011 第 6 条）",
-      "additionalProperties": {
-        "type": "array",
-        "items": { "type": "string" }
-      }
-    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" },
     "description": {
       "type": "string",
       "description": "叙事文本，须遵守 content/style-guide.md"

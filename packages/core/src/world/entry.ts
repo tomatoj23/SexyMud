@@ -1,5 +1,6 @@
 import type { AccessRules } from "../conditions.js";
 import type { CommandEntry } from "../command/entry.js";
+import type { EntryCommon } from "../content/entry.js";
 
 /**
  * World entries as CONTENT (spec/03 §1–§4, ADR-0016 §3, ADR-0021 §2): rooms,
@@ -13,6 +14,11 @@ import type { CommandEntry } from "../command/entry.js";
  * and schemas/npcs.schema.json field-for-field, and docs/agents/content.md
  * documents the field contract for content authors. Changing one means
  * changing all three.
+ *
+ * Rooms and npcs are entry collections, so both extend EntryCommon: the
+ * entry-level tail (tags / flags / prototypeKey / prototypeParent) is shared,
+ * while the sub-structures they contain — an exit, a placement row — are PARTS
+ * of a room entry and carry none of it.
  */
 
 /**
@@ -29,6 +35,15 @@ import type { CommandEntry } from "../command/entry.js";
  * dispatch key (the verb table maps direction words onto it) and the refusal
  * event carries it as commandKey so the renderer can look the exit up and
  * read its err_* copy.
+ *
+ * Being a command, an exit also carries the four entry-common fields
+ * (tags / flags / prototypeKey / prototypeParent) through CommandEntry —
+ * "an exit IS a command" is the reason, and the room schema's exit definition
+ * admits them for exactly that reason (three-way sync). Of those four, the
+ * prototype pair has no consumer today: flattening runs per collection, and a
+ * room's exits are replaced wholesale rather than complement-merged
+ * (spec/03 §6). A placement row, by contrast, is not an entity at all and
+ * carries none of them.
  */
 export interface ExitEntry extends CommandEntry {
   /**
@@ -67,7 +82,7 @@ export interface PlacementEntry {
  * §7 are a later milestone); rooms land as content first, so the world a
  * host assembles is already validated, connected and dispatchable.
  */
-export interface RoomEntry {
+export interface RoomEntry extends EntryCommon {
   /**
    * Content id, immutable once released. Rooms follow the pack's
    * `<collection>-<area>-<seq>` id convention (content.md); the file name is
@@ -141,7 +156,7 @@ export interface RoomEntry {
  * WHERE an npc stands is not part of the npc: rooms are the content
  * containers, and a room's placement list references the npc (spec/03 §2).
  */
-export interface NpcEntry {
+export interface NpcEntry extends EntryCommon {
   /** Content id, immutable once released; the file name is the id. */
   readonly id: string;
   /** The persona's appearance name (what players see and target). */

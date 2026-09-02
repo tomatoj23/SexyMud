@@ -47,7 +47,7 @@
         },
         "preferredTags": {
           "type": "array",
-          "description": "底材只声明偏好标签；词缀自带 tags，权重 = 基础 × (1 + 匹配标签数 × 加成)",
+          "description": "底材只声明**偏好键**（裸键列表，跨维度匹配词缀 tags 各维度的取值）；词缀自带 `tags`（对象形态），权重 = 基础 × (1 + 匹配键数 × 加成)",
           "items": { "type": "string" }
         },
         "inherentModifiers": {
@@ -56,7 +56,11 @@
           "items": { "type": "object" }
         },
         "art": { "type": "string", "description": "覆盖默认 assets/icons/equipment/<id>.png 时的相对路径" },
-        "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" }
+        "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
       },
       "additionalProperties": false
     },
@@ -72,11 +76,10 @@
         },
         "kind": { "const": "affix" },
         "name": { "type": "string", "minLength": 1 },
-        "tags": {
-          "type": "array",
-          "description": "词缀自带标签（力量/破防/火系…）。新增词缀带上 tags 即自动被所有偏好该标签的底材青睐，零改动",
-          "items": { "type": "string" }
-        },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" },
         "tiers": {
           "type": "array",
           "description": "3 阶数值表（T1/T2/T3）：每条目内含三阶，便于调平衡（对「每条目一文件」的有意例外）",

@@ -25,7 +25,11 @@
       "type": "string",
       "pattern": "^mon-[a-z0-9]+-[0-9]{3}$",
       "description": "战斗数值引用（content/monster/ 条目 id，与 monster.schema.json 的 id 规则一致）：**引用，不复制**。声明即「可触发战斗」；非战斗人物省略。注册表校验引用存在性（monster 集合已加载时）——悬空引用在加载期即抛错。"
-    }
+    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "additionalProperties": false
 }

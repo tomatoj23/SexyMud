@@ -1,6 +1,6 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；18 个 schema 中 `condition.schema.json`（M1-T3）、`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）为新落，其余 **14 个**放置期设计**需随本规格重估**（`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（3 个 JSON）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
+> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**19 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）是**新落的集合 schema**，其余 **14 个**需随本规格重估（**限定语**：= 19 − 3 新落集合 − 2 被引用库；这 14 个里含 `config` 三类与 **11 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（3 个 JSON）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合
@@ -18,6 +18,8 @@
 
 `rooms/`、`npcs/` 两个集合的 schema **已落**（M1-T6：`schemas/rooms.schema.json`（含出口子实体——出口即命令，门禁词汇表 `enter`／`traverse`）+ `schemas/npcs.schema.json`（`monsterId` 引用不复制）+ 引擎类型 `packages/core/src/world/entry.ts` + 首批柳青镇内容）；`commands/` schema **已落**（M1-T5，`schemas/commands.schema.json`，首批条目 4 条）。
 
+> `schemas/common.schema.json`（M3-T1）是**第二个被引用库**：四个条目通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）属于**每一个条目集合**（config 三类与 condition 除外），因此只有一份定义，14 个集合 schema 统一 `$ref` 引用——「标签形状只有一种」由此从**约定**变成**结构**（ADR-0029 §1）。跨文件 `$ref` 因此有两个库：`content:check` 按 `$id` 预注册全部 schema，单元测试须把用到的库都 `addSchema` 之后再 compile（否则报 `can't resolve reference`）。
+>
 > `schemas/condition.schema.json`（M1-T3）是**被引用库**，不是集合 schema：条件内嵌于 commands / martial 等条目，没有 `content/condition/` 目录。集合 schema 以 `$ref` 引用它（单表达式 → `condition.schema.json`；门禁映射 → `#/definitions/accessRules`）。它不进 `content:check` 的正向映射，其 draft-07 合法性与递归结构由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试，即 spec/06 §3.1 缺口在该文件上的闭合）。
 
 ## 2. 硬规则
@@ -29,7 +31,7 @@
 | **config 集合豁免序号段** | 用 `<类别>-<序号>` 或语义名，如 `act-practice`、`res-experience` |
 | **id 只用小写字母、数字、连字符** | |
 | **归属字段化，不做目录分层** | `zoneId` / `sectId` / `regionId` |
-| **标记位代替特殊类型** | 纯叙事道具 = 普通条目 + `tags:["quest"]` + 价值归零 |
+| **标记位代替特殊类型** | 纯叙事道具 = 普通条目 + `flags:["quest"]` + 价值归零（原写 `tags:["quest"]`，已按 ADR-0029 §3 改正：它的语义是**布尔判断**不是归类，故归标记位不归标签） |
 
 依据：`docs/agents/content.md`
 
@@ -62,6 +64,8 @@ corepack pnpm content:check
 1. `schemas/*.schema.json`
 2. 引擎 `packages/core` 的类型
 3. `docs/agents/content.md`（字段约定）
+
+> 四个条目通用字段的三处落点只有一个集合无关的位置：`schemas/common.schema.json`（唯一定义，各集合 `$ref`）／ `packages/core/src/content/entry.ts` 的 `EntryCommon`（各条目类型 `extends` 它）／ `docs/agents/content.md` 的「条目字段约定」节。改它们的形状改这三处即可，**不必逐个集合改**——这正是把它们收进库里的目的。
 
 ## 5. ⚠️ draft-07 约束
 

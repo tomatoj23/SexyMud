@@ -31,6 +31,11 @@ content/
 ├── lore/             # 世界观长文本（Markdown）：故事背景、势力关系等
 └── style-guide.md    # 文风指南：叙事字段必须遵守
 schemas/              # 与 content/ 一一对应的 JSON Schema（含 config/）
+                      #   ＋ 两个**被引用库**（不对应任何 content/ 集合，只被 $ref）：
+                      #     condition.schema.json（条件表达式）
+                      #     common.schema.json（条目通用字段：tags／flags／
+                      #       prototypeKey／prototypeParent——14 个条目集合统一引用，
+                      #       一份定义保证「标签形状只有一种」）
 assets/               # 美术资产（MVP 允许为空）
 ├── icons/<集合>/<id>.png
 └── portraits/<集合>/<id>.png
@@ -55,7 +60,10 @@ assets/               # 美术资产（MVP 允许为空）
 - `err_*`：拒绝文案，键名 = `err_` + accessType（默认门拒绝时渲染层读 `err_default`，可省略）。**拒绝也是一种叙事**：引擎只报告读哪个字段（`commandRefused` 事件携带 `errKey`），文案本体永远在条目数据里，引擎零文案。
 - `masters`：门派条目的师父字段（`sect.masters`）。MVP 只留字段、无实际内容（可教武功池与贡献规则后续填充）；"学习武功"流程带条件检查点，做拜师门槛不动流程、只改配置。
 - `sectId` / `regionId`：条目的**门派归属** / **区域归属**，校验器据此检查覆盖与连通。
-- `tags`：标签集。**优先用标签表达语义，不建特殊类型**——例如纯叙事道具就是普通条目加 `tags:["quest"]` 且价值归零；战斗相关条目用**对象形态** `{ "moveTag": [...], "elementTag": [...] }` 做维度键，取值来自 config 维度表（见「combat-text 与效果」）。
+- `tags`：标签 = **维度 → 键列表**，形状**唯一** `{ "<维度>": ["<键>", …] }`（一个维度可挂多个键、**不带值**——需要带值用属性）。**优先用标签表达语义，不建特殊类型**。维度名（lowerCamelCase）与键取值由 `content/config/dimensions.json` 封闭，但**schema 不写死枚举**（ADR-0004 扩展留白）——「在不在维度表里」由注册表在拿到维度表时硬校验（M3-T2）。形状定义只有一份：`schemas/common.schema.json#/definitions/tags`，14 个条目集合统一 `$ref`（改形状 = 改一处）。
+- `flags`：标记位 = **裸字符串数组**，无维度、**不进倒排索引**（不可批量查询）。回答「有没有」（执灯、任务道具、不可丢弃），与 `tags` 回答的「归在哪一类」分工，**并存且互不取代**。例：纯叙事道具 = 普通条目 + `flags:["quest"]` + 价值归零（此处原写 `tags:["quest"]`，已按 ADR-0029 §3 改正——它的语义是布尔判断，不是归类）。
+- `prototypeKey`／`prototypeParent`：原型继承的两个半边（ADR-0030 §3–§4），**同集合内**继承、不跨集合；原型就塞在被继承的集合里，不开 `prototypes/` 集合。`prototypeKey` 的值 = 本条目 id——**显式声明才可被继承**，且**不参与继承**（没声明的条目展平后就没有它）；`prototypeParent` 是父条目 id 数组（多亲，左→右优先级递增）。展平在加载期、注册表内完成，展平结果**不含** `prototypeParent`（它是已消费的指令）。
+- 四个通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）一律**可选**（唯一例外：`equipment` 词缀的 `tags` 是该集合自定的必填）、一律只在**实体层**：**条目**带，**出口**也带（出口是独立实体，`ExitEntry extends CommandEntry`，spec/02 §4——带这四个字段是「出口即命令」的推论，故 schema 与类型一并开口子）；房间的 `objects[]` **放置清单项不是实体，不带**。`config` 三类与 `condition` 库同理不在此列。⚠️ 出口上的 `prototypeKey`／`prototypeParent` **今天无消费者**：展平按集合做（ADR-0030 §3），房间的 `exits` 走整体替换、不参与互补合并（spec/03 §6）。
 - `effects`：效果引用列表（`["eff-xxx"]`），指向 `content/effects/` 的效果定义条目；效果 = primitive 组合（候选集限定 **13 项**，见 `docs/engine-reservations.md` §3），武功/怪物/层主共用。
 - `progression`：仅用于生产活动（采集、炼丹等），内容侧只放**等级参数** `maxLevel`（等级上限）与 `xpPerCycle`（每次产出获得的经验）。**玩家的当前等级与经验是运行时状态，存于存档，不写进内容条目**。等级与战力门槛（`powerMin`）共同决定可进入的采集区。
 - `rates`：活动直接产出的资源列表；**产出为物品（如药材）的活动可为空数组**，此时产出由物品表定义。
@@ -153,9 +161,10 @@ source    = 招式声明（内功/外功）
 
 ### 维度键
 
-- 条目 `tags` 用**对象形态**：`{ "moveTag": ["sword"], "elementTag": ["fire"] }`
+- 条目 `tags` **只有一种形态**（对象形态）：`{ "moveTag": ["sword"], "elementTag": ["fire"] }`。维度名 lowerCamelCase；键列表非空、去重（`equipment` 词缀曾有的裸 `string[]` 已改齐——扁平列表无法反查维度）
 - `condition.dimension` 的取值来自 `content/config/dimensions.json`（维度表）；引擎只做**键取值 + 集合求交**，永不 parse 字符串
 - 加维度 / 加取值 = 加 config 表项，不动引擎
+- `element`（字段取值池，含 `none`）与 `elementTag`（标签维度）**不合并**：合并会让「无属性」变成一个可挂的标签（ADR-0029 §5）
 
 ### 效果定义（`content/effects/`）
 

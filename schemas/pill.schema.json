@@ -46,7 +46,11 @@
           "additionalProperties": false
         },
         "craftSeconds": { "type": "integer", "minimum": 0 },
-        "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" }
+        "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
       },
       "additionalProperties": false
     },
@@ -73,7 +77,11 @@
         },
         "durationMs": { "type": "integer", "minimum": 0, "description": "增益持续时间（战斗或练功效率加成）" },
         "art": { "type": "string" },
-        "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" }
+        "description": { "type": "string", "description": "叙事文本，须遵守 content/style-guide.md" },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
       },
       "additionalProperties": false
     }

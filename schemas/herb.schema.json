@@ -31,11 +31,10 @@
       "description": "被哪些丹方使用（pill/ 的丹方 id），便于图鉴与校验；可为空",
       "items": { "type": "string" }
     },
-    "tags": {
-      "type": "object",
-      "description": "维度键（对象形态），取值来自 dimensions",
-      "additionalProperties": { "type": "array", "items": { "type": "string" } }
-    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" },
     "art": { "type": "string", "description": "覆盖默认 assets/icons/herb/<id>.png 时的相对路径" },
     "description": {
       "type": "string",

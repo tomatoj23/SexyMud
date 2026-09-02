@@ -35,7 +35,11 @@
       "description": "战斗文本注入片段（如石龟\"替你挡下\"），供 combat-text 模板系统消费（ADR-0011）"
     },
     "art": { "type": "string", "description": "覆盖默认 assets/portraits/beast/<id>.png 时的相对路径" },
-    "description": { "type": "string", "description": "图鉴式描述，须遵守 content/style-guide.md" }
+    "description": { "type": "string", "description": "图鉴式描述，须遵守 content/style-guide.md" },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "additionalProperties": false
 }

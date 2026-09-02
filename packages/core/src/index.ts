@@ -57,6 +57,7 @@ export type {
 } from "./command/entry.js";
 export { createContentRegistry } from "./content/registry.js";
 export type { ContentRegistry, MonsterRecord } from "./content/registry.js";
+export type { EntryCommon, TagMap } from "./content/entry.js";
 export type { ExitEntry, NpcEntry, PlacementEntry, RoomEntry } from "./world/entry.js";
 export { MOVE_TYPES, createEntity } from "./world/entity.js";
 export type {

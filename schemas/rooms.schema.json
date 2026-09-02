@@ -44,7 +44,11 @@
       "type": "string",
       "minLength": 1,
       "description": "秘境归属（规则层 dungeon/ 与空间层 rooms/ 靠此字段关联，ADR-0016 §3；归属字段化，不做目录分层）。野外/村落房间省略。注册表不校验其存在性（dungeon 集合未落地，落地时补）。"
-    }
+    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "patternProperties": {
     "^err_[a-z][a-z0-9-]*$": {
@@ -57,7 +61,7 @@
   "definitions": {
     "exit": {
       "type": "object",
-      "description": "出口：独立实体（不是房间的普通字段，spec/02 §4），它把自己注册成命令。字段 = 命令条目形态（verbs/argForm/cmdset/priority/mergetype/preconditions/err_*，三处同步同 commands.schema.json）+ 边字段（direction/targetRoomId）。引擎侧类型 ExitEntry extends CommandEntry（packages/core/src/world/entry.ts），经 commandSetSources 分组、commandSpecFromEntry 装配，与命令走同一条路。",
+      "description": "出口：独立实体（不是房间的普通字段，spec/02 §4），它把自己注册成命令。字段 = 命令条目形态（verbs/argForm/cmdset/priority/mergetype/preconditions/err_*，三处同步同 commands.schema.json）+ 边字段（direction/targetRoomId）+ 四个通用字段（tags/flags/prototypeKey/prototypeParent，见 common.schema.json）。引擎侧类型 ExitEntry extends CommandEntry（packages/core/src/world/entry.ts），经 commandSetSources 分组、commandSpecFromEntry 装配，与命令走同一条路——**出口带四个通用字段正是「出口即命令」的推论**：它继承命令条目的全部形态，四个字段是那形态的一部分（三处同步要求类型与 schema 一致）。⚠️ 其中 `prototypeKey`/`prototypeParent` 对出口**今天无消费者**：展平按集合做（ADR-0030 §3），而房间的 `exits` 不在互补合并之列、走整体替换（spec/03 §6）——出口继承若将来要做，是独立决策。",
       "required": ["id", "direction", "targetRoomId", "verbs", "argForm", "cmdset", "priority"],
       "properties": {
         "id": {
@@ -102,7 +106,11 @@
         "preconditions": {
           "$ref": "condition.schema.json#/definitions/accessRules",
           "description": "出口门禁：**挂在出口上**（spec/03 §3），拒绝文案是内容字段。出口集合的 accessType 词汇表：**traverse**（通行；宿主装配时以 commandSpecFromEntry(exit, { accessType: \"traverse\", func }) 传入）。省略 = 无门禁。"
-        }
+        },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
       },
       "patternProperties": {
         "^err_[a-z][a-z0-9-]*$": {

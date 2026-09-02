@@ -1,4 +1,5 @@
 import type { AccessRules } from "../conditions.js";
+import type { EntryCommon } from "../content/entry.js";
 import type { CommandContext, CommandRejection, CommandSpec } from "./pipeline.js";
 import type { ArgForm } from "./parser.js";
 import type { CmdSetSource } from "./cmdset.js";
@@ -18,8 +19,13 @@ import type { MergeType } from "./cmdset.js";
  * The entry is the DECLARATION; the executable half is attached by the host
  * through commandSpecFromEntry() (func) — the engine pipeline consumes
  * CommandSpec, not entries.
+ *
+ * The four fields it inherits from EntryCommon (tags / flags / prototypeKey /
+ * prototypeParent) are declared ONCE there and once in
+ * schemas/common.schema.json — commands are an entry collection like any
+ * other, so they carry the shared tail unchanged.
  */
-export interface CommandEntry {
+export interface CommandEntry extends EntryCommon {
   /**
    * The content id AND the dispatch key: cmdset members reference it,
    * the verb table maps verbs onto it, CommandSpec.key carries it. ids are

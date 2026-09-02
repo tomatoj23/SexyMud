@@ -18,11 +18,15 @@ import Ajv from "ajv";
 const schemasDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../schemas");
 const commandsSchema = JSON.parse(readFileSync(resolve(schemasDir, "commands.schema.json"), "utf8"));
 const conditionSchema = JSON.parse(readFileSync(resolve(schemasDir, "condition.schema.json"), "utf8"));
+// The entry-field library (tags / flags / prototypeKey / prototypeParent) is
+// the second cross-file $ref every collection schema makes (M3-T1).
+const commonSchema = JSON.parse(readFileSync(resolve(schemasDir, "common.schema.json"), "utf8"));
 
-/** Compiles the commands schema with the condition library pre-registered for $ref. */
+/** Compiles the commands schema with both libraries pre-registered for $ref. */
 function compile() {
   const ajv = new Ajv({ allErrors: true });
   ajv.addSchema(conditionSchema);
+  ajv.addSchema(commonSchema);
   return ajv.compile(commandsSchema);
 }
 

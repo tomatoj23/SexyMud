@@ -23,7 +23,11 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "quality": { "enum": ["下乘", "中乘", "上乘", "绝学"] },
-        "example": { "type": "string" }
+        "example": { "type": "string" },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
       },
       "additionalProperties": false
     },
@@ -61,7 +65,11 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
-        }
+        },
+        "tags": { "$ref": "common.schema.json#/definitions/tags" },
+        "flags": { "$ref": "common.schema.json#/definitions/flags" },
+        "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+        "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
       },
       "additionalProperties": false
     },

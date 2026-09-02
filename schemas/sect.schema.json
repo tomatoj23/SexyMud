@@ -96,7 +96,11 @@
     "description": {
       "type": "string",
       "description": "叙事文本（1~3 句），须遵守 content/style-guide.md"
-    }
+    },
+    "tags": { "$ref": "common.schema.json#/definitions/tags" },
+    "flags": { "$ref": "common.schema.json#/definitions/flags" },
+    "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
+    "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "additionalProperties": false
 }
