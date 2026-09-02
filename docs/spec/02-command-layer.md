@@ -105,13 +105,15 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 ```json
 {
   "any": [
-    { "all": [ { "has_tag": "outdoors" }, { "attr_gte": ["strength", 50] } ] },
+    { "all": [ { "has_tag": ["zone", "outdoors"] }, { "attr_gte": ["strength", 50] } ] },
     { "not": [ { "has_state": "wounded" } ] }
   ]
 }
 ```
 
 （= 「在户外且力量≥50」或「未受伤」。ADR-0022 §2 早期示例的三键单对象形态已废——单键节点才使嵌套文法无歧义。）
+
+⚠️ **`has_tag` 的实参是 `[维度, 键]` 二元组**，不是裸字符串（ADR-0029 §1：标签 = 维度 + 键）。ADR-0022 §2 与本文档早期版本的 `{"has_tag": "outdoors"}` 是**前维度时代**的写法，今天 schema 直接拒绝（M3-T5／#17 一并改了 facet、谓词、schema 三处）。
 
 ### 5.1 ⚠️ 必须允许递归嵌套
 
@@ -125,7 +127,15 @@ Evennia 文法是**扁平**的 `f1 AND f2 OR f3`（优先级来自 Python：`and
 
 ### 5.3 谓词是引擎能力，不是内容
 
-谓词名（`attr_gte` / `has_tag` / `has_flag` / `has_state` / `in_location` / `has_martial`）**写死在 schema 里是允许的**——它们是引擎提供的能力，不是题材词。
+谓词名（`attr_gte` / `has_tag` / `has_flag` / `has_state` / `in_location` / `has_martial`）**写死在 schema 里是允许的**——它们是引擎提供的能力，不是题材词。**实参形状同样写死**（三处同步，spec/06 §4：引擎 `conditions.ts` ／ `schemas/condition.schema.json` ／ 本文档）：
+
+| 谓词 | 实参 | 例 |
+|---|---|---|
+| `has_tag` | `[维度, 键]` 二元组（ADR-0029 §1） | `{ "has_tag": ["zone", "outdoors"] }` |
+| `attr_gte` | `[属性名, 下限]` 二元组 | `{ "attr_gte": ["strength", 50] }` |
+| `has_flag` / `has_state` / `in_location` / `has_martial` | 单个非空字符串 | `{ "has_flag": "inn-lodger" }` |
+
+`has_tag` 之所以是二元组：标签的第二分量（维度）不是可选修饰，而是标签名的一半——`zone/inner` 与 `layer/inner` 是两个标签。压成单字符串要么私造分隔符，要么丢掉维度。
 
 ### 5.4 `err_*` 是净增益
 
@@ -134,7 +144,7 @@ Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只�
 ### 5.5 落地形态（M1-T3）
 
 - **节点单键**：每个节点恰有一个键——组合器（`all`/`any`/`not`）或谓词名；裸布尔是退化叶子（某 accessType 直白放行/拒绝）。`not` 语义 = **无一为真**（单子节点即普通否定）。
-- **求值器与注册表**（`packages/core/src/conditions.ts`）：`evaluateCondition(expr, subject, registry)` 纯函数递归求值；谓词求值**只走注册表**（`createPredicateRegistry`，重名抛错），内置六谓词读 `ConditionSubject` 主题中立侧面（`attr`/`hasTag`/`hasFlag`/`hasState`/`locationId`/`hasSkill`——引擎定义问题，内容/宿主回答答案）。宿主以 `deps.subjectOf` 从世界+actor 构造 subject，以 `deps.predicates` 注入扩展注册表。
+- **求值器与注册表**（`packages/core/src/conditions.ts`）：`evaluateCondition(expr, subject, registry)` 纯函数递归求值；谓词求值**只走注册表**（`createPredicateRegistry`，重名抛错），内置六谓词读 `ConditionSubject` 主题中立侧面（`attr`/`hasTag(维度, 键)`/`hasFlag`/`hasState`/`locationId`/`hasSkill`——引擎定义问题，内容/宿主回答答案）。宿主以 `deps.subjectOf` 从世界+actor 构造 subject，以 `deps.predicates` 注入扩展注册表。`has_tag` 谓词自 **M3-T5（#17）** 起取 `[维度, 键]` 二元组（照 `attr_gte` 的二元组先例），facet `hasTag` 同步改双参——此前它读单字符串，是前维度时代残留；引擎默认的 `subjectOf`（world/runtime）从状态树 `tags` 槽 ∪ 注册表 `tagsOf(id)` 回答它。
 - **管线接入**：`CommandSpec.access = { rules, accessType }` 在 `at_pre_cmd` **之前**求值（可用性先于情境否决）。拒绝产出 `rejected` + `commandRefused` 事件，事件只带语义（`commandKey`/`accessType`/`errKey`），渲染层按 `errKey` 读条目的 `err_*` 字段取文案——事件绝不含已渲染文本（spec/01 §5.1）。
 - **schema**（`schemas/condition.schema.json`，draft-07 `$ref` 自引用）：根 = 单表达式（武功先修用）；`#/definitions/accessRules` = 门禁映射（commands/exits 用）。它是**被引用库**，不映射任何 content/ 集合，其合法性由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试）。
 

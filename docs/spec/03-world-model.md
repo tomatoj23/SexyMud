@@ -72,6 +72,7 @@
 - **内容条目侧也分两层**：`tags`（有维度、进索引）与 `flags`（裸布尔、不进索引）。`spec/06` 的 `tags: ['quest']` 改 `flags: ['quest']`——它的语义是**布尔判断**不是归类。
 - **维度表随包、由主机传入**：传了就硬校验，**没传就跳过**；`byTag` 不依赖维度表（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`element`（字段取值池，含 `none`）与 `elementTag`（标签维度）不合并，子集校验留 `content:check` 待办。
 - **测试**：接缝 1 `tests/content-registry.test.ts`（合成条目：形状与取值校验、索引查询、维度非法、缺维度表时跳过、规范序）＋ 接缝 2 `call()` 全链路（合成一个挂 `has_tag` 门禁的出口，直接往状态树写/删标签，断言放行/拒绝与语义事件——照 look 票「执灯可见」直接写 `flags` 的先例）。
+- **落地（M3-T5，#17）**：`EntityState` 的 `tags` 槽（`state/tree.ts`，`addEntity` 种子带空槽，避免读侧到处 `??`）＋ `subjectOf` 的 `hasTag(维度, 键)` 真实现（**自身 ∪ 注册表 `tagsOf(id)`**——`tagsOf` 是 #17 补的 `id → TagMap` 直查，与 `byTag` **同一次遍历、同一实体集**构建，互为对偶、不会漂移；**未知 id 答 `{}` 不抛**——玩家没有内容条目是常态，不是装配 bug）＋ `has_tag` 谓词实参改 **`[维度, 键]` 二元组**（facet／谓词／schema 三处同步，见 spec/02 §5.3）＋ 存档侧（`serializeWorld` 规范序、恢复时可选缺即空，见 spec/04 §1.4）。接缝 2 的行使：`tests/tags-runtime.test.ts`（合成挂 `has_tag` 门禁的出口过 `call()` 全链路，拒绝文案留在 JSON；并集含继承标签；确定性重放）。**并集的内容那一半今天无真实消费者**（只有玩家是动态占用、玩家没有内容条目），等物化票（物品、有状态的 NPC）缝合——接缝先行、合成驱动（M2-T4 先例）。
 - **落地（M3-T2，#15）**：`content/registry.ts` 的 `createContentRegistry(content, options)` 内建 `(维度, 键)` 倒排索引 → **`byTag(维度, 键) → id[]`**，覆盖**所有带 `tags` 的实体**——四个集合的条目 ＋ 出口（出口不在任何集合里，索引必须显式遍历 `exitsById`），结果 **id 升序、跨集合合并**；维度表由主机**可选**传入 `options.dimensions`——**传了就硬校验**（未知维度／越界键大声失败）、**没传就跳过**，`byTag` 不依赖它（索引按 `(维度, 键)` 建，不需要知道哪些维度合法）。`flags` 不进索引（机械证明：拿 flag 的值去问 `byTag`，**任何维度都问不到**）。⚠️ **索引必须建在展平之后**（M3-T3／#16 **已落**）：继承来的 `tags` 也要可查，否则「把标签放进原型」就是绕过索引的后门——这条已作为注释钉在注册表源码里（展平调用在 `buildTagIndex` 之前，顺序写进文件头）。同批（follow-up）把四个集合与出口的 id 收进**同一个唯一性空间**：`addUnique` 共享一张 `id → 集合` 表，跨集合重名抛 `id "x" is claimed by both "room" and "exit"`，同集合重名仍是原句 `duplicate <集合> id`。接缝：`tests/content-registry.test.ts`（既有缝，合成条目驱动，11 + 3 例）
 - **落地（M3-T1，#14）**：`tags`／`flags`／`prototypeKey`／`prototypeParent` 作为**条目通用字段**落成两处——`schemas/common.schema.json`（唯一定义，14 个条目集合 `$ref` 引用）与引擎 `EntryCommon`（`packages/core/src/content/entry.ts`，各条目类型 `extends` 它）；第三处同步在 `docs/agents/content.md` 的「条目字段约定」。schema 只管**形状**（维度名 lowerCamelCase、键列表非空且去重、四字段一律可选——唯一例外是 `equipment` 词缀的 `tags` 必填——且只在**实体层**：条目带，**出口**也带〔出口即命令，类型与 schema 必须一致〕，`objects[]` 放置清单项不带），**取值**封闭与原型展平是下面两票的事。形状本身的守卫是 `tests/tags-prototype-schema.test.ts`（逐集合一条用例）。
 
@@ -128,7 +129,7 @@
 - **`Entity` 接口 ＋ `createEntity`**（`packages/core/src/world/entity.ts`）：移动族 8 hook（移动侧 `at_pre_move`／`announce_move_from`／`announce_move_to`／`at_post_move` ＋ 容器侧 `at_pre_object_leave`／`at_pre_object_receive`／`at_object_leave`／`at_object_receive`）全部按任意实体设计；引擎默认行为只有两个 announce（逐接收者发语义事件 `departed`／`arrived`），无默认否决。位置（`locationId`）可为房间 id **或实体 id**（实体即容器——get/give/drop 的去向），容器 hook 只在位置是实体时触发（房间是内容，无 hook）。
 - **`moveType` 五值**（`MOVE_TYPES`）：teleport／traverse／get／give／drop——引擎语义枚举，`MoveInfo` 携带它进每个 hook。
 - **`moveTo`**（`packages/core/src/world/move.ts`）：纯 hook 编排（否决点全部先于播报）＋唯一的位置写点，**零权限检查**（§7 第 2 项落点确认）。否决返回 `{ok: false, stage}`，stage 是语义码（哪个 hook 拒绝）。
-- **`WorldRuntime`**（`packages/core/src/world/runtime.ts`）：ContentRegistry ＋ 状态树 ＋ hook 载体实例三合一；`occupantsOf` 按 id 升序（确定性）；`subjectOf` 从树状态构造条件主题（flags/location 真实回答，未落地槽位答「无」）。两条注册路径：`addEntity`（**创建**——注册＋种子状态进树，跑 creation 两层的是 `createObject`）与 `attachEntity`（**恢复**——树已有状态，只重挂实例，位置须仍能解析，顺序无关；M2-T5）。
+- **`WorldRuntime`**（`packages/core/src/world/runtime.ts`）：ContentRegistry ＋ 状态树 ＋ hook 载体实例三合一；`occupantsOf` 按 id 升序（确定性）；`subjectOf` 从树状态构造条件主题（**flags／tags／location 真实回答**——tags = 自身槽 ∪ 内容条目（M3-T5），未落地槽位答「无」）。两条注册路径：`addEntity`（**创建**——注册＋种子状态进树，跑 creation 两层的是 `createObject`）与 `attachEntity`（**恢复**——树已有状态，只重挂实例，位置须仍能解析，顺序无关；M2-T5）。
 - **穿行适配器 `traversalSpec`**（`packages/core/src/world/traverse.ts`，引擎出厂，ADR-0028 §3）：出口 traverse 门禁（管线 access 段）→ 目标房 enter 门禁（`checkAccess`，事件带 `roomId` 定位房间文案）→ `moveTo("traverse")`。两道门禁拒绝均 `rejected` ＋ `commandRefused` 语义事件；执行段拒绝通道见 spec/02 §4.1。
 - **测试**：`tests/entity-move.test.ts`（合成内容：hook 次序／三否决点／零门禁／逐接收者／状态树／响亮失败）＋ `tests/traversal-chain.test.ts`（真实内容：柳青镇全链路、第二假玩家多接收者、异房不收、两道门禁文案来自 JSON、确定性重放）。
 
@@ -177,7 +178,7 @@
 - [x] 标签**不带值**（形状 `{<维度>: [键…]}`，取值由维度表封闭、**由注册表**硬校验，schema 只管形状）；归属用字段不用目录分层——M3-T2 已落：形状归 schema（M3-T1），取值封闭归注册表（维度表可选传入，传了才校验）
 - [x] `(维度, 键)` 倒排索引可跨内容批量查询（注册表 `byTag`，覆盖所有带 tags 的**实体**：条目 ＋ **出口**，id 升序混排）——M3-T2 已落
 - [x] 内容条目侧 `tags` 与 `flags` 两层并存；`flags` 不进索引、不可批量查询——M3-T2 已落（拿 flag 的值去问 `byTag`，任何维度都问不到）
-- [ ] 运行时实体有 `tags` 槽，`hasTag` 不再是桩；「自身 ∪ 内容条目」的并集接缝已就位（合成驱动）
+- [x] 运行时实体有 `tags` 槽，`hasTag` 不再是桩；「自身 ∪ 内容条目」的并集接缝已就位（合成驱动）——M3-T5 已落：`hasTag(维度, 键)` = 自身 tags ∪ `tagsOf(id)`（内容条目 ＋ 出口），未知 id 答 `{}`；`has_tag` 谓词实参改 `[维度, 键]` 二元组（三处同步）
 - [x] 原型合并：`attrs`/`tags` 互补，其余整体替换；合并后**字典序升序 + 去重**——M3-T3 已落：`content/prototype.ts` 的 `flattenCollection`（`tags` 按维度取键并集、`attrs` 按键取并集同键高优先级赢，其余键整体替换；多亲左→右、自身最后）
 - [x] 展平在**加载期、注册表内**，顺序为 `id 去重 → 展平 → 引用完整性校验`——M3-T3 已落：四步顺序（末步索引见 §5.1）钉在 `content/registry.ts` 文件头与展平调用处
 - [ ] `content:check` 有**原型环检测**；注册表展平时也防环（双保险）——**半落**：展平器的环检测已落（自环／二环／长环，菱形不误报）；`content:check` 那道离线检测**尚无票认领**

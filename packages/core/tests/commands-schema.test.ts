@@ -78,7 +78,7 @@ describe("commands.schema.json (draft-07, $ref library consumer)", () => {
         ...minimal,
         preconditions: {
           default: false,
-          use: { all: [{ has_tag: "a" }], any: [{ has_tag: "b" }] },
+          use: { all: [{ has_tag: ["zone", "a"] }], any: [{ has_tag: ["zone", "b"] }] },
         },
       }),
     ).toBe(false);

@@ -36,14 +36,16 @@ describe("condition.schema.json (draft-07, recursive)", () => {
   });
 
   it("accepts the spec's own expression shapes (spec/02 §5)", () => {
-    expect(validate({ all: [{ has_tag: "outdoors" }, { attr_gte: ["strength", 50] }] })).toBe(true);
+    expect(validate({ all: [{ has_tag: ["zone", "outdoors"] }, { attr_gte: ["strength", 50] }] })).toBe(true);
     expect(validate({ any: [{ has_flag: "member" }] })).toBe(true);
     expect(validate({ not: [{ has_state: "wounded" }] })).toBe(true);
   });
 
   it("accepts all six whitelisted predicates with their argument shapes", () => {
     expect(validate({ attr_gte: ["strength", 50] })).toBe(true);
-    expect(validate({ has_tag: "outdoors" })).toBe(true);
+    // has_tag carries the DIMENSIONED pair (ADR-0029 §1, #17): two non-empty
+    // strings, not one.
+    expect(validate({ has_tag: ["zone", "outdoors"] })).toBe(true);
     expect(validate({ has_flag: "member" })).toBe(true);
     expect(validate({ has_state: "wounded" })).toBe(true);
     expect(validate({ in_location: "room-hall" })).toBe(true);
@@ -57,7 +59,9 @@ describe("condition.schema.json (draft-07, recursive)", () => {
 
   it("accepts arbitrary nesting via $ref self-reference — a AND b OR c and deeper (ADR-0024 §8)", () => {
     expect(
-      validate({ any: [{ all: [{ has_tag: "a" }, { has_tag: "b" }] }, { has_tag: "c" }] }),
+      validate({
+        any: [{ all: [{ has_tag: ["zone", "a"] }, { has_tag: ["zone", "b"] }] }, { has_tag: ["zone", "c"] }],
+      }),
     ).toBe(true);
     expect(
       validate({
@@ -79,7 +83,7 @@ describe("condition.schema.json (draft-07, recursive)", () => {
     ).toBe(true);
     // default is a full condition, not just a policy bit.
     expect(
-      accessValidate({ default: { has_flag: "member" }, use: { has_tag: "outdoors" } }),
+      accessValidate({ default: { has_flag: "member" }, use: { has_tag: ["zone", "outdoors"] } }),
     ).toBe(true);
   });
 
@@ -89,8 +93,8 @@ describe("condition.schema.json (draft-07, recursive)", () => {
     expect(validate(null)).toBe(false);
     expect(validate({})).toBe(false);
     expect(validate([])).toBe(false);
-    expect(validate({ all: [{ has_tag: "a" }], any: [{ has_tag: "b" }] })).toBe(false);
-    expect(validate({ has_tag: "a", has_flag: "b" })).toBe(false);
+    expect(validate({ all: [{ has_tag: ["zone", "a"] }], any: [{ has_tag: ["zone", "b"] }] })).toBe(false);
+    expect(validate({ has_tag: ["zone", "a"], has_flag: "b" })).toBe(false);
   });
 
   it("rejects empty combinator arrays and unknown predicates", () => {
@@ -100,8 +104,15 @@ describe("condition.schema.json (draft-07, recursive)", () => {
   });
 
   it("rejects argument shapes that do not match their predicate", () => {
-    expect(validate({ has_tag: ["outdoors"] })).toBe(false);
-    expect(validate({ has_tag: "" })).toBe(false);
+    // has_tag: the OLD single-string shape is now invalid — this is the
+    // rejection that makes #17's shape change real rather than additive.
+    expect(validate({ has_tag: "outdoors" })).toBe(false);
+    expect(validate({ has_tag: ["zone"] })).toBe(false);
+    expect(validate({ has_tag: ["zone", "outdoors", "extra"] })).toBe(false);
+    expect(validate({ has_tag: ["zone", 7] })).toBe(false);
+    expect(validate({ has_tag: ["", "outdoors"] })).toBe(false);
+    expect(validate({ has_tag: ["zone", ""] })).toBe(false);
+    expect(validate({ has_tag: { zone: "outdoors" } })).toBe(false);
     expect(validate({ attr_gte: "strength" })).toBe(false);
     expect(validate({ attr_gte: ["strength"] })).toBe(false);
     expect(validate({ attr_gte: ["strength", 50, 10] })).toBe(false);
@@ -113,7 +124,7 @@ describe("condition.schema.json (draft-07, recursive)", () => {
       $ref: "condition.schema.json#/definitions/accessRules",
     });
     // default is required — an undeclared accessType must have an answer.
-    expect(accessValidate({ use: { has_tag: "outdoors" } })).toBe(false);
+    expect(accessValidate({ use: { has_tag: ["zone", "outdoors"] } })).toBe(false);
     expect(accessValidate({ default: "no" })).toBe(false);
     // err_* copy is an ENTRY-level field; a string under a gate key is not a
     // condition, so the map cannot silently absorb refusal copy.

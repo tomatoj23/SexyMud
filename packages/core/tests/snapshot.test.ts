@@ -89,7 +89,12 @@ describe("the snapshot v1 shape (spec/04 §1)", () => {
       version: SAVE_VERSION,
       data: {
         entities: {
-          "player-1": { id: "player-1", locationId: "room-b", flags: ["lantern-lit"] },
+          "player-1": {
+            id: "player-1",
+            locationId: "room-b",
+            flags: ["lantern-lit"],
+            tags: {},
+          },
         },
       },
     });
@@ -102,7 +107,12 @@ describe("the snapshot v1 shape (spec/04 §1)", () => {
 
   it("is typed data: the record carries exactly the tree's own fields", () => {
     const snapshot = serializeWorld(onePlayerWorld());
-    expect(Object.keys(snapshot.data.entities["player-1"]!)).toEqual(["id", "locationId", "flags"]);
+    expect(Object.keys(snapshot.data.entities["player-1"]!)).toEqual([
+      "id",
+      "locationId",
+      "flags",
+      "tags",
+    ]);
   });
 
   it("is byte-stable: two worlds built in different orders save identically", () => {
@@ -174,6 +184,7 @@ describe("the round trip (serialize → migrate → load)", () => {
       id: "player-2",
       locationId: "room-b",
       flags: ["a-flag", "b-flag"],
+      tags: {},
     });
   });
 
@@ -191,22 +202,132 @@ describe("the round trip (serialize → migrate → load)", () => {
   });
 });
 
+describe("tags in the save (M3-T5, #17; ADR-0029 §1)", () => {
+  /** A player carrying a two-dimension tag set, written in a messy order. */
+  function taggedPlayerWorld(): WorldState {
+    const runtime = makeRuntime();
+    runtime.addEntity(player("player-1"), "room-a");
+    runtime.state.entities["player-1"]!.tags = {
+      elementTag: ["water", "fire", "water"],
+      zone: ["outdoors"],
+    };
+    return runtime.state;
+  }
+
+  it("round-trips a tag set through the JSON boundary", () => {
+    const wire = JSON.parse(JSON.stringify(serializeWorld(taggedPlayerWorld()))) as Snapshot;
+    const restored = restoreWorld(wire);
+
+    expect(restored.entities["player-1"]!.tags).toEqual({
+      elementTag: ["fire", "water"],
+      zone: ["outdoors"],
+    });
+    // And it answers the condition facet it was saved for.
+    const running = makeRuntime(restored);
+    running.attachEntity(player("player-1"));
+    expect(running.subjectOf("player-1").hasTag("zone", "outdoors")).toBe(true);
+    expect(running.subjectOf("player-1").hasTag("elementTag", "water")).toBe(true);
+    expect(running.subjectOf("player-1").hasTag("elementTag", "wood")).toBe(false);
+  });
+
+  it("canonicalizes: dimensions ascending, keys sorted and de-duplicated", () => {
+    // The writer pushed keys in whatever order it liked — canonical order is
+    // the SERIALIZER's promise (the `flags` precedent), never the writer's
+    // burden.
+    const record = serializeWorld(taggedPlayerWorld()).data.entities["player-1"]!;
+    expect(Object.keys(record.tags!)).toEqual(["elementTag", "zone"]);
+    expect(record.tags!.elementTag).toEqual(["fire", "water"]);
+  });
+
+  it("is byte-stable: the same tags written in another order save identically", () => {
+    const forward = makeRuntime();
+    forward.addEntity(player("player-1"), "room-a");
+    forward.state.entities["player-1"]!.tags = { zone: ["a", "b"], elementTag: ["fire"] };
+    const backward = makeRuntime();
+    backward.addEntity(player("player-1"), "room-a");
+    backward.state.entities["player-1"]!.tags = { elementTag: ["fire"], zone: ["b", "a"] };
+
+    expect(JSON.stringify(serializeWorld(forward.state))).toBe(
+      JSON.stringify(serializeWorld(backward.state)),
+    );
+  });
+
+  it("reads an OLD save that predates the slot: no tags field, no error, empty tags", () => {
+    // The save is the shape v1 has always written — a field that was never
+    // written is not persisted (ADR-0022), so "absent" means "empty".
+    const oldSave = {
+      version: SAVE_VERSION,
+      data: { entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [] } } },
+    } as Snapshot;
+
+    const restored = restoreWorld(JSON.parse(JSON.stringify(oldSave)) as Snapshot);
+    expect(restored.entities["player-1"]!.tags).toEqual({});
+
+    const running = makeRuntime(restored);
+    running.attachEntity(player("player-1"));
+    expect(running.subjectOf("player-1").hasTag("zone", "outdoors")).toBe(false);
+  });
+
+  it("is idempotent with tags: saving a restored save yields the same bytes", () => {
+    const first = serializeWorld(taggedPlayerWorld());
+    expect(serializeWorld(restoreWorld(first))).toEqual(first);
+  });
+
+  it("rejects a malformed tags field (present but not a map of string lists)", () => {
+    const withTags = (tags: unknown) =>
+      ({
+        version: SAVE_VERSION,
+        data: { entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [], tags } } },
+      }) as Snapshot;
+
+    expect(() => restoreWorld(withTags(["zone"]))).toThrow(/entity "player-1"\.tags is not an object/);
+    expect(() => restoreWorld(withTags({ zone: [1] }))).toThrow(
+      /entity "player-1"\.tags\["zone"\] is not a list of strings/,
+    );
+    expect(() => restoreWorld(withTags({ zone: "outdoors" }))).toThrow(
+      /entity "player-1"\.tags\["zone"\] is not a list of strings/,
+    );
+  });
+
+  it("keeps flags REQUIRED while tags stay optional — two rules, one reason each", () => {
+    // Every v1 save ever written carries flags, so a save without it is
+    // corrupt and still fails; no save written before M3-T5 carries tags, so
+    // a save without it is merely old (spec/04 §1.4).
+    expect(() =>
+      restoreWorld({
+        version: SAVE_VERSION,
+        data: { entities: { "player-1": { id: "player-1", locationId: "room-a", tags: {} } } },
+      } as Snapshot),
+    ).toThrow(/flags is not a list of strings/);
+  });
+});
+
 describe("derived fields (spec/04 §1.3)", () => {
   it("registers none today — every field of EntityState is a fact", () => {
     expect(DERIVED_ENTITY_KEYS).toEqual([]);
   });
 
   it("stripDerived excludes exactly the registered keys, leaving the source alone", () => {
-    const state: EntityState = { id: "player-1", locationId: "room-a", flags: ["lantern-lit"] };
-    expect(stripDerived(state, ["flags", "locationId"])).toEqual({ id: "player-1" });
-    expect(state).toEqual({ id: "player-1", locationId: "room-a", flags: ["lantern-lit"] });
+    const state: EntityState = { id: "player-1", locationId: "room-a", flags: ["lantern-lit"], tags: {} };
+    expect(stripDerived(state, ["flags", "locationId"])).toEqual({ id: "player-1", tags: {} });
+    expect(state).toEqual({
+      id: "player-1",
+      locationId: "room-a",
+      flags: ["lantern-lit"],
+      tags: {},
+    });
   });
 
   it("persists exactly the live fields minus the table — the strip is the LAST step", () => {
     // The table cannot be extended at runtime (it decides the snapshot's
     // compile-time shape), so this pins the mechanism from both ends: what
     // serializeWorld drops is what the table names, and nothing re-adds it.
-    const state: EntityState = { id: "player-1", locationId: "room-a", flags: ["lantern-lit"] };
+    const state: EntityState = {
+      id: "player-1",
+      locationId: "room-a",
+      flags: ["lantern-lit"],
+      tags: { zone: ["outdoors"] },
+    };
     const record = serializeWorld({ entities: { "player-1": state } }).data.entities["player-1"]!;
     const expected = Object.keys(state).filter(
       (key) => !(DERIVED_ENTITY_KEYS as readonly string[]).includes(key),
@@ -355,8 +476,8 @@ describe("restore is a replay, not a creation", () => {
   it("attaches in any order: a carried entity may precede its carrier", () => {
     const tree: WorldState = {
       entities: {
-        "holder-1": { id: "holder-1", locationId: "room-a", flags: [] },
-        "held-1": { id: "held-1", locationId: "holder-1", flags: [] },
+        "holder-1": { id: "holder-1", locationId: "room-a", flags: [], tags: {} },
+        "held-1": { id: "held-1", locationId: "holder-1", flags: [], tags: {} },
       },
     };
     const running = makeRuntime(restoreWorld(serializeWorld(tree)));

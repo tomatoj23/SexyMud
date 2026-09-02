@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "condition.schema.json",
   "title": "条件表达式（门禁/前置，内嵌于各集合条目）",
-  "description": "统一「能不能」判定的 JSON 递归表达式（spec/02 §5；ADR-0022 §2 经 ADR-0024 §8 修正）。\n\n- **不用字符串 DSL**：lockstring 无法被 JSON Schema 校验，与 content:check 硬门禁冲突。\n- **节点单键、递归无深度限制**：每个节点恰有一个键——组合器（all/any/not）或谓词名。只允许两层就表达不了 `a AND b OR c`（`{ \"any\": [ { \"all\": [a, b] }, c ] }`），表达力反而弱于 lockstring。\n- **谓词名是引擎能力**（spec/02 §5.3），写死在本白名单是允许的；扩展谓词注册表（`packages/core` `defaultPredicateEntries`）时须同步扩展本白名单（三处同步，spec/06 §4）。\n- **本文件是被引用库，不对应任何 content/ 集合**（条件内嵌于 commands / martial 等条目，没有 content/condition/ 目录）。集合 schema 用 `$ref` 引用：单表达式（如武功先修）→ `condition.schema.json`；门禁映射（如命令前置、出口门禁）→ `condition.schema.json#/definitions/accessRules`。\n- **err_* 拒绝文案是条目级字段，不在此处**（拒绝也是一种叙事，spec/02 §5.4）：引擎只报告读哪个字段（事件携带 errKey = `err_<accessType>` / `err_default`），文案本体永远在条目数据里。",
+  "description": "统一「能不能」判定的 JSON 递归表达式（spec/02 §5；ADR-0022 §2 经 ADR-0024 §8 修正）。\n\n- **不用字符串 DSL**：lockstring 无法被 JSON Schema 校验，与 content:check 硬门禁冲突。\n- **节点单键、递归无深度限制**：每个节点恰有一个键——组合器（all/any/not）或谓词名。只允许两层就表达不了 `a AND b OR c`（`{ \"any\": [ { \"all\": [a, b] }, c ] }`），表达力反而弱于 lockstring。\n- **谓词名是引擎能力**（spec/02 §5.3），写死在本白名单是允许的；扩展谓词注册表（`packages/core` `defaultPredicateEntries`）时须同步扩展本白名单（三处同步，spec/06 §4）。实参形状同理：`has_tag` 取 **[维度, 键] 二元组**（ADR-0029 §1），与引擎 `ConditionSubject.hasTag(维度, 键)` 同形。\n- **本文件是被引用库，不对应任何 content/ 集合**（条件内嵌于 commands / martial 等条目，没有 content/condition/ 目录）。集合 schema 用 `$ref` 引用：单表达式（如武功先修）→ `condition.schema.json`；门禁映射（如命令前置、出口门禁）→ `condition.schema.json#/definitions/accessRules`。\n- **err_* 拒绝文案是条目级字段，不在此处**（拒绝也是一种叙事，spec/02 §5.4）：引擎只报告读哪个字段（事件携带 errKey = `err_<accessType>` / `err_default`），文案本体永远在条目数据里。",
   "$ref": "#/definitions/condition",
   "definitions": {
     "condition": {
@@ -55,11 +55,30 @@
       "additionalProperties": false
     },
     "predicateNode": {
-      "description": "谓词调用：唯一键 = 谓词名（引擎能力白名单，spec/02 §5.3）。字符串单参谓词共用 nameArg 形态；attr_gte 是二元组。",
+      "description": "谓词调用：唯一键 = 谓词名（引擎能力白名单，spec/02 §5.3）。字符串单参谓词共用 nameArg 形态；attr_gte 与 has_tag 是二元组（各自的二元组形状不同，故各自定义）。",
       "oneOf": [
         { "$ref": "#/definitions/attrGteNode" },
+        { "$ref": "#/definitions/tagPredicateNode" },
         { "$ref": "#/definitions/stringPredicateNode" }
       ]
+    },
+    "tagPredicateNode": {
+      "type": "object",
+      "description": "标签谓词 has_tag：实参是 **[维度, 键] 二元组**（ADR-0029 §1 —— 标签是「维度 + 键」，不是裸字符串；`hasTag(维度, 键)` facet 与引擎 `conditions.ts` 同形，三处同步 spec/06 §4）。维度名与键的取值由 content/config/dimensions.json 封闭，但**封闭由注册表执行**，schema 只管形状（非空字符串）。",
+      "required": ["has_tag"],
+      "properties": {
+        "has_tag": {
+          "type": "array",
+          "description": "[维度, 键]",
+          "items": [
+            { "type": "string", "minLength": 1 },
+            { "type": "string", "minLength": 1 }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "additionalProperties": false
     },
     "attrGteNode": {
       "type": "object",
@@ -77,11 +96,11 @@
     },
     "stringPredicateNode": {
       "type": "object",
-      "description": "字符串单参谓词：has_tag / has_flag / has_state / in_location / has_martial。加一个同形态谓词 = 在枚举里加一个名字（另须同步引擎注册表与 content.md，三处同步）。",
+      "description": "字符串单参谓词：has_flag / has_state / in_location / has_martial。**has_tag 不在此列**——它取二元组，见 tagPredicateNode（把 has_tag 留在枚举里会让 `{ \"has_tag\": \"outdoors\" }` 这种前维度时代的旧写法继续通过）。加一个同形态谓词 = 在枚举里加一个名字（另须同步引擎注册表与 content.md，三处同步）。",
       "minProperties": 1,
       "maxProperties": 1,
       "propertyNames": {
-        "enum": ["has_tag", "has_flag", "has_state", "in_location", "has_martial"]
+        "enum": ["has_flag", "has_state", "in_location", "has_martial"]
       },
       "additionalProperties": { "$ref": "#/definitions/nameArg" }
     },

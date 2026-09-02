@@ -63,9 +63,9 @@ export interface WorldRuntime {
   isRoom(locationId: string): boolean;
   /**
    * The entity as a condition subject (spec/02 §5.3): the engine's default
-   * answers, read from the tree. Flags and location answer truly; the
-   * facets whose slots have not landed yet (attrs, tags, states, skills)
-   * answer "none" and grow in with their systems.
+   * answers, read from the tree. Flags, tags and location answer truly; the
+   * facets whose slots have not landed yet (attrs, states, skills) answer
+   * "none" and grow in with their systems.
    */
   subjectOf(id: string): ConditionSubject;
 }
@@ -124,7 +124,9 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
         );
       }
       instances.set(entity.id, entity);
-      const entityState: EntityState = { id: entity.id, locationId, flags: [] };
+      // The seed carries every slot the tree owns — an absent `tags` would
+      // put a `??` in front of every hasTag read for no reason.
+      const entityState: EntityState = { id: entity.id, locationId, flags: [], tags: {} };
       state.entities[entity.id] = entityState;
     },
     attachEntity(entity) {
@@ -176,9 +178,17 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
       }
       return {
         // Facets whose state slots have not landed yet answer "none" — they
-        // turn on with their systems (tags M3, attrs/states/skills later).
+        // turn on with their systems (attrs/states/skills later).
         attr: () => undefined,
-        hasTag: () => false,
+        // OWN ∪ CONTENT-ENTRY (ADR-0029 §2): what the entity was tagged as
+        // at runtime, plus what its content entry says it IS. A player has no
+        // content entry and `tagsOf` answers an empty map for it, so the
+        // union is simply its own tags — the seam waits for the
+        // materialization ticket (items, stateful NPCs) to have a real
+        // consumer, but it is wired and answerable today (#17).
+        hasTag: (dimension, key) =>
+          (entityState.tags[dimension] ?? []).includes(key) ||
+          (registry.tagsOf(id)[dimension] ?? []).includes(key),
         hasFlag: (flag) => entityState.flags.includes(flag),
         hasState: () => false,
         locationId: () => entityState.locationId,

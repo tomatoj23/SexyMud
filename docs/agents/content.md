@@ -57,7 +57,7 @@ assets/               # 美术资产（MVP 允许为空）
 通用字段（各集合按需使用，Schema 为准）：
 
 - `prerequisites`：先修条件（学此武功的前置），值是**单个条件表达式**（`schemas/condition.schema.json` 根定义：递归 `{all/any/not}` + 谓词，**不用字符串 DSL**）。
-- `preconditions`：门禁映射 `{ "default": <条件>, "<accessType>": <条件表达式> }`（`condition.schema.json#/definitions/accessRules`，spec/02 §5）。`default` 是所问 accessType 无表达式时求值的**完整条件**（布尔即直白策略位，`false` = 缺省拒绝最常用）；accessType 词汇表由各集合自定（命令 `use`、出口 `traverse`、学习 `learn`）。
+- `preconditions`：门禁映射 `{ "default": <条件>, "<accessType>": <条件表达式> }`（`condition.schema.json#/definitions/accessRules`，spec/02 §5）。`default` 是所问 accessType 无表达式时求值的**完整条件**（布尔即直白策略位，`false` = 缺省拒绝最常用）；accessType 词汇表由各集合自定（命令 `use`、出口 `traverse`、学习 `learn`）。**谓词实参形状**（引擎能力，三处同步 spec/06 §4）：`has_tag` 取 **`[维度, 键]` 二元组**（`{ "has_tag": ["zone", "outdoors"] }`——标签 = 维度 + 键，ADR-0029 §1，单字符串写法 schema 拒绝）、`attr_gte` 取 `[属性名, 下限]`、`has_flag`／`has_state`／`in_location`／`has_martial` 取单个非空字符串。
 - `err_*`：拒绝文案，键名 = `err_` + accessType（默认门拒绝时渲染层读 `err_default`，可省略）。**拒绝也是一种叙事**：引擎只报告读哪个字段（`commandRefused` 事件携带 `errKey`），文案本体永远在条目数据里，引擎零文案。
 - `masters`：门派条目的师父字段（`sect.masters`）。MVP 只留字段、无实际内容（可教武功池与贡献规则后续填充）；"学习武功"流程带条件检查点，做拜师门槛不动流程、只改配置。
 - `sectId` / `regionId`：条目的**门派归属** / **区域归属**，校验器据此检查覆盖与连通。

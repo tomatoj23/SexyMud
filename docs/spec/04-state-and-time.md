@@ -1,6 +1,6 @@
 # 04 · 状态、存档、时间与调度
 
-> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地，attrs/tags/states/skills 随各自系统进树。**序列化与快照 v1 ＝ M2-T5 已落**：`state/snapshot.ts`（`serializeWorld`／`restoreWorld` ＋ v1 形状）＋ `state/derived.ts`（`derived` 契约）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4）；§2–§4（时间、游戏内时间、调度六原语）＝ **M4**（战斗前夜）；其余**待实现**。
+> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 v1 ＝ M2-T5 已落**：`state/snapshot.ts`（`serializeWorld`／`restoreWorld` ＋ v1 形状）＋ `state/derived.ts`（`derived` 契约）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4）；§2–§4（时间、游戏内时间、调度六原语）＝ **M4**（战斗前夜）；其余**待实现**。
 > **依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
 
 ## 1. 状态：typed 对象 + 迁移链（不需要 attribute handler）
@@ -31,13 +31,14 @@ Evennia 那一千多行缓存机器（`_cache`/`_catcache`/`SaverMutable` 代理
 
 `packages/core/src/state/snapshot.ts`：`serializeWorld(world) → Snapshot<SaveDataV1>` ／ `restoreWorld(snapshot, options?) → WorldState`。
 
-- **载荷就是状态树**，不是平行结构：`SaveDataV1 = { entities: Record<string, EntityRecordV1> }`，`EntityRecordV1 = Omit<EntityState, DerivedEntityKey>`。序列化在树之上只加三样：① `version` 戳（迁移链入口）② `derived` 切分（见 §1.3）③ **规范序**（entities 按 id 升序、flags 排序）——两个相等的世界存出**同一份字节**（ADR-0024 §2），确定性引擎的历史才可 diff、可比对。
+- **载荷就是状态树**，不是平行结构：`SaveDataV1 = { entities: Record<string, EntityRecordV1> }`，`EntityRecordV1 = Omit<EntityState, DerivedEntityKey>`（`tags` 例外地可选——见下条）。序列化在树之上只加三样：① `version` 戳（迁移链入口）② `derived` 切分（见 §1.3）③ **规范序**（entities 按 id 升序、flags 排序、**tags 维度键升序 + 键列表排序去重**）——两个相等的世界存出**同一份字节**（ADR-0024 §2），确定性引擎的历史才可 diff、可比对。**规范序由 `serializeWorld` 负责，不要求写入方保持有序**（照 flags 的先例）。
+- **新槽在恢复时可选、缺即空；`flags` 保持必填**（M3-T5 定案，写入此处以免同一份校验器两种口径被当 bug）：`tags` 是 v1 存档中途长出的槽——它落进树的那天（#17）之前写下的存档都没有这个字段，而「未显式写入的字段不落盘」（ADR-0022）意味着**缺 = 空**，不是损坏；`restoreWorld` 显式补 `{}`。`flags` 相反：**v1 起每份存档都写过它**，放宽只会白丢一条损坏检测。规则一句话：**在当前版本内中途落地的槽，恢复时一律可选**。
 - **NPC 不在快照里，是构造使然而非过滤**：静态在场直读放置清单（ADR-0028 §1），未显式写入的字段不落盘——这里没有 NPC 行可删，也永远不该有。
 - **恢复＝重放树，不是创建**：`restoreWorld` 只重建状态（`migrateSnapshot` → 形状校验 → 逐实体重建 → 重算 `derived`），宿主再用 `WorldRuntime.attachEntity` 重挂 hook 载体；**不跑** creation 两层（跑 `at_object_creation` 等于用代码默认值覆盖存档，正是两层接缝要防的反转）。挂载**顺序无关**（被携带者可先于携带者挂载），恢复后的位置必须仍能解析——内容漂移大声失败，不做半解释状态。
-- **大声失败**（`tests/snapshot.test.ts` 逐条行使）：**版本**不合法（大于 `SAVE_VERSION`／小于 1／非数字）；**载荷** `data` 非对象、缺 `entities`、实体键为空、记录非对象、无 `locationId`、flags 非字符串数组、记录 id 与键不符——**七类**损坏载荷全部在加载时抛（ADR-0003）。
+- **大声失败**（`tests/snapshot.test.ts` 逐条行使）：**版本**不合法（大于 `SAVE_VERSION`／小于 1／非数字）；**载荷** `data` 非对象、缺 `entities`、实体键为空、记录非对象、无 `locationId`、flags 非字符串数组、记录 id 与键不符——**七类**损坏载荷全部在加载时抛（ADR-0003）；**tags 存在但畸形**（非对象、某维度的键列表非字符串数组）是第八类（#17 起，与第七类同律：写进来了就必须合法）。
 - **v1 里没有**引擎 tick 与 RNG 种子（消费者在 §2–§4，M4）：树随它们的消费者长槽位，那一天是 v2 + 一条迁移，不是往 v1 形状里静默加字段。
 - **`SAVE_VERSION` 保持 1，迁移链机制就绪但为空**——首个真实迁移出现在 v2 那天才算检验，不造假迁移。
-- **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与七类损坏载荷大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩）。
+- **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与七类损坏载荷大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩／**tags 往返与规范序、旧存档（无 tags 字段）缺即空、第八类畸形 tags 大声失败——M3-T5**）。
 
 ## 2. 时间：tick 计数
 

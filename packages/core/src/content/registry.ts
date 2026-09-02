@@ -1,6 +1,6 @@
 import type { CommandEntry } from "../command/entry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
-import type { EntryCommon } from "./entry.js";
+import type { EntryCommon, TagMap } from "./entry.js";
 import { compareIds } from "./order.js";
 import { flattenCollection } from "./prototype.js";
 import type { FlattenableEntry } from "./prototype.js";
@@ -127,6 +127,23 @@ export interface ContentRegistry {
    * throwing: the index knows nothing about which dimensions exist.
    */
   byTag(dimension: string, key: string): readonly string[];
+  /**
+   * The DUAL of `byTag`: one entity's own tags, `{ <dimension>: [key…] }` —
+   * `byTag` answers "who carries this pair", `tagsOf` answers "what does
+   * this one carry". Built in the same pass over the same entity set
+   * (entries AND exits), so the two can never disagree.
+   *
+   * Its consumer is the runtime's `hasTag` union (M3-T5): a dynamic
+   * occupant answers "own tags ∪ the tags of the content entry it is" — and
+   * today's players HAVE no content entry, so an unknown id answers an EMPTY
+   * map rather than throwing. "No entry" is the normal case here, not a
+   * wiring bug — unlike every other lookup on this interface.
+   *
+   * An entity that declared no tags answers an empty map too (it is absent
+   * from the map entirely), and `flags` are as absent here as they are from
+   * `byTag` (ADR-0029 §4).
+   */
+  tagsOf(id: string): TagMap;
 }
 
 /**
@@ -181,13 +198,33 @@ function byId<T extends { id: string }>(entries: readonly T[]): Map<string, T> {
  */
 type TaggedEntity = FlattenableEntry;
 
+/**
+ * What `tagsOf` answers for an entity with no tags — and, more importantly,
+ * for an id no collection knows: a player has no content entry, and "no
+ * entry" must read as "no static tags", not as a wiring bug. One frozen
+ * object shared by every such answer.
+ */
+const NO_TAGS: TagMap = Object.freeze({});
+
 /** dimension → key → ids, all sorted once at build time. */
 type TagIndex = ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
 
+/** What buildTagIndex returns: the inverted index plus its dual, id → tags. */
+interface TagIndexes {
+  readonly byPair: TagIndex;
+  readonly byEntity: ReadonlyMap<string, TagMap>;
+}
+
 /**
  * Builds the (dimension, key) inverted index over every entity that carries
- * tags, and — if the host passed a dimensions table — closes the tag
- * vocabulary against it while doing so (ADR-0029 §2/§5).
+ * tags, its dual `id → tags`, and — if the host passed a dimensions table —
+ * closes the tag vocabulary against it while doing so (ADR-0029 §2/§5).
+ *
+ * Both maps come out of ONE pass over ONE entity list, which is the whole
+ * reason they cannot drift apart: `byTag(d, k)` containing an id and
+ * `tagsOf(id)` carrying (d, k) are the same fact stated from both ends
+ * (#17 — the runtime's hasTag union reads tagsOf, the batch queries read
+ * byTag, and a disagreement between them would be untestable).
  *
  * Validation lives HERE rather than in the schema because closure is a
  * content-pack fact: a schema cannot read dimensions.json without hardcoding
@@ -201,14 +238,19 @@ type TagIndex = ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
 function buildTagIndex(
   entities: Iterable<TaggedEntity>,
   dimensions: DimensionTable | undefined,
-): TagIndex {
+): TagIndexes {
   const collected = new Map<string, Map<string, Set<string>>>();
+  const byEntity = new Map<string, TagMap>();
 
   for (const entity of entities) {
     const tags = entity.tags;
     if (tags === undefined) {
       continue;
     }
+    // The entry's own map, untouched: entries arrive flattened (so the keys
+    // are already sorted and de-duplicated), exits arrive as authored. It is
+    // typed readonly and content is not supposed to be mutated at runtime.
+    byEntity.set(entity.id, tags);
     for (const [dimension, keys] of Object.entries(tags)) {
       if (dimensions !== undefined) {
         const allowed = dimensions[dimension];
@@ -250,7 +292,7 @@ function buildTagIndex(
     }
     index.set(dimension, sortedByKey);
   }
-  return index;
+  return { byPair: index, byEntity };
 }
 
 /**
@@ -385,7 +427,7 @@ export function createContentRegistry(
   // INHERITED, and an inherited tag has to be as queryable as a declared one,
   // or "put the tag in a prototype" would be a back door around the index.
   // Exits stay as loaded: flattening runs per collection (spec/03 §6).
-  const tagIndex = buildTagIndex(
+  const { byPair, byEntity } = buildTagIndex(
     [
       ...commandsById.values(),
       ...roomsById.values(),
@@ -445,7 +487,10 @@ export function createContentRegistry(
       return found;
     },
     byTag(dimension, key) {
-      return tagIndex.get(dimension)?.get(key) ?? [];
+      return byPair.get(dimension)?.get(key) ?? [];
+    },
+    tagsOf(id) {
+      return byEntity.get(id) ?? NO_TAGS;
     },
   };
 }

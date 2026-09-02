@@ -42,7 +42,14 @@ export type ConditionExpr =
 export interface ConditionSubject {
   /** A numeric attribute, or undefined when the subject has none by that name. */
   attr(name: string): number | undefined;
-  hasTag(tag: string): boolean;
+  /**
+   * A tag, named by BOTH its halves (ADR-0029 §1): a tag is a (dimension,
+   * key) pair, so `hasTag("zone", "inner")` — never a bare string. Content
+   * declares the same shape, the runtime tree stores the same shape, and
+   * `has_tag` carries the pair as a two-element array (spec/06 §4's
+   * three-way sync: facet, tuple predicate, schema).
+   */
+  hasTag(dimension: string, key: string): boolean;
   hasFlag(flag: string): boolean;
   hasState(state: string): boolean;
   /** Current location id; undefined when the subject is nowhere. */
@@ -97,6 +104,32 @@ function requireName(predicate: string, arg: unknown): string {
 
 const ATTR_GTE_ARGS = 'predicate "attr_gte" expects [attrName, minimum]';
 
+const HAS_TAG_ARGS = 'predicate "has_tag" expects [dimension, key]';
+
+/**
+ * has_tag reads a DIMENSIONED tag (ADR-0029 §1), so its argument is the pair
+ * — the same tuple shape attr_gte already established, and the same one
+ * schemas/condition.schema.json whitelists. A bare string is not a tag: two
+ * tags from different dimensions may share a key ("inner" the zone vs "inner"
+ * the layer), and collapsing the pair into one string would either invent a
+ * separator or lose the dimension.
+ */
+const hasTag: PredicateFn = (arg, subject) => {
+  if (!Array.isArray(arg) || arg.length !== 2) {
+    throw new Error(HAS_TAG_ARGS);
+  }
+  const [dimension, key] = arg;
+  if (
+    typeof dimension !== "string" ||
+    dimension === "" ||
+    typeof key !== "string" ||
+    key === ""
+  ) {
+    throw new Error(HAS_TAG_ARGS);
+  }
+  return subject.hasTag(dimension, key);
+};
+
 const attrGte: PredicateFn = (arg, subject) => {
   if (!Array.isArray(arg) || arg.length !== 2) {
     throw new Error(ATTR_GTE_ARGS);
@@ -136,11 +169,12 @@ function stringMembership(
  * schema whitelist in the same change (three-way sync, spec/06 §4).
  *
  * has_martial reads the generic hasSkill facet: what a "skill" IS belongs to
- * the content pack, not the engine.
+ * the content pack, not the engine. has_tag is the one predicate whose facet
+ * takes TWO arguments — a tag is a (dimension, key) pair, not a string.
  */
 export const defaultPredicateEntries: readonly PredicateEntry[] = [
   ["attr_gte", attrGte],
-  ["has_tag", stringMembership("has_tag", (s, tag) => s.hasTag(tag))],
+  ["has_tag", hasTag],
   ["has_flag", stringMembership("has_flag", (s, flag) => s.hasFlag(flag))],
   ["has_state", stringMembership("has_state", (s, state) => s.hasState(state))],
   [

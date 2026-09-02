@@ -25,7 +25,8 @@ import { createCommandHarness, expectMessageSequence } from "../src/command/test
 
 interface ActorFixture {
   attrs: Record<string, number>;
-  tags: string[];
+  /** A TagMap — the ONE tag shape (ADR-0029 §1): dimension → keys. */
+  tags: Record<string, string[]>;
   flags: string[];
   states: string[];
   locationId?: string;
@@ -34,7 +35,7 @@ interface ActorFixture {
 
 const ACTOR: ActorFixture = {
   attrs: { strength: 50 },
-  tags: ["outdoors"],
+  tags: { zone: ["outdoors"] },
   flags: [],
   states: [],
   locationId: "room-hall",
@@ -44,7 +45,7 @@ const ACTOR: ActorFixture = {
 function subjectOf(actor: ActorFixture): ConditionSubject {
   return {
     attr: (name) => actor.attrs[name],
-    hasTag: (tag) => actor.tags.includes(tag),
+    hasTag: (dimension, key) => (actor.tags[dimension] ?? []).includes(key),
     hasFlag: (flag) => actor.flags.includes(flag),
     hasState: (state) => actor.states.includes(state),
     locationId: () => actor.locationId,
@@ -58,7 +59,7 @@ function subjectWith(overrides: Partial<ActorFixture>): ConditionSubject {
 
 /** A host-registered predicate, unknown to the schema whitelist and the engine. */
 const wears: PredicateFn = (arg, subject) =>
-  typeof arg === "string" && subject.hasTag(`wears:${arg}`);
+  typeof arg === "string" && subject.hasTag("wears", arg);
 
 describe("condition evaluator (spec/02 §5)", () => {
   it("evaluates boolean leaves directly", () => {
@@ -67,18 +68,21 @@ describe("condition evaluator (spec/02 §5)", () => {
   });
 
   it("evaluates a single predicate node", () => {
-    expect(evaluateCondition({ has_tag: "outdoors" }, subjectOf(ACTOR))).toBe(true);
-    expect(evaluateCondition({ has_tag: "indoors" }, subjectOf(ACTOR))).toBe(false);
+    expect(evaluateCondition({ has_tag: ["zone", "outdoors"] }, subjectOf(ACTOR))).toBe(true);
+    expect(evaluateCondition({ has_tag: ["zone", "indoors"] }, subjectOf(ACTOR))).toBe(false);
+    // A key is only a tag TOGETHER with its dimension: the same key under
+    // another dimension is another tag (ADR-0029 §1).
+    expect(evaluateCondition({ has_tag: ["layer", "outdoors"] }, subjectOf(ACTOR))).toBe(false);
   });
 
   it("evaluates the combinators", () => {
-    const subject = subjectOf(ACTOR); // tag: outdoors, strength: 50
-    expect(evaluateCondition({ all: [{ has_tag: "outdoors" }, { attr_gte: ["strength", 50] }] }, subject)).toBe(true);
-    expect(evaluateCondition({ all: [{ has_tag: "outdoors" }, { attr_gte: ["strength", 51] }] }, subject)).toBe(false);
-    expect(evaluateCondition({ any: [{ has_flag: "member" }, { has_tag: "outdoors" }] }, subject)).toBe(true);
+    const subject = subjectOf(ACTOR); // tag: zone/outdoors, strength: 50
+    expect(evaluateCondition({ all: [{ has_tag: ["zone", "outdoors"] }, { attr_gte: ["strength", 50] }] }, subject)).toBe(true);
+    expect(evaluateCondition({ all: [{ has_tag: ["zone", "outdoors"] }, { attr_gte: ["strength", 51] }] }, subject)).toBe(false);
+    expect(evaluateCondition({ any: [{ has_flag: "member" }, { has_tag: ["zone", "outdoors"] }] }, subject)).toBe(true);
     expect(evaluateCondition({ any: [{ has_flag: "member" }, { has_state: "wounded" }] }, subject)).toBe(false);
     expect(evaluateCondition({ not: [{ has_state: "wounded" }] }, subject)).toBe(true);
-    expect(evaluateCondition({ not: [{ has_tag: "outdoors" }] }, subject)).toBe(false);
+    expect(evaluateCondition({ not: [{ has_tag: ["zone", "outdoors"] }] }, subject)).toBe(false);
   });
 
   it("treats multi-child not as 'none of these are true'", () => {
@@ -91,13 +95,16 @@ describe("condition evaluator (spec/02 §5)", () => {
 
   it("expresses a AND b OR c through nesting — the case a two-layer grammar cannot (ADR-0024 §8)", () => {
     const expr: ConditionExpr = {
-      any: [{ all: [{ has_tag: "a" }, { has_tag: "b" }] }, { has_tag: "c" }],
+      any: [
+        { all: [{ has_tag: ["zone", "a"] }, { has_tag: ["zone", "b"] }] },
+        { has_tag: ["zone", "c"] },
+      ],
     };
-    expect(evaluateCondition(expr, subjectWith({ tags: ["a", "b"] }))).toBe(true);
-    expect(evaluateCondition(expr, subjectWith({ tags: ["c"] }))).toBe(true);
-    expect(evaluateCondition(expr, subjectWith({ tags: ["a"] }))).toBe(false);
-    expect(evaluateCondition(expr, subjectWith({ tags: ["b"] }))).toBe(false);
-    expect(evaluateCondition(expr, subjectWith({ tags: [] }))).toBe(false);
+    expect(evaluateCondition(expr, subjectWith({ tags: { zone: ["a", "b"] } }))).toBe(true);
+    expect(evaluateCondition(expr, subjectWith({ tags: { zone: ["c"] } }))).toBe(true);
+    expect(evaluateCondition(expr, subjectWith({ tags: { zone: ["a"] } }))).toBe(false);
+    expect(evaluateCondition(expr, subjectWith({ tags: { zone: ["b"] } }))).toBe(false);
+    expect(evaluateCondition(expr, subjectWith({ tags: {} }))).toBe(false);
   });
 
   it("nests arbitrarily deep", () => {
@@ -122,10 +129,10 @@ describe("condition evaluator (spec/02 §5)", () => {
   it("throws on malformed nodes — loudly, not as a silent grant or denial", () => {
     const subject = subjectOf(ACTOR);
     expect(() => evaluateCondition(42 as unknown as ConditionExpr, subject)).toThrow(/boolean or a single-key object/);
-    expect(() => evaluateCondition([{ has_tag: "a" }] as unknown as ConditionExpr, subject)).toThrow(
+    expect(() => evaluateCondition([{ has_tag: ["zone", "a"] }] as unknown as ConditionExpr, subject)).toThrow(
       /boolean or a single-key object/,
     );
-    expect(() => evaluateCondition({ has_tag: "a", has_flag: "b" }, subject)).toThrow(/exactly one key/);
+    expect(() => evaluateCondition({ has_tag: ["zone", "a"], has_flag: "b" }, subject)).toThrow(/exactly one key/);
     expect(() => evaluateCondition({ all: [], any: [] }, subject)).toThrow(/exactly one key/);
     expect(() => evaluateCondition({ all: [] }, subject)).toThrow(/non-empty array/);
     expect(() => evaluateCondition({ not: [] }, subject)).toThrow(/non-empty array/);
@@ -152,6 +159,7 @@ describe("built-in predicates (spec/02 §5.3)", () => {
   });
 
   it("covers tag / flag / state / location / martial membership", () => {
+    expect(evaluateCondition({ has_tag: ["zone", "indoors"] }, subjectWith({ tags: { zone: ["indoors"] } }))).toBe(true);
     expect(evaluateCondition({ has_flag: "member" }, subjectWith({ flags: ["member"] }))).toBe(true);
     expect(evaluateCondition({ has_state: "wounded" }, subjectWith({ states: ["wounded"] }))).toBe(true);
     expect(evaluateCondition({ in_location: "room-hall" }, subjectOf(ACTOR))).toBe(true);
@@ -162,8 +170,18 @@ describe("built-in predicates (spec/02 §5.3)", () => {
 
   it("throws when an argument shape does not match the schema", () => {
     const subject = subjectOf(ACTOR);
-    expect(() => evaluateCondition({ has_tag: ["outdoors"] }, subject)).toThrow(/one non-empty string/);
-    expect(() => evaluateCondition({ has_tag: "" }, subject)).toThrow(/one non-empty string/);
+    // has_tag is the pair: a bare string is the pre-dimension shape the
+    // schema now rejects too, and a one- or three-element array is not a tag.
+    expect(() => evaluateCondition({ has_tag: "outdoors" }, subject)).toThrow(/\[dimension, key\]/);
+    expect(() => evaluateCondition({ has_tag: ["zone"] }, subject)).toThrow(/\[dimension, key\]/);
+    expect(() => evaluateCondition({ has_tag: ["zone", "outdoors", "extra"] }, subject)).toThrow(
+      /\[dimension, key\]/,
+    );
+    expect(() => evaluateCondition({ has_tag: ["", "outdoors"] }, subject)).toThrow(/\[dimension, key\]/);
+    expect(() => evaluateCondition({ has_tag: ["zone", ""] }, subject)).toThrow(/\[dimension, key\]/);
+    expect(() => evaluateCondition({ has_tag: 7 }, subject)).toThrow(/\[dimension, key\]/);
+    expect(() => evaluateCondition({ has_flag: ["member"] }, subject)).toThrow(/one non-empty string/);
+    expect(() => evaluateCondition({ has_flag: "" }, subject)).toThrow(/one non-empty string/);
     expect(() => evaluateCondition({ attr_gte: "strength" }, subject)).toThrow(/\[attrName, minimum\]/);
     expect(() => evaluateCondition({ attr_gte: ["strength"] }, subject)).toThrow(/\[attrName, minimum\]/);
     expect(() => evaluateCondition({ attr_gte: ["strength", "50"] }, subject)).toThrow(/\[attrName, minimum\]/);
@@ -186,8 +204,8 @@ describe("predicate registry (engine capability, extensible)", () => {
     const registry = createPredicateRegistry([["wears", wears]]);
 
     const expr: ConditionExpr = { any: [{ wears: "boots" }] };
-    expect(evaluateCondition(expr, subjectWith({ tags: ["wears:boots"] }), registry)).toBe(true);
-    expect(evaluateCondition(expr, subjectWith({ tags: [] }), registry)).toBe(false);
+    expect(evaluateCondition(expr, subjectWith({ tags: { wears: ["boots"] } }), registry)).toBe(true);
+    expect(evaluateCondition(expr, subjectWith({ tags: {} }), registry)).toBe(false);
     // A hardcoded-branch evaluator would reject "wears" as unknown; the
     // registry is the only dispatch path.
     expect(() => evaluateCondition(expr, subjectOf(ACTOR))).toThrow(/unknown predicate/);
@@ -198,7 +216,7 @@ describe("predicate registry (engine capability, extensible)", () => {
     const registry = createPredicateRegistry([...defaultPredicateEntries, ["is_night", night]]);
     expect(evaluateCondition({ is_night: true }, subjectWith({ states: ["night"] }), registry)).toBe(true);
     // The built-ins still work in the extended registry.
-    expect(evaluateCondition({ has_tag: "outdoors" }, subjectOf(ACTOR), registry)).toBe(true);
+    expect(evaluateCondition({ has_tag: ["zone", "outdoors"] }, subjectOf(ACTOR), registry)).toBe(true);
   });
 
   it("rejects duplicate names and non-functions at build time", () => {
@@ -387,10 +405,10 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
       predicates: createPredicateRegistry([...defaultPredicateEntries, ["wears", wears]]),
     });
 
-    const shoddy = createCommandHarness<ActorWorld>(options({ ...ACTOR, tags: [] }));
+    const shoddy = createCommandHarness<ActorWorld>(options({ ...ACTOR, tags: {} }));
     expect(shoddy.call(spec, "delve").result.ok).toBe(false);
 
-    const booted = createCommandHarness<ActorWorld>(options({ ...ACTOR, tags: ["wears:boots"] }));
+    const booted = createCommandHarness<ActorWorld>(options({ ...ACTOR, tags: { wears: ["boots"] } }));
     const out = booted.call(spec, "delve");
     expect(out.result.ok).toBe(true);
     expectMessageSequence(out.messages, [{ to: "actor-1", event: { type: "delved" } }]);

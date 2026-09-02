@@ -350,19 +350,23 @@ describe("the state tree seed (spec/04 §1: one tree)", () => {
     expect(runtime.occupantsOf("room-a")).toEqual(["alpha", "zeta"]);
   });
 
-  it("builds condition subjects from the tree: flags and location answer, unlanded facets answer none", () => {
+  it("builds condition subjects from the tree: flags, tags and location answer, unlanded facets answer none", () => {
     const runtime = makeRuntime();
     runtime.addEntity(createEntity("p1"), "room-a");
     runtime.state.entities["p1"]!.flags = ["marker-a"];
+    runtime.state.entities["p1"]!.tags = { zone: ["outdoors"] };
 
     const subject = runtime.subjectOf("p1");
     expect(subject.hasFlag("marker-a")).toBe(true);
     expect(subject.hasFlag("marker-b")).toBe(false);
     expect(subject.locationId()).toBe("room-a");
+    // Tags answer from the tree — the pair, not a bare string (ADR-0029 §1).
+    expect(subject.hasTag("zone", "outdoors")).toBe(true);
+    expect(subject.hasTag("zone", "indoors")).toBe(false);
+    expect(subject.hasTag("layer", "outdoors")).toBe(false);
     // Slots that have no consumer yet answer "none" — they arrive with
-    // their systems (tags M3, attrs/states/skills with combat and rest).
+    // their systems (attrs/states/skills with combat and rest).
     expect(subject.attr("anything")).toBeUndefined();
-    expect(subject.hasTag("outdoors")).toBe(false);
     expect(subject.hasState("wounded")).toBe(false);
     expect(subject.hasSkill("anything")).toBe(false);
   });
