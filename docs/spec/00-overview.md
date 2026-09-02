@@ -139,6 +139,6 @@ TerminalView 实现                   style-guide.md（文风约束）
 | 输出管线、中文层其余部分，及状态模型余下部分（时间／调度＝ M4） | ❌ 未实现（规格已定，见各文件） |
 | 14 个 schema | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做）。**限定语**：`schemas/` 现共 **19 个** = 2 个被引用库（`condition`／`common`）+ 3 个新落集合（`commands`／`rooms`／`npcs`）+ `config` 三类 + **11 个**放置期集合；「14」= 19 − 2 库 − 3 新落（口径不同、数字都对，别去统一它们） |
 
-**下一步**：~~M2 最小可玩世界运行时（走/看/说，六张 tracer 票，形态见 ADR-0028）~~（**六票全关**）→ **M3 标签与原型（spec/03 §5.1／§6.1）—— 设计已定案（ADR-0029／ADR-0030），已拆六票（#14–#19，规格快照 #13）；T1 四字段 schema 与类型落地（**#14 已关，3c4a470**）** → M4 时间与调度（spec/04 §2–§4，战斗前夜）。每完成一个子系统，跑该文件末尾的自检清单。
+**下一步**：~~M2 最小可玩世界运行时（走/看/说，六张 tracer 票，形态见 ADR-0028）~~（**六票全关**）→ **M3 标签与原型（spec/03 §5.1／§6.1）—— 设计已定案（ADR-0029／ADR-0030），已拆六票（#14–#19，规格快照 #13）；T1 四字段 schema 与类型落地（**#14 已关，3c4a470**）→ T2 内容侧标签（`byTag` 倒排索引 + 维度表硬校验，**#15 已关，2776306**）** → M4 时间与调度（spec/04 §2–§4，战斗前夜）。每完成一个子系统，跑该文件末尾的自检清单。
 
 > 引擎源文件：`types.ts`（端口与契约）、`index.ts`（导出面）、`rng.ts`、`save/migrations.ts`、`command/pipeline.ts`（四段管线 + access 门禁）、`command/testing.ts`（测试骨架）、`command/parser.ts`（中文解析器）、`command/cmdset.ts`（命令集合并栈）、`command/entry.ts`（命令内容契约：条目 → 源 → spec）、`world/entry.ts`（世界内容契约：房间／出口／人物条目，出口即命令）、`content/registry.ts`（ContentRegistry）、`content/entry.ts`（条目通用字段契约：tags／flags／prototypeKey／prototypeParent，schema 侧对应 `schemas/common.schema.json`）、`conditions.ts`（条件求值与谓词注册表）。这是刻意的——**先定契约，再长能力**。
