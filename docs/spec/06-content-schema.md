@@ -65,6 +65,8 @@ corepack pnpm content:check
 2. 引擎 `packages/core` 的类型
 3. `docs/agents/content.md`（字段约定）
 
+**谓词是这个契约的一个变体**（spec/02 §5.3）：谓词名与**实参形状**同步的三处是 `schemas/condition.schema.json` 的白名单（如 `tagPredicateNode`／`stringPredicateNode`）／引擎 `conditions.ts`（`defaultPredicateEntries` 与 `ConditionSubject` facet）／`spec/02` §5.3 谓词清单；`content.md` 的「谓词实参形状」节随行（内容作者入口）。`has_tag` 实参改 `[维度, 键]` 二元组（#17，M3-T5）走的就是这条——只改其中一处，另两处就会接受不同形状的内容。
+
 > 四个条目通用字段的三处落点只有一个集合无关的位置：`schemas/common.schema.json`（唯一定义，各集合 `$ref`）／ `packages/core/src/content/entry.ts` 的 `EntryCommon`（各条目类型 `extends` 它）／ `docs/agents/content.md` 的「条目字段约定」节。改它们的形状改这三处即可，**不必逐个集合改**——这正是把它们收进库里的目的。
 
 ## 5. ⚠️ draft-07 约束
