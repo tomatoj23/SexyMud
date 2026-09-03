@@ -18,5 +18,7 @@
       "cmdset": "exits",
       "priority": 101
     }
-  ]
+  ],
+  "tags": { "section": ["control"], "clearance": ["bridge"] },
+  "prototypeParent": ["room-orb-000"]
 }

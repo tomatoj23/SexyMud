@@ -10,6 +10,7 @@ import { createVerbTable } from "../src/command/parser.js";
 import type { CommandResult } from "../src/types.js";
 import type { CommandSpec, Message } from "../src/command/pipeline.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
+import { createContentRegistry } from "../src/content/registry.js";
 import { createEntity } from "../src/world/entity.js";
 import { lookSpec } from "../src/world/look.js";
 import { saySpec } from "../src/world/say.js";
@@ -174,14 +175,20 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
       "cmd-broadcast",
       "cmd-scan",
     ]);
+    // room-orb-000 is the 舱室 base prototype — prototypes live in the
+    // collection they are inherited in (ADR-0030 §3), so the base is a room
+    // like any other: indexed, lookable, and unmarked by any "abstract" flag.
     expect(registry.rooms.map((room) => room.id)).toEqual([
+      "room-orb-000",
       "room-orb-001",
       "room-orb-002",
       "room-orb-003",
+      "room-orb-004",
     ]);
-    expect(registry.npcs.map((npc) => npc.id)).toEqual(["npc-orb-001"]);
+    expect(registry.npcs.map((npc) => npc.id)).toEqual(["npc-orb-001", "npc-orb-002"]);
     // Exits are entities with global ids, indexed across rooms — not fields.
     expect(registry.exit("exit-orb-002-inboard").targetRoomId).toBe("room-orb-003");
+    expect(registry.exit("exit-orb-001-outboard").targetRoomId).toBe("room-orb-004");
 
     const room = registry.room("room-orb-002");
     const table = createVerbTable(
@@ -229,7 +236,7 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     );
 
     const pack = loadPack(MINI_PACK_DIR);
-    expect(pack.commands.length + pack.rooms.length + pack.npcs.length).toBe(6);
+    expect(pack.commands.length + pack.rooms.length + pack.npcs.length).toBe(9);
     for (const command of pack.commands) {
       expect(validateCommands(command), command.id).toBe(true);
     }
@@ -239,6 +246,30 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     for (const npc of pack.npcs) {
       expect(validateNpcs(npc), npc.id).toBe(true);
     }
+  });
+
+  it("ships its own dimensions table, whose dimension names are none of the wuxia pack's", () => {
+    const mini = loadPack(MINI_PACK_DIR).dimensions;
+    const wuxia = loadPack(WUXIA_PACK_DIR).dimensions;
+    expect(mini).toBeDefined();
+    expect(wuxia).toBeDefined();
+    // 「维度表随包」的内容侧证据：两个包的维度名一个都不重。
+    const wuxiaDimensions = new Set(Object.keys(wuxia!));
+    expect(Object.keys(mini!).filter((dimension) => wuxiaDimensions.has(dimension))).toEqual([]);
+
+    // The shipped schema's `required` list names the WUXIA pack's own
+    // dimensions — it is that pack's config contract, and content:check
+    // enforces it on content/. A second pack's table is therefore held to the
+    // pack-neutral half of the very same schema (its SHAPE) here, and to the
+    // registry's load-time closure below, which is where "which dimensions
+    // exist" actually lives (ADR-0029 §5: the engine never imports one).
+    const { required, ...shapeOnly } = JSON.parse(
+      readFileSync(resolve(schemasDir, "config.dimensions.schema.json"), "utf8"),
+    );
+    expect(required.length).toBeGreaterThan(0);
+    const validateDimensions = new Ajv({ allErrors: true }).compile(shapeOnly);
+    expect(validateDimensions(mini)).toBe(true);
+    expect(validateDimensions(wuxia)).toBe(true);
   });
 });
 
@@ -339,6 +370,11 @@ describe("看 and 说 — the mini pack's own commands bound to the engine's fac
           roomId: "room-orb-001",
           exits: [
             { exitId: "exit-orb-001-fore", direction: "前", verbs: ["前", "fore", "f"] },
+            {
+              exitId: "exit-orb-001-outboard",
+              direction: "外",
+              verbs: ["外", "outboard", "out"],
+            },
           ],
           // Static presence is the room's placement list, read straight from
           // content: the mini pack's own service robot.
@@ -403,6 +439,250 @@ describe("看 and 说 — the mini pack's own commands bound to the engine's fac
 
     expect(second).toEqual(first);
     expect(first.map((step) => step.result.ok)).toEqual([true, true, true, false]);
+  });
+});
+
+/**
+ * The prototype chain, on REAL content this time (issue #19): every case above
+ * exercises inheritance as a mechanism through synthetic entries; this pack
+ * proves a content AUTHOR can use it — and, more to the point, that nothing
+ * about it is wuxia-shaped. One 舱室 base, four modules off it, and the base
+ * carries no exits because inheriting one is impossible by construction
+ * (spec/03 §6.1).
+ */
+describe("the real prototype chain: four modules off one 舱室 base (issue #19)", () => {
+  it("flattens at load: children keep the base's fields and carry no prototypeParent", () => {
+    const registry = packRegistry(MINI_PACK_DIR);
+
+    const base = registry.room("room-orb-000");
+    expect(base.prototypeKey).toBe("room-orb-000");
+    expect(base.prototypeParent).toBeUndefined();
+
+    for (const id of ["room-orb-001", "room-orb-002", "room-orb-003", "room-orb-004"]) {
+      const room = registry.room(id);
+      // `prototypeParent` is a consumed instruction: nothing downstream can
+      // flatten twice (ADR-0030 §4).
+      expect(room.prototypeParent, id).toBeUndefined();
+      // `prototypeKey` is NOT inherited, so a child is not inheritable —
+      // a constructive guarantee, not a convention.
+      expect(room.prototypeKey, id).toBeUndefined();
+    }
+  });
+
+  it("inherits the base's placement list, and lets a module replace it wholesale", () => {
+    const registry = packRegistry(MINI_PACK_DIR);
+
+    // 生活舱 and 主控室 declare no objects of their own: the wall-mounted
+    // repair unit in them came from the base.
+    expect(registry.room("room-orb-002").objects).toEqual([{ id: "npc-orb-002", count: 1 }]);
+    expect(registry.room("room-orb-003").objects).toEqual([{ id: "npc-orb-002", count: 1 }]);
+    // 对接舱 overrides it with its own robot: `objects` is replaced, never
+    // merged (only tags and attrs merge complementarily, spec/03 §6).
+    expect(registry.room("room-orb-001").objects).toEqual([{ id: "npc-orb-001", count: 1 }]);
+    // 舷外作业平台 declares an EMPTY list: an override too, not an omission.
+    expect(registry.room("room-orb-004").objects).toEqual([]);
+  });
+
+  it("merges tags complementarily: the base's key plus each module's own", () => {
+    const registry = packRegistry(MINI_PACK_DIR);
+
+    expect(registry.tagsOf("room-orb-000")).toEqual({ clearance: ["crew"] });
+    expect(registry.tagsOf("room-orb-002")).toEqual({
+      clearance: ["crew"],
+      section: ["habitat"],
+    });
+    // 主控室 adds "bridge" to the base's "crew" — a union, sorted and deduped.
+    expect(registry.tagsOf("room-orb-003")).toEqual({
+      clearance: ["bridge", "crew"],
+      section: ["control"],
+    });
+    expect(registry.tagsOf("room-orb-004")).toEqual({
+      clearance: ["crew", "eva"],
+      hazard: ["sealed"],
+      section: ["external"],
+    });
+  });
+
+  it("declares its own exits: the base carries none, and no exit id is shared", () => {
+    const registry = packRegistry(MINI_PACK_DIR);
+
+    // 出口不可继承是构造性的：基类只能带描述／标签／放置清单这类字段。
+    expect(registry.room("room-orb-000").exits).toEqual([]);
+    const exitIds = registry.rooms.flatMap((room) => room.exits.map((exit) => exit.id));
+    // Global uniqueness, restated over the whole pack: an exit id is a dispatch
+    // key, and the registry already threw at load if two rooms had shared one.
+    expect(new Set(exitIds).size).toBe(exitIds.length);
+    // Every non-base module declares its own way out — none inherited one
+    // (impossible), and none needs to.
+    for (const room of registry.rooms) {
+      if (room.id === "room-orb-000") {
+        continue;
+      }
+      expect(room.exits.length, room.id).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("inherited tags reach the inverted index (spec/03 §5.1)", () => {
+  it("finds every module through a key only the base declares", () => {
+    const registry = packRegistry(MINI_PACK_DIR);
+
+    // "crew" is written on ONE file (the base) and answers for FIVE rooms —
+    // flattening precedes indexing, so putting a tag in a prototype is not a
+    // back door around the index.
+    expect(registry.byTag("clearance", "crew")).toEqual([
+      "room-orb-000",
+      "room-orb-001",
+      "room-orb-002",
+      "room-orb-003",
+      "room-orb-004",
+    ]);
+  });
+
+  it("mixes exits and entries in one result, id-ascending", () => {
+    const registry = packRegistry(MINI_PACK_DIR);
+
+    // The airlock exit is tagged with the clearance it demands, so the pair
+    // answers with an exit id and a room id in one list: two kinds of entity,
+    // one id space (#15, spec/03 §5.1).
+    expect(registry.byTag("clearance", "eva")).toEqual([
+      "exit-orb-001-outboard",
+      "room-orb-004",
+    ]);
+    expect(registry.byTag("section", "control")).toEqual(["room-orb-003"]);
+    expect(registry.byTag("hazard", "sealed")).toEqual(["room-orb-004"]);
+    // A flag is not a tag: the same word under flags answers nothing (ADR-0029 §4).
+    expect(registry.byTag("clearance", "crew-clearance")).toEqual([]);
+  });
+});
+
+describe("走 — the has_tag gate on the airlock, on real content (M3-T5)", () => {
+  it("refuses a crew member with no EVA tag; the copy stays in the mini pack's JSON", () => {
+    const { registry, runtime, dispatch } = miniStage();
+
+    const out = dispatch("actor-1", "外");
+
+    // The exit's own traverse gate denied (spec/02 §4.1): the seq is consumed
+    // and the refusal is content, returned as an event (spec/01 §4).
+    expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "accessDenied" });
+    expectMessageSequence(out.messages, [
+      {
+        to: "actor-1",
+        event: {
+          type: "commandRefused",
+          reason: "accessDenied",
+          commandKey: "exit-orb-001-outboard",
+          accessType: "traverse",
+          errKey: "err_traverse",
+        },
+      },
+    ]);
+
+    // Renderer role: the errKey locates the copy in the EXIT's data, and the
+    // event carries no rendered text (spec/01 §5.1).
+    const copy = registry.exit("exit-orb-001-outboard").err_traverse;
+    expect(typeof copy).toBe("string");
+    expect(copy as string).toContain("舱外作业权限");
+    expect(JSON.stringify(out.messages)).not.toContain(copy as string);
+    expect(runtime.locationOf("actor-1")).toBe("room-orb-001");
+  });
+
+  it("opens the airlock once the tag is written to the state tree — and closes it again", () => {
+    const { runtime, dispatch } = miniStage();
+    runtime.state.entities["actor-1"]!.tags = { clearance: ["eva"] };
+
+    const out = dispatch("actor-1", "外");
+
+    expect(out.result.ok).toBe(true);
+    expect(runtime.locationOf("actor-1")).toBe("room-orb-004");
+    expectMessageSequence(out.messages.filter((message) => message.to === "actor-1"), [
+      { event: { type: "departed", entityId: "actor-1", fromLocationId: "room-orb-001" } },
+      { event: { type: "arrived", entityId: "actor-1", toLocationId: "room-orb-004" } },
+    ]);
+
+    // Back inside, tag removed: the gate reads LIVE state, so the same exit
+    // refuses the same actor again.
+    runtime.state.entities["actor-1"]!.locationId = "room-orb-001";
+    runtime.state.entities["actor-1"]!.tags = {};
+    expect(dispatch("actor-1", "外").result).toMatchObject({
+      kind: "rejected",
+      reason: "accessDenied",
+    });
+  });
+
+  it("is not opened by the same word carried as a flag: two layers, not two spellings", () => {
+    const { runtime, dispatch } = miniStage();
+    // 主控室's gate is a flag (has_flag: crew-clearance); the airlock's is a
+    // tag. Neither layer answers for the other (ADR-0029 §4).
+    runtime.state.entities["actor-1"]!.flags = ["eva"];
+
+    expect(dispatch("actor-1", "外").result).toMatchObject({
+      kind: "rejected",
+      reason: "accessDenied",
+    });
+    expect(runtime.subjectOf("actor-1").hasFlag("eva")).toBe(true);
+  });
+
+  it("replays identically: the same session twice yields the same results and events (ADR-0017)", () => {
+    const runSession = () => {
+      const { runtime, dispatch } = miniStage();
+      const refused = dispatch("actor-1", "外");
+      runtime.state.entities["actor-1"]!.tags = { clearance: ["eva"] };
+      const granted = dispatch("actor-1", "外");
+      return { refused, granted };
+    };
+
+    const first = runSession();
+    const second = runSession();
+
+    expect(second).toEqual(first);
+    expect(first.refused.result.ok).toBe(false);
+    expect(first.granted.result.ok).toBe(true);
+  });
+});
+
+describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
+  /** The mini pack as a host hands it to the registry — no table attached. */
+  function miniContent() {
+    const pack = loadPack(MINI_PACK_DIR);
+    return {
+      commands: pack.commands,
+      rooms: pack.rooms,
+      npcs: pack.npcs,
+      monsters: pack.monsters,
+    };
+  }
+
+  it("closes the mini pack's tags against its own table — and against no other", () => {
+    const pack = loadPack(MINI_PACK_DIR);
+    expect(pack.dimensions).toBeDefined();
+
+    // One content set, three tables: the pack's own passes, no table skips the
+    // closure entirely (spec/03 §5.1: 「没传就跳过」), and the OTHER pack's
+    // table rejects it out of hand — that is 「维度表随包」mechanically.
+    expect(() =>
+      createContentRegistry(miniContent(), { dimensions: pack.dimensions }),
+    ).not.toThrow();
+    expect(() => createContentRegistry(miniContent())).not.toThrow();
+    expect(() =>
+      createContentRegistry(miniContent(), {
+        dimensions: loadPack(WUXIA_PACK_DIR).dimensions,
+      }),
+    ).toThrow(/tags unknown dimension "clearance"/);
+  });
+
+  it("rejects a wuxia dimension declared inside the mini pack: the closure is the pack's own", () => {
+    const pack = loadPack(MINI_PACK_DIR);
+    const sample = pack.rooms.find((room) => room.id === "room-orb-004")!;
+    const rogue = { ...sample, tags: { moveTag: ["sword"] } };
+    const rooms = pack.rooms.map((room) => (room.id === rogue.id ? rogue : room));
+
+    expect(() =>
+      createContentRegistry({ ...miniContent(), rooms }, { dimensions: pack.dimensions }),
+    ).toThrow(/tags unknown dimension "moveTag"/);
+    // Without a table the very same entry loads: the closure is opt-in, and
+    // an unknown dimension is only an error where a vocabulary was declared.
+    expect(() => createContentRegistry({ ...miniContent(), rooms })).not.toThrow();
   });
 });
 

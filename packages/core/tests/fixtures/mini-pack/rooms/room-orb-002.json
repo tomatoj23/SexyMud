@@ -22,5 +22,7 @@
       "cmdset": "exits",
       "priority": 101
     }
-  ]
+  ],
+  "tags": { "section": ["habitat"] },
+  "prototypeParent": ["room-orb-000"]
 }

@@ -1,0 +1,10 @@
+{
+  "id": "room-orb-000",
+  "name": "标准舱室",
+  "description": "一间还没排上用途的舱室：弧形舱壁、两排顶灯、脚下防滑格栅，管线接口一律封着盲板。",
+  "enterText": "你飘进这间空舱室，顶灯一盏接一盏亮起来。",
+  "exits": [],
+  "objects": [{ "id": "npc-orb-002", "count": 1 }],
+  "tags": { "clearance": ["crew"] },
+  "prototypeKey": "room-orb-000"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "room-orb-004",
+  "name": "舷外作业平台",
+  "description": "舷外挑出一段格栅平台，护栏之外便是没有尽头的黑。平台尽头立着一排系索桩，绳头在真空里缓缓晃着。",
+  "enterText": "你扣好系索跨出气闸门，脚下的格栅一路响到平台中央。",
+  "exits": [
+    {
+      "id": "exit-orb-004-inboard",
+      "direction": "内",
+      "targetRoomId": "room-orb-001",
+      "verbs": ["内", "inboard", "in"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ],
+  "objects": [],
+  "tags": { "section": ["external"], "hazard": ["sealed"], "clearance": ["eva"] },
+  "prototypeParent": ["room-orb-000"]
+}

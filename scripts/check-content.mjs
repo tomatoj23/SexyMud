@@ -15,6 +15,12 @@
 // compile errors, while a schema with no content yet only surfaces violations
 // as WARN lines — design drafts get re-evaluated when their content lands,
 // and a warn-level signal beats invisibility (spec/06 §3.1).
+//
+// Four checks run, and all four are hard failures except where noted:
+//   1. every content file against its collection schema,
+//   2. the dead-concept gate (banned-terms.json),
+//   3. prototype cycles in the `prototypeParent` graph (added M3-T6, #19),
+//   4. draft-07 legality of the unmapped schemas (WARN only).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,7 +116,79 @@ function scanBannedTerms(file) {
   return hits;
 }
 
+/** The collection a content file belongs to: the directory right under content/. */
+function collectionOf(contentFile) {
+  return contentFile.slice(root.length + 1).split(/[\\/]/)[1];
+}
+
+/**
+ * Prototype cycle detection — the OFFLINE half of ADR-0030 §5's double lock
+ * (M3-T6, #19). The runtime half lives in the registry's flattener, which
+ * throws on a cycle at load; this one runs when the content is SAVED, so an
+ * author meets the cycle here instead of a player meeting it at startup.
+ *
+ * Graphs are built PER COLLECTION because inheritance never crosses
+ * collections (ADR-0030 §3): a parent id resolves against the child's own
+ * collection and nowhere else. Ids are walked ascending and parents left →
+ * right, so the cycle a run reports is the cycle the next run reports.
+ *
+ * Only the ROOT object of a file is walked. An exit carries the same four
+ * fields (it is a command) but is never flattened: a room's `exits` is
+ * replaced wholesale and an exit id is globally unique, so inheriting one is
+ * impossible by construction (spec/03 §6.1).
+ *
+ * Cycles are the ONLY thing checked here. That a parent exists and declared a
+ * `prototypeKey` are load-time checks the flattener already makes loudly
+ * (M3-T3); repeating them offline would mean re-implementing the flattener,
+ * and a copy would drift from the original.
+ */
+function checkPrototypeCycles(entries) {
+  /** collection → id → parents (only files that DECLARE inheritance). */
+  const graphs = new Map();
+  let parented = 0;
+  for (const { file, data } of entries) {
+    if (data === null || typeof data !== "object" || Array.isArray(data)) continue;
+    if (data.prototypeParent === undefined) continue;
+    parented += 1;
+    const collection = collectionOf(file);
+    if (!graphs.has(collection)) graphs.set(collection, new Map());
+    graphs.get(collection).set(data.id ?? file, {
+      parents: Array.isArray(data.prototypeParent)
+        ? data.prototypeParent.filter((id) => typeof id === "string")
+        : [],
+    });
+  }
+
+  const cycles = [];
+  for (const collection of [...graphs.keys()].sort()) {
+    const graph = graphs.get(collection);
+    /** "open" = on the current path; "done" = fully walked. */
+    const state = new Map();
+    const path = [];
+    const walk = (id) => {
+      if (state.get(id) === "done") return; // an ancestor reached TWICE is a diamond, not a cycle
+      if (state.get(id) === "open") {
+        cycles.push({ collection, cycle: [...path.slice(path.indexOf(id)), id] });
+        return;
+      }
+      state.set(id, "open");
+      path.push(id);
+      for (const parent of graph.get(id)?.parents ?? []) {
+        // A parent this collection does not know is the registry's error to
+        // raise at load, not this walk's.
+        if (graph.has(parent)) walk(parent);
+      }
+      path.pop();
+      state.set(id, "done");
+    };
+    for (const id of [...graph.keys()].sort()) walk(id);
+  }
+  return { cycles, parented };
+}
+
 let failed = false;
+/** Everything the cycle pass needs, collected as the files are parsed below. */
+const prototypeEntries = [];
 for (const file of files.sort()) {
   const relative = file.slice(root.length + 1).replace(/\\/g, "/");
   const schemaRel = schemaPathFor(file);
@@ -136,6 +214,9 @@ for (const file of files.sort()) {
     console.error(`INVALID ${relative} (not valid JSON: ${error.message})`);
     continue;
   }
+  // Parsed but not yet checked: the prototype graph is a pass over whole
+  // collections, so it runs after this loop (see checkPrototypeCycles).
+  prototypeEntries.push({ file, data });
 
   let validate;
   try {
@@ -167,6 +248,18 @@ for (const file of files.sort()) {
     );
     if (isError) failed = true;
   }
+}
+
+const { cycles, parented } = checkPrototypeCycles(prototypeEntries);
+if (cycles.length > 0) {
+  failed = true;
+  for (const { collection, cycle } of cycles) {
+    console.error(`CYCLE    ${collection}: prototype cycle ${cycle.join(" → ")}`);
+  }
+} else {
+  console.log(
+    `OK      prototype graph: no cycle across ${prototypeEntries.length} file(s), ${parented} of them declaring prototypeParent`,
+  );
 }
 
 // Reverse scan: this loop only ever walks content/, so a schema that no content

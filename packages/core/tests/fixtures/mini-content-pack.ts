@@ -3,7 +3,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandEntry } from "../../src/command/entry.js";
 import { createContentRegistry } from "../../src/content/registry.js";
-import type { ContentRegistry, MonsterRecord } from "../../src/content/registry.js";
+import type {
+  ContentRegistry,
+  DimensionTable,
+  MonsterRecord,
+} from "../../src/content/registry.js";
 import type { NpcEntry, RoomEntry } from "../../src/world/entry.js";
 
 /**
@@ -24,7 +28,7 @@ import type { NpcEntry, RoomEntry } from "../../src/world/entry.js";
  * is literally "swap the directory".
  */
 
-/** The mini pack's root: commands/ rooms/ npcs/ underneath, as in content/. */
+/** The mini pack's root: commands/ rooms/ npcs/ config/ underneath, as in content/. */
 export const MINI_PACK_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "mini-pack",
@@ -46,12 +50,32 @@ function readCollection(rootDir: string, name: string): string[] {
     .map((fileName) => readFileSync(join(dir, fileName), "utf8"));
 }
 
+/**
+ * The pack's dimensions table (config/dimensions.json), when it declares one.
+ *
+ * It travels WITH the pack: which dimensions exist is the pack's business and
+ * the engine never imports one (ADR-0029 §5, spec/03 §5.1), so the loader
+ * that finds rooms/ finds config/ too and hands the table to the registry —
+ * "swap the pack" swaps the vocabulary tags are closed against. A pack with
+ * no such file loads with no table, and the closure is then skipped, exactly
+ * as it is for a host that declines to pass one.
+ */
+function readDimensions(rootDir: string): DimensionTable | undefined {
+  const file = join(rootDir, "config", "dimensions.json");
+  if (!existsSync(file)) {
+    return undefined;
+  }
+  return JSON.parse(readFileSync(file, "utf8")) as DimensionTable;
+}
+
 /** The four collections a host hands the registry, plus the pack's raw text. */
 export interface LoadedPack {
   readonly commands: readonly CommandEntry[];
   readonly rooms: readonly RoomEntry[];
   readonly npcs: readonly NpcEntry[];
   readonly monsters: readonly MonsterRecord[];
+  /** The pack's own dimensions table (config/dimensions.json), when it has one. */
+  readonly dimensions?: DimensionTable;
   /**
    * Every file's raw JSON text, concatenated. A pack's theme lives in its
    * copy as much as in its verbs, so the "no other pack's vocabulary" scan
@@ -65,12 +89,14 @@ export function loadPack(rootDir: string): LoadedPack {
   const roomTexts = readCollection(rootDir, "rooms");
   const npcTexts = readCollection(rootDir, "npcs");
   const monsterTexts = readCollection(rootDir, "monster");
+  const configTexts = readCollection(rootDir, "config");
   return {
     commands: commandTexts.map((text) => JSON.parse(text) as CommandEntry),
     rooms: roomTexts.map((text) => JSON.parse(text) as RoomEntry),
     npcs: npcTexts.map((text) => JSON.parse(text) as NpcEntry),
     monsters: monsterTexts.map((text) => JSON.parse(text) as MonsterRecord),
-    text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts].join("\n"),
+    dimensions: readDimensions(rootDir),
+    text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...configTexts].join("\n"),
   };
 }
 
@@ -81,12 +107,19 @@ export function loadPack(rootDir: string): LoadedPack {
  */
 export function packRegistry(rootDir: string): ContentRegistry {
   const pack = loadPack(rootDir);
-  return createContentRegistry({
-    commands: pack.commands,
-    rooms: pack.rooms,
-    npcs: pack.npcs,
-    monsters: pack.monsters,
-  });
+  return createContentRegistry(
+    {
+      commands: pack.commands,
+      rooms: pack.rooms,
+      npcs: pack.npcs,
+      monsters: pack.monsters,
+    },
+    // The dimensions table travels WITH the pack (ADR-0029 §5): the same
+    // loader that finds rooms/ finds config/, so swapping the directory swaps
+    // the vocabulary tags are closed against as well. A pack with no table
+    // hands over `undefined`, and the registry then skips the closure.
+    { dimensions: pack.dimensions },
+  );
 }
 
 /**

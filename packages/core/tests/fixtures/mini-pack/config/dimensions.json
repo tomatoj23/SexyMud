@@ -1,0 +1,5 @@
+{
+  "section": ["external", "docking", "habitat", "control"],
+  "clearance": ["crew", "bridge", "eva"],
+  "hazard": ["nominal", "elevated", "sealed"]
+}

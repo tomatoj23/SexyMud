@@ -12,7 +12,24 @@
       "argForm": "none",
       "cmdset": "exits",
       "priority": 101
+    },
+    {
+      "id": "exit-orb-001-outboard",
+      "direction": "外",
+      "targetRoomId": "room-orb-004",
+      "verbs": ["外", "outboard", "out"],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101,
+      "tags": { "clearance": ["eva"] },
+      "preconditions": {
+        "default": true,
+        "traverse": { "has_tag": ["clearance", "eva"] }
+      },
+      "err_traverse": "气闸门锁着：没有舱外作业权限，这道门不会为你减压。"
     }
   ],
-  "objects": [{ "id": "npc-orb-001", "count": 1 }]
+  "objects": [{ "id": "npc-orb-001", "count": 1 }],
+  "tags": { "section": ["docking"], "hazard": ["elevated"] },
+  "prototypeParent": ["room-orb-000"]
 }
