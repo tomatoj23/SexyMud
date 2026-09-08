@@ -186,12 +186,14 @@ describe("command test harness (ADR-0023 §1)", () => {
     ).toThrow(/message 1 does not match/);
   });
 
-  it("injects the tick-counting clock: commands read nowTick, advance affects later calls", () => {
+  it("stamps the tick on the command: advance moves later commands, not the engine's now", () => {
     const seenTicks: number[] = [];
     const spec: CommandSpec<TestWorld> = {
       key: "tickProbe",
       func: (ctx) => {
-        seenTicks.push(ctx.clock.nowTick());
+        // The command carries its own tick (ADR-0031); the engine reads the
+        // high-water mark back through ctx.clock.
+        seenTicks.push(ctx.command.tick);
         ctx.emit("actor-1", { type: "probed" });
       },
     };
@@ -206,6 +208,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     harness.call(spec, "tickProbe");
 
     expect(seenTicks).toEqual([100, 107]);
+    expect(harness.clock.nowTick()).toBe(107);
   });
 
   it("replays identical rolls for identical seeds and advances the stream across calls", () => {

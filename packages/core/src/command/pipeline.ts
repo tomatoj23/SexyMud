@@ -1,4 +1,5 @@
 import type { Clock, Command, CommandResult, GameEvent, Rng } from "../types.js";
+import { assertTick } from "../clock.js";
 import { checkAccess, defaultPredicateRegistry } from "../conditions.js";
 import type { AccessGate, ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { parseArgForm } from "./parser.js";
@@ -44,14 +45,19 @@ export interface EventDraft {
 
 /**
  * What a command executes against. Everything nondeterministic is injected
- * (ADR-0023 §1c): clock, rng, world snapshot, and the output sink behind
- * emit(). `args` is set after the parse stage succeeds; earlier stages see
- * undefined.
+ * (ADR-0023 §1c): rng, world snapshot, and the output sink behind emit().
+ * `args` is set after the parse stage succeeds; earlier stages see undefined.
  */
 export interface CommandContext<W = unknown> {
   readonly command: Command;
   args: unknown;
   readonly world: W;
+  /**
+   * The engine's high-water reading for this command — `max(nowTick before it,
+   * command.tick)` (ADR-0031, spec/04 §2.2). Not a host clock and not
+   * milliseconds: time judgements read this, never `command.tick` directly, so
+   * a backwards tick cannot rewind the world.
+   */
   readonly clock: Clock;
   readonly rng: Rng;
   /**
@@ -139,7 +145,13 @@ export interface CommandSpec<W = unknown> {
 
 /** The four injected dependencies a command run needs. */
 export interface CommandDeps<W = unknown> {
-  clock: Clock;
+  /**
+   * The engine's high-water mark BEFORE this command (spec/04 §2.2). The
+   * command's own tick is folded in by the pipeline: the effective now is
+   * `max(nowTick, command.tick)`. The driver owns this number between
+   * commands — `runCommand` is a pure function and keeps no clock of its own.
+   */
+  nowTick: number;
   rng: Rng;
   world: W;
   sink: MessageSink;
@@ -218,14 +230,22 @@ function parseStage<W>(
  * describes delivery failure below the engine boundary.
  */
 export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: CommandDeps<W>): CommandResult {
+  // A malformed tick would silently poison every time judgement downstream;
+  // it is a wiring bug, not player input, so it fails loudly (ADR-0003).
+  assertTick(deps.nowTick, "deps.nowTick");
+  assertTick(command.tick, "command.tick");
   const events: GameEvent[] = [];
   let vetoReason: string | undefined;
+  // The one "now" (spec/04 §2.2): the high-water mark this driver had, raised
+  // by this command. A backwards tick leaves it where it was.
+  const nowTick = Math.max(deps.nowTick, command.tick);
+  const clock: Clock = { nowTick: () => nowTick };
 
   const ctx: CommandContext<W> = {
     command,
     args: undefined,
     world: deps.world,
-    clock: deps.clock,
+    clock,
     rng: deps.rng,
     predicates: deps.predicates ?? defaultPredicateRegistry,
     emit(recipientId, draft) {

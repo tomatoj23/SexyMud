@@ -1,7 +1,28 @@
 # 04 · 状态、存档、时间与调度
 
-> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 v1 ＝ M2-T5 已落**：`state/snapshot.ts`（`serializeWorld`／`restoreWorld` ＋ v1 形状）＋ `state/derived.ts`（`derived` 契约）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4）；§2–§4（时间、游戏内时间、调度六原语）＝ **M4**（战斗前夜）；其余**待实现**。
-> **依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
+> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 v1 ＝ M2-T5 已落**：`state/snapshot.ts`（`serializeWorld`／`restoreWorld` ＋ v1 形状）＋ `state/derived.ts`（`derived` 契约）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4）。
+> **§2–§4（时间、游戏内时间、调度）＝ M4，设计已定案**：2026-09-08 的 `grill-with-docs` 访谈共 **19 条**（四轮 18 问 + 复核硬标准时补的第 19 条），本章正文即这 19 条，依据 **ADR-0031／0032／0033／0034**。
+> ⚠️ 其中 **2 条覆盖了既有决策**：**ADR-0031** 覆盖 `spec/01` 端口表里 `Clock` 的「宿主实现」一列与该手册自检清单里以 `TestClock` 为证据的那一条；**ADR-0032** 覆盖 **ADR-0016 §4「双时钟……不共用代码路径」**。照本仓惯例，ADR 是不回改的决策日志，但 **spec 是活规格，被覆盖的段落在正文中就地更正**，覆盖关系由新 ADR 记录。
+> **其余依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
+
+## 0. 术语（M4 新增，先读）
+
+本章好几个词在日常中文里是同一个字，在这里都是不同东西。**写任何 M4 代码前先对齐这张表**。
+
+| 词 | 含义 | 不是 |
+|---|---|---|
+| **tick** | 引擎的单调计数。不是毫秒，不由墙钟推导 | 时间戳、毫秒 |
+| **高水位**（`maxTick`） | 引擎见过的**进入执行段的命令**的 tick 最大值。单调不减，是引擎唯一的「现在」（`invalid` 不计入，见 §4.1） | 最后一条命令的 tick |
+| **结算跨度** | 一次补算覆盖的区间 `[fromTick, toTick)` | 「在线时长」 |
+| **游戏内时间** | tick 推导出的**段**（哪个时辰、哪个季节）。**推导，绝不存储** | tick 本身 |
+| **环**（`ring`） | 一条独立的游戏内时间刻度轴（日内时辰是一条，年内季节是另一条） | 「日历」整体 |
+| **世界层推进** | 到期桶这类挂在**世界**上的东西，每条命令都补到高水位 | 每个实体的推进 |
+| **实体层推进** | 补偿结算／离线补算，**只推进这条命令的 actor**，用他自己的 `lastSeenTick` | 世界层推进；其他在场实体 |
+| **到期桶** | 到某一 tick 触发一次的**一次性**效果（`Map<dueTick, 载荷[]>`） | 每 tick 遍历的定时器 |
+| **观察时补偿结算** | 周期性效果在**被观察时**一次性补齐欠的次数（O(1)） | per-object timer |
+| **冷却** | `key → 到期 tick` 的只读表。判定是 tick 比较，不是回调 | 定时器、延时句柄 |
+
+> ⚠️ **在线心跳、离线结算、到期桶是同一件事的三种跨度**（同一个推进函数的不同调用方式，ADR-0032）。它们**不是三套机制**。说「离线结算」时指的是**跨度大**的那次调用，不是另一个代码路径。
 
 ## 1. 状态：typed 对象 + 迁移链（不需要 attribute handler）
 
@@ -36,63 +57,229 @@ Evennia 那一千多行缓存机器（`_cache`/`_catcache`/`SaverMutable` 代理
 - **NPC 不在快照里，是构造使然而非过滤**：静态在场直读放置清单（ADR-0028 §1），未显式写入的字段不落盘——这里没有 NPC 行可删，也永远不该有。
 - **恢复＝重放树，不是创建**：`restoreWorld` 只重建状态（`migrateSnapshot` → 形状校验 → 逐实体重建 → 重算 `derived`），宿主再用 `WorldRuntime.attachEntity` 重挂 hook 载体；**不跑** creation 两层（跑 `at_object_creation` 等于用代码默认值覆盖存档，正是两层接缝要防的反转）。挂载**顺序无关**（被携带者可先于携带者挂载），恢复后的位置必须仍能解析——内容漂移大声失败，不做半解释状态。
 - **大声失败**（`tests/snapshot.test.ts` 逐条行使）：**版本**不合法（大于 `SAVE_VERSION`／小于 1／非数字）；**载荷** `data` 非对象、缺 `entities`、实体键为空、记录非对象、无 `locationId`、flags 非字符串数组、记录 id 与键不符——**七类**损坏载荷全部在加载时抛（ADR-0003）；**tags 存在但畸形**（非对象、某维度的键列表非字符串数组）是第八类（#17 起，与第七类同律：写进来了就必须合法）。
-- **v1 里没有**引擎 tick 与 RNG 种子（消费者在 §2–§4，M4）：树随它们的消费者长槽位，那一天是 v2 + 一条迁移，不是往 v1 形状里静默加字段。
-- **`SAVE_VERSION` 保持 1，迁移链机制就绪但为空**——首个真实迁移出现在 v2 那天才算检验，不造假迁移。
 - **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与七类损坏载荷大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩／**tags 往返与规范序、旧存档（无 tags 字段）缺即空、第八类畸形 tags 大声失败——M3-T5**）。
 
-## 2. 时间：tick 计数
+### 1.5 快照 v2（M4 待实现，ADR-0033）
 
-- `Clock.nowTick()` 返回**引擎 tick 计数**，不是毫秒
-- 引擎内禁止 `Date.now()` / `new Date()` / `setTimeout` / `setInterval`
-- 双时钟语义隔离（ADR-0016 §4）：
-  - **`tick()`**：在线世界心跳，固定步长，驱动战斗回合与状态倒计时
-  - **离线结算**：进入游戏时一次性 O(1) 补算，**只补气血/内力恢复与基础武功熟练度**（有上限），**不自动战斗、不推层、不产掉落**
+v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§4，所以那一天是 **v2 + 一条迁移**，不是往 v1 形状里静默加字段。
 
-## 3. 游戏内时间 = tick 的纯函数
+**载荷增加三样**：
 
-时辰／刻／季节全是 `nowTick` 的**纯函数**，**渲染时推导、绝不存储**：
+| 槽 | 位置 | 语义 |
+|---|---|---|
+| `nowTick` | 顶层 | 引擎高水位（§2.2）。**必须存**：不存则恢复后时间倒退，`nowTick >= dueTick` 恒为假，**冷却会永远不到期**（不是"失效"，见下面约定 2） |
+| `rngState` | 顶层 | `Rng.getState()` 的读数（§2.4）。mulberry32 的状态就是一个 uint32 |
+| `lastSeenTick` | 每实体 | 该实体**上次被结算到**的 tick（§4.3 两层推进） |
+
+**种子（照 `tags` 的先例，别漏）**：`WorldRuntime.addEntity` 今天把树的每个槽都种子一遍（见其实现注释：「an absent `tags` would put a `??` in front of every hasTag read for no reason」）。`lastSeenTick` 与 `cooldowns` 同理必须在 `addEntity` 里种子 —— **`lastSeenTick` 种子为当前 tick**（新实体从现在开始，不是从 0），`cooldowns` 种子为 `{}`。
+
+**四条约定**：
+
+1. **迁移补默认值**（v1 → v2）：`nowTick = 0`、`rngState = 0`、`lastSeenTick = nowTick`。补的是「这份存档写下时那个字段还不存在」这一事实，不是猜测玩家状态。
+2. **恢复时一律「缺即空」，不为 v2 新增槽加特例** —— 与 §1.4 那条规则同一个口径。⚠️ 代价要说准（此前措辞是错的）：v2 存档若 `nowTick` 丢失／损坏不会报错，游戏当成第 0 tick 继续跑 ⇒ 判定 `nowTick >= dueTick` 恒为假，**冷却不是「失效」，而是永远不到期**（技能要再等满 `dueTick` 个 tick）。这比「失效」糟，但仍是「时间回到过去」这一类可恢复的问题，且比多一条检测规则便宜。
+3. **⚠️ 顶层槽的进出通道是一个签名问题，实现前必须解决**：今天 `serializeWorld(world)` 只收一个 world、`restoreWorld(snapshot) → WorldState` 只返一棵树（`WorldState = { entities }`）。而按 §2.2，高水位住在**驱动世界的那一侧**（`WorldRuntime`／宿主 Authority），**不在 `WorldState` 里**。于是 `nowTick`／`rngState` 既**写不进**（`serializeWorld` 拿不到它们）也**读不出**（`restoreWorld` 的返回值里没有它们）。三条路，必须选一条并写进票：
+   - **(a)** 把它们并进 `WorldState`（树自带 `nowTick`）—— 签名最小改动，但 `WorldState` 从「实体树」变成「实体树 + 世界标量」，语义要跟着重写一遍；
+   - **(b)** 改签名：`serializeWorld(world, meta)` ／ `restoreWorld(snapshot) → { state, meta }`，`meta = { nowTick, rngState }` —— 语义最清（树与时钟分开），代价是动两个公开函数；
+   - **(c)** 由 `WorldRuntimeOptions` 接收 `nowTick?`／`rngState?`，存档读写都经 runtime —— 与 §2.2「高水位住在驱动侧」最一致，但要求宿主全程走 runtime，纯对象测试路径也要给一个等价物。
+
+   倾向 **(b)**：与 §2.2 的归属一致，且不要求 `WorldState` 承担它今天不承担的语义。
+4. **不做 v2 → v3 连迁**：v2 的形状这一次要想全。这也是这条迁移链**第一次被真实迁移检验**（`SAVE_VERSION` 保持 1、链机制就绪但为空至今，不造假迁移）。
+
+**nicks（玩家层别名，`spec/02` §8 至今未勾）不同趟** —— 它是**玩家层**不是实体层；把两层的东西塞进同一次迁移，正是走向「v2 → v3 连迁」的最快方式。等别名票自带那趟。
+
+## 2. 时间：tick 计数（ADR-0031）
+
+### 2.1 硬约束（不变）
+
+引擎内禁止 `Date.now()` / `new Date()` / `setTimeout` / `setInterval`；由 `tests/engine-purity.test.ts` 的 platform scanner 机械强制。
+
+### 2.2 tick 的真相：`Command` 携带，引擎取高水位
+
+**每一条 `Command` 自带 `tick`**（与 `actorId` 同一条理由——ADR-0025 §1.1：「最贵的 retrofit，今天做」）：
 
 ```
-TICKS_PER_HOUR / TICKS_PER_DAY / DAYS_PER_YEAR   （常量）
-hour     = floor((nowTick % TICKS_PER_DAY) / TICKS_PER_HOUR)
-shichen  = ...            // 时辰
-ke       = ...            // 刻（子时三刻 = (0, 3)）
-season   = SEASONS[floor(nowTick / TICKS_PER_DAY) % DAYS_PER_YEAR]
-nextDueTick(hour) = ...   // 投进到期桶
+Command { seq, actorId, tick, raw }
 ```
 
-- **不需要 `TIME_FACTOR`** —— tick 频率本身就是缩放因子（Evennia 需要它是因为它绑真实时间）
-- 房间描述与 NPC 在场判定做成 `(nowTick) => descKey` 的纯选择函数
-- ⚠️ **别抄 `extended_room` 的区间写法**：它的 `if start < end` 让跨年区间（winter `(1.0, 0.25)`）**永远匹配不上**，只是靠「遍历完返回最后一个键」侥幸正确。用**半开区间 + 显式排序数组**
+引擎内部维护 **`maxTick = max(见过的所有「进入执行段的命令」的 tick)`**，这是引擎唯一承认的「现在」，由 §2.3 的 `Clock` 对外读出。
+
+> ⚠️ 「进入执行段」这个限定语不可省：`invalid`（无法解析）的 tick **不参与**高水位 —— 否则一条乱码就能把水位抬高、让下一条真实命令瞬间跨过一大段，等于间接快进世界。见 §4.1。
+
+- **tick 倒退的命令照常执行**，但一切时间判定用高水位。**不**大声失败：tick 倒退**不改变任何已发生的事实**，只影响「现在」，而「现在取最大值」是唯一无歧义的解释；丢命令比采纳命令代价大。
+- **不保留两个真相**：既有 `CommandDeps.clock`（宿主注入的时钟）**删除**。
+  **代价（2026-09-08 实测，不夸大也不缩小）**：`clock` 在 `packages/core/src` 里**零消费者**（只有 `types.ts` 定义、`pipeline.ts` 注入并透传给 `CommandContext`、`testing.ts` 的 `TestClock`），但在测试里有 **1 处**消费者 —— `tests/command-harness.test.ts` 的 `tickProbe` 用例读 `ctx.clock.nowTick()` 并断言 `harness.clock.advance(7)` 后拿到 `[100, 107]`；`tests/parser.test.ts` 的 `deps()` 也造了一个 `createTestClock()`。`Command` 的构造点共 **8 处**：`testing.ts` 的 `call()` 1 处 + `parser.test.ts` 绕过 harness 直接调 `runCommand` 的 **7 处**。
+  合计改动约 10 处，**不是零回归，但仍是今天最便宜的时点**（等战斗系统开始读 `ctx.clock` 之后再改就是几十处）。好消息是那条 `tickProbe` 用例的**断言值不变**：`advance(7)` 改为「改下一条命令的默认 tick」之后仍是 `[100, 107]`，只需重写表达方式。
+- **附带**：`TestClock.advance()` 的语义从「推进引擎的现在」变为「改下一条命令的默认 tick」。
+- **实现落点（#20 已落）**：`packages/core/src/clock.ts` 导出 `createTickClock(startTick)`（`TickClock = Clock & { observe(tick) }`）与 `observeDispatch(clock, command, result)` —— 后者封装 §4.1 那张表（`ok`／`rejected` 抬高水位，`invalid` 不抬高），让这条规则只有一个副本。`runCommand` **自己不持有时钟**：它从 `deps.nowTick`（驱动侧在本条命令之前的水位）取，算 `now = max(deps.nowTick, command.tick)`，再把它包成 `ctx.clock` 交给命令。`deps.nowTick` 与 `command.tick` 任一不是非负安全整数时**大声失败** —— 那是接线错误，不是玩家输入（NaN 水位会让下游所有判定静默失真，必须挡在入口）。
+- **高水位住在「推进世界的那一侧」，不在 `runCommand` 里**：`runCommand` 是纯函数（它因此**不持有**任何时钟，这正是能删掉 `CommandDeps.clock` 的原因）。推进与高水位由**驱动世界的那一侧**持有 —— 生产上是 `WorldRuntime`／宿主 `Authority`，测试上是 `createCommandHarness`。纯对象模式（`liveWorld: false`）每次调用深拷贝一个全新夹具，本就不存在跨调用的时间，需要跨调用观察时间的用例改用 `liveWorld: true`（该开关已存在）。
+
+### 2.3 `Clock` 端口：方向翻转（ADR-0031）
+
+`Clock` 端口**保留**，但语义从「**宿主注入**的依赖」翻转为「**引擎对外**暴露的读数」：
+
+```
+Clock { nowTick(): number }   // = 引擎高水位，不是毫秒，不是宿主时钟
+```
+
+宿主仍然负责**产生** tick（把墙钟翻译成 tick 是宿主的事），但只在构造 `Command` 时给它，不再注入。由此引擎不存在第二个「现在」。
+
+> ⚠️ 这条**覆盖了 `spec/01` §端口表里 `Clock` 行的「宿主实现」一列**（原写「单机：由宿主按固定步长推进」）与该手册自检清单里以 `TestClock` 为证据的那一条 —— 那两处已在本次一并更正。
+
+### 2.4 `Rng` 端口：状态可导出（ADR-0033）
+
+```
+Rng { next(): number; getState(): number }
+```
+
+`getState()` 是**强制**的：宿主不可提供一个不可序列化的 RNG，否则存档即失去确定性。mulberry32 的状态就是一个 uint32，导出成本近乎为零，恢复 O(1)。
+
+**被否的替代**：只存初始种子 + 快进 N 次 `next()` —— 恢复是 O(N)，N 随存档年龄无界增长。见 §1.5：`rngState` 进 v2。
+
+### 2.5 `seq` 与 `tick` 各管一段（O2 定案，#20）
+
+| | 定什么 | 不同序时 |
+|---|---|---|
+| `seq` | **投递顺序**：谁先被处理（ADR-0025 §1.2） | 由调用方分配，引擎**不重排、不校验** |
+| `tick` | **世界时间**：一切判定用的「现在」（§2.2） | 取高水位；倒退不改任何已发生的事实 |
+
+二者**独立，不互相校验**：一条 `seq` 更大的命令完全可以携带一个更小的 `tick`（重放、网络乱序、离线补发都会这样），引擎既不因为它重排，也不因为它失败 —— 那样只会把「乱序」变成「丢命令」。
+
+## 3. 游戏内时间 = tick 的纯函数（ADR-0032）
+
+### 3.1 明确定论：日历全内容化，引擎只做取模
+
+**时辰／刻／季节这些词一个都不能出现在引擎源码里** —— 不是因为它们是「武侠题材词」（它们其实只是中文历法），而是因为它们是**内容**：验收标准 2 要求换一套包之后连历法一起换，迷你包（近轨灯塔站）不能被追着问「现在是子时三刻」。
+
+因此：
+
+- 引擎只有 **`f(环, tick) → 段索引`** 这一个概念。段名、段数、每段多长、有哪些环，全在数据里。
+- **没有默认公历兜底**：包没给 `calendar`，用到时间时**大声失败**（与 `settings` 缺失同一条规则，见 §3.3）。
+- 换算数字（`TICKS_PER_HOUR`／`TICKS_PER_DAY`／`DAYS_PER_YEAR` 那一类）**一律不进引擎**（硬标准 1「零写死数量」），它们的家是内容。
+- **不需要 `TIME_FACTOR`** —— tick 频率本身就是缩放因子（Evennia 需要它是因为它绑真实时间）。
+
+### 3.2 形状：一组**独立**的环，不是一张扁平分段表
+
+一个 tick 同时落在**多条**刻度轴上（日内是「哪个时辰」，年内是「哪个季节」）。一张扁平分段表只能表达**一个**环 —— 后来想加季节就得改 schema + 改引擎，正是「面向未来：MVP 只控制系统数量，**不降低架构完备度**」要防的那种返工。（这一条是 2026-09-08 复核硬标准时补的**第 19 条**。）
+
+```
+content/config/calendar.json   →   schemas/config.calendar.schema.json
+{
+  "id": "calendar",
+  "rings": [
+    { "id": "day",  "segments": [ { "id": "zi",   "ticks": 2400 }, … ] },
+    { "id": "year", "segments": [ { "id": "chun", "ticks": …    }, … ] }
+  ]
+}
+```
+
+- **环周期 = `Σ segments[].ticks`** ⇒ **没有第二个数需要同步**：不让 `settings.time.ticksPerDay` 与环周期各说一遍，照 §2.2「不保留两个真相」同一条纪律。
+- **环之间互相独立**，各自取模；引擎不知道也不关心 `day` 与 `year` 之间是否成 360 倍关系 —— 那是数据的事。
+- 求值 O(段数)（段数很小，够了）；要 O(1) 时在加载期预算前缀和，那是 `derived` 的用法，不进存档。
+- ⚠️ **别抄 `extended_room` 的区间写法**：它的 `if start < end` 让跨年区间（winter `(1.0, 0.25)`）**永远匹配不上**，只是靠「遍历完返回最后一个键」侥幸正确。用**半开区间 + 显式排序数组**。
+- 房间描述与 NPC 在场判定做成 `(nowTick) => descKey` 的纯选择函数。
 
 依据：ADR-0025 §四
 
-## 4. 调度六原语（可砍到四）
+### 3.3 通道：与 `dimensions` 同构（ADR-0032）
 
-| 原语 | 覆盖的需求 |
-|---|---|
-| **Clock**（唯一 tick 计数器） | 取代一切墙钟 |
-| **纯 stage 求值** `f(startTick, nowTick, stages)` | 门 N tick 后重锁、作物 4 阶段、技能还有多久好 |
-| **观察时补偿结算** | 毒每 3 tick 跳 5 次 |
-| **到期桶** `Map<dueTick, cb[]>` | 延迟爆炸等一次性事件 |
-| **区域 tick**（`tick % interval === phase` 分组订阅） | 天气、区域驻守刷新等**必须主动推送**的 |
-| **on-change 钩子** | 字段变更触发，与 tick 完全解耦 |
+配置三分法（ADR-0025 §三，见 `08-non-goals.md` C4）：**STRUCTURE 不进 `settings`**。日历的段名／段数属装配图（STRUCTURE），速率类数字属调参（TUNING），因此**拆两处**：
 
-### 4.1 ★「观察时补偿结算」—— 把定时器降级为纯函数
+| 文件 | 承载 | 三分法归类 |
+|---|---|---|
+| `content/config/calendar.json`（新） | 环、段名、每段 tick 数 | **STRUCTURE** |
+| `content/config/settings.json` 的 `time` 组 | 回复速率、buff 时长、冷却默认（键名一律带 tick 单位） | **TUNING** |
+
+- 走与 `dimensions` **同一条通道**：`createContentRegistry(content, { dimensions?, settings?, calendar? })`，由宿主装载器读 `config/` 后传入。引擎**不读文件**（照 `tests/fixtures/mini-content-pack.ts` 里 `readDimensions` 的先例）。
+- 注册表**校验跨字段一致性**（如「环周期 > 0」「段 id 在环内唯一」）——那是 schema 管不了的那类约束，与今天的引用完整性同一层。
+- **缺 `settings.time` 或 `calendar` 时，由引擎侧在首次使用时间时大声失败**，不是注册表加载期：注册表不该知道引擎需要哪些参数（与它今天不知道引擎用不用 `byTag` 同一分寸）。
+- **新增 schema 需走 ADR-0003 的三处同步**：`core` 类型／编辑器表单（`apps/editor` 今日仍是占位）／`docs/agents/content.md` 字段说明。
+
+## 4. 调度（ADR-0032／0034）
+
+### 4.1 推进：`settleTo`
+
+`spec/04` §4 原列**六个**原语（ADR-0025 §三明说「可砍到四」）。M4 落**四个**，另两个留给它们的消费者：
+
+| 原语 | M4 | 复杂度 | 为什么 |
+|---|---|---|---|
+| **Clock**（高水位，§2.3） | ✅ | O(1) | 所有判定的输入 |
+| **纯 stage 求值** `f(startTick, nowTick, stages)` | ✅ | O(1) | 无注册、无状态、无回调 |
+| **观察时补偿结算** | ✅ | O(1) | `pulses` 公式；绝大多数 per-object timer 需求被它取代 |
+| **到期桶** `Map<dueTick, 载荷[]>` | ✅ | O(到期项数) | 延迟爆炸这类一次性效果 |
+| 区域 tick（`tick % interval === phase`） | ❌ | **O(跨度 / interval)** | 唯一一个 O(tick 数) 的原语，且今天无订阅者（天气／刷新的事） |
+| on-change 钩子 | ❌ | — | 属于**状态层**不是调度层，与 tick 解耦，随第一个需要它的系统走 |
+
+**接缝要写进本节**（避免将来被当成「忘了做」而悄悄侵蚀）：区域 tick 的插入点是「一条结算跨度内的分组订阅」，on-change 的插入点是「状态树写入钩子」，两者都**不需要改 `settleTo` 自身**。
+
+#### ★ 只有「进入执行段」的命令才推进世界 —— 否则时间可被刷
+
+推进发生在命令处理前，于是有个必须回答的问题：**一条 `invalid`（无法解析）的输入，推进世界吗？**
+
+它**不消耗 seq**（ADR-0025 §1.2：格式错误／无法解析，seq 未消耗）。如果它也推进世界，玩家**发一堆乱码就能快进世界** —— 到期桶提前触发、离线补算的跨度凭空变长、冷却白白流逝。**时间与 seq 必须同律：**
+
+| 结果 | 推进世界？ | 抬高 `maxTick`？ |
+|---|---|---|
+| `ok` | ✅ | ✅ |
+| `rejected`（引擎合法拒绝，事件已发出） | ✅ | ✅ |
+| `invalid`（没解析成命令，它连命令都算不上） | ❌ | ❌ |
+| `transport` | —— 根本没到引擎，不存在这个问题 | —— |
+
+⚠️ 连带一条不可漏：`invalid` 的 `tick` **也不参与高水位** —— 否则一条乱码先把 `maxTick` 抬到 1000，下一条 tick=500 的真实命令一进来世界就跨了 500，等于**间接推进**，上面那张表就白定了。
+
+### 4.2 同一件事的三种跨度：在线心跳／离线结算／到期桶
 
 ```
 pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 ```
 
-不需要注册、不需要存储、不需要回调，只在被观察时一次性补齐欠的跳数并写回 `applied`。
+**观察时补偿结算**不需要注册、不需要存储、不需要回调，只在被观察时一次性补齐欠的跳数并写回 `applied`。（`maxPulses` 是**语义**上限——毒最多跳 5 次，内容可配；它不是性能护栏，别混淆。）
 
-这一条取代了绝大多数 per-object timer 需求（如 DoT）。
+> ⚠️ **这条覆盖了 ADR-0016 §4「双时钟（心跳 tick／离线结算）……不共用代码路径」**（ADR-0032）：**双时钟降级为同一个推进函数的两个调用跨度**，而不是两套代码。在线心跳 = 跨度 1；离线结算 = 跨度很大（「进入游戏时一次性 O(1) 补算」）；到期桶 = 跨度内的到期项。**ADR-0016 §4 的另一半仍然有效**：离线补算**只补资源与基础熟练度**（有上限），**不自动战斗、不推层、不产掉落**。
 
-### 4.2 冷却
+### 4.3 ★ 两层推进：世界层 vs 实体层（ADR-0034）
 
-`key → 到期 tick` 的只读表。**存 tick 而非时间戳**，判定是 `nowTick >= dueTick` 的比较，不是定时器回调。天然确定性，成本几乎为零。
+这是「离线结算能否存在」的关键。**如果所有实体都跟着每条命令一起推进，`lastSeenTick` 会被刷成 `nowTick`，离线补算的跨度永远是 0 —— 离线结算等于没做。**
 
-### 4.3 明确不需要
+| 层 | 推进时机 | 用谁的 tick | 装什么 |
+|---|---|---|---|
+| **世界层** | 每条**进入执行段的**命令（`ok`／`rejected`）处理前都补到高水位 | 全局（推进后 = `nowTick`，故只需存 `nowTick`） | 到期桶、一次性世界事件 |
+| **实体层** | **只推进这条命令的 actor** | 实体自己的 `lastSeenTick` | 补偿结算、离线补算 |
+
+⚠️ **为什么是 actor 而不是「所有在场者」**：在场 ≠ 在线。离线玩家的实体仍然在树里、仍然「在同房间」，若把在场者一起推进，**甲的活动就会消耗乙的离线补算额度**，乙的离线结算就不再发生在「他自己回来」的那一次 —— 玩家会发现自己「什么都没干，回来时补的却变少了」。actor-only 是唯一没有歧义的解释。
+
+这正是 ADR-0022 §5「时间推进**按需求值**」的字面实现：没被「需求」的实体不推进。场景核对：甲 tick 0 下线、乙 tick 100 下线，都在 1000 回来 —— 甲先回：世界层 0→1000 跑完到期桶，实体层结算甲 0→1000；乙后回：世界层无需再跑，只结算乙 100→1000。
+
+接缝：将来若有票需要「被动参与者（如被攻击者）也推进」，那是那张票的独立决策，插入点是这里；**今天不做**。
+
+**M4 只落机制与接缝，不落真消费者**：状态树今天**没有任何可补的数值槽**（只有 `id`／`locationId`／`flags`／`tags`），而「补气血／内力／基础熟练度」要的槽属于效果系统那一族 —— 现在为它开 `attrs` 槽，等于提前承诺一个**还没设计**的形状（这正是 §4.1 拒掉「为到期桶提前建具名 effect 表」的同一个理由）。所以 M4 落的是**补偿结算这个原语 + 一个注册位**，由**合成消费者**驱动测试 —— 照 `entity-seams.test.ts`（全合成驱动、不依赖物品系统）与 `derived` 表今日为空这两个既有先例。
+
+- **`lastSeenTick` 由引擎在结算完该实体后写入**，宿主不碰（否则「上次在线」会被宿主的时钟实现污染）。
+- **结算事件的时间戳必须写 `dueTick`**（它本该发生的时刻），**不能写「被补跑时的 tick」**。写后者的话，事件顺序会依赖谁先上线，重放就不再确定 —— 正是 ADR-0024 §2 确定性清单要封死的。
+
+### 4.4 大跨度：靠构造性保证，不加数值上限
+
+砍掉区域 tick 之后，留下的原语**没有一个是 O(tick 数)**（补偿结算 O(1)、stage 求值 O(1)、到期桶 O(到期项数)），因此：
+
+- **不加 `settings.time.maxCatchUpTicks`**。截断会让世界状态依赖玩家多久上线一次，违反「世界不因观察而不同」；而且那是个**写死的护栏数字**，会改变游戏语义（跟 `caps.maxConcurrent*` 那种不改变语义的技术护栏不是一类）。
+- 替代：**构造性保证 + 一条测试钉死**（推进 100 万 tick，断言迭代次数／耗时上界）。写法照本仓既有口味（「出口不可继承是构造性的」、「不可混淆是构造性保证」）。
+
+### 4.5 到期桶的载荷
+
+约束：到期桶是唯一**不能**降级为纯函数的原语（爆炸是副作用，降不了），于是它必须能进存档 —— 否则读档后延迟爆炸凭空消失。而闭包不可序列化。
+
+- 载荷 = **`{ dueTick, payload }`**，`payload` 是 opaque，**引擎不解释**，推进时按 `dueTick` 升序交给**宿主注入的处理器**。⚠️ 那个处理器需要一个 `CommandDeps` 字段才能进引擎 —— 见 §6 O8。这与 §4.1 的「接缝先行」一致，也与拒绝为它提前建具名 effect 表同一个理由（那张表是分支内容那族的问题，今天不存在）。
+- `payload` 进存档。引擎只保证**按 `dueTick` 升序、稳定序**触发。
+- 「opaque 数据往返存档」在本仓有先例：`Snapshot<T = unknown>`（`types.ts`）。运行时产生的数据本就不进 `content/`，不由 `content:check` 校验 —— 这是它与内容数据的分工，不是漏检。
+
+### 4.6 冷却
+
+冷却是 `key → 到期 tick` 的**只读表**。判定是 `nowTick >= dueTick` 的 tick 比较，不是定时器回调，天然确定性，成本几乎为零。
+
+- **存哪**：状态树新槽 `cooldowns: Record<string, number>`（我的技能冷却不等于别人的），**进存档、缺即空**（照 §1.4 规则）。
+- 为什么 M4 就落它：**长冷却必须跨存档存活**（「门 N tick 后重锁」），不进存档会直接坏掉。
+- ⚠️ 它是 M4 里**第二个没有真消费者的状态槽**（第一个是 `derived` 表）。形状被本节钉死、不会错，接受这个代价。
+
+### 4.7 明确不需要
 
 Script 实体、per-object timer、线程、async/await、任何墙钟。
 
@@ -102,13 +289,44 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 
 ## 5. 自检清单
 
-- [ ] 状态是 **typed 对象**，没有 attribute handler / 字符串 key 查找层
-- [x] 迁移链可用；`derived` 字段**不进快照**、加载后重算（M2-T5：`state/derived.ts` 一张表同时驱动「快照类型」（`Omit`）与「序列化排除」，恢复时逐实体 `recompute`；表今日为空，首个消费者是修饰符系统）
-- [ ] 引擎里搜不到 `Date.now` / `setTimeout`
-- [ ] `Clock` 是 **tick 计数**不是毫秒
-- [ ] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储
+- [x] 状态是 **typed 对象**，没有 attribute handler / 字符串 key 查找层（M2-T1 `state/tree.ts`）
+- [x] 迁移链可用；`derived` 字段**不进快照**、加载后重算（M2-T5；表今日为空，首个消费者是修饰符系统）
+- [x] 引擎里搜不到 `Date.now` / `setTimeout`（`tests/engine-purity.test.ts` 机械验证）
+- [x] `Clock` 是 **tick 计数**不是毫秒 —— ⚠️ 语义已翻转：它是**引擎高水位读数**，不再是宿主注入的时钟（ADR-0031）
+- [x] `Command` 自带 `tick`；引擎维护高水位；`CommandDeps.clock` 已删除（ADR-0031，#20：`src/clock.ts` 的 `TickClock`／`observeDispatch`，`deps.nowTick`）
+- [ ] `Rng.getState()` 存在且强制；种子/状态进 v2 存档（ADR-0033）
+- [ ] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储；**日历在内容里**（ADR-0032）
+- [ ] 日历是**一组独立的环**，不是一张扁平分段表（第 19 条）
+- [ ] `settings` / `calendar` 走与 `dimensions` 同构的通道；缺失时**引擎侧大声失败**，无默认公历兜底
+- [ ] 时间参数零写死：`TICKS_PER_*` 一类换算数字不在引擎源码里（硬标准 1）
 - [ ] 时间区间用**半开区间 + 显式排序数组**（不是 `if start < end`）
-- [ ] 冷却存**到期 tick** 不存时间戳
+- [ ] 冷却存**到期 tick** 不存时间戳；`cooldowns` 槽进存档
 - [ ] DoT 类机制用**观察时补偿结算**，不是定时器
-- [ ] 无任何 per-object timer
-- [ ] 离线结算**只补资源与基础熟练度**，不自动战斗、不推层
+- [ ] 无任何 per-object timer（六原语里的区域 tick / on-change 在 M4 不落，接缝已写在 §4.1）
+- [ ] 离线结算与在线心跳走**同一个推进函数**（只差跨度），不是两套代码（ADR-0032 覆盖 ADR-0016 §4）
+- [ ] 离线补算**只补资源与基础熟练度**，不自动战斗、不推层、不产掉落（ADR-0016 §4 未被覆盖的那一半）
+- [ ] 推进复杂度是 O(事件数) 不是 O(tick 数)，由测试钉死（无 `maxCatchUpTicks`）
+- [ ] 世界层与实体层**分层推进**，实体用自身 `lastSeenTick`（ADR-0034）
+- [ ] 结算事件的时间戳写 **`dueTick`**，不写补跑时刻
+- [ ] `settleTo` 产生的事件与触发它的命令**同 seq，且排在命令自身事件之前**
+- [ ] v2 迁移存在且为迁移链首条真实迁移；**无 v2 → v3 连迁**
+- [ ] 宿主心跳（无命令的推进）由调用方**显式给 seq**，与命令 seq 同一单调空间；不伪造 `actorId: ""` 的系统命令
+- [x] **`invalid` 不推进世界、其 tick 不抬高 `maxTick`**（`ok`／`rejected` 才推进）；有一条测试钉死「刷无效输入不加速世界」（#20，`tests/tick.test.ts`）
+- [ ] `addEntity` 为 `lastSeenTick`（= 当前 tick）与 `cooldowns`（= `{}`）种子，照 `tags` 的先例
+- [ ] `serializeWorld` 的规范序覆盖新槽（`nowTick`／`rngState` 为标量；`cooldowns` 的键排序）
+
+## 6. 开放问题
+
+> ⚠️ **O8 与 O9 会阻塞实现**，拆票时必须落到具体某张票上（O9 → 存档 v2 那张；O8 → 跑 `settleTo` 的那张），否则开工即卡。其余 O1–O7 在票内明确即可。
+
+| # | 问题 | 现状与倾向 |
+|---|---|---|
+| O1 | **`GameEvent` 要不要带 `tick`** | §4.3 要求结算事件写 `dueTick`，但 `spec/01` §5 的事件形状里没有 tick 字段。倾向**加**，且所有事件都带（不只是结算事件）—— 渲染「三天前发生的事」需要它 |
+| ~~O2~~ | ~~**`seq` 与 `tick` 不同序时谁定顺序**~~ | **✅ 已定案（#20）**：**seq 定投递顺序、tick 定世界时间**，二者独立、不互相校验。见 §2.5 |
+| O3 | **`settings.time` 缺**组内某个键**（如 `regenPerTick`）怎么算 | 该组是开放参数组、`required` 为空，而 §3.3 只定了「缺 `time` 组 → 大声失败」。倾向：缺**组**失败，缺**键**由消费该键的系统自己大声失败（引擎不替它猜默认值） |
+| O4 | **到期桶的项没有锚点** | `Map<dueTick, payload[]>` 是全局的，"这个房间的炸弹"只能靠宿主把 `roomId` 塞进 opaque payload。可接受，但要写明：**引擎不提供按房间/区域索引到期项的能力**（避免将来误以为有） |
+| O5 | **`tickSeconds` 归谁** | ADR-0016 §4 提到「固定步长（`content/config/`：`tickSeconds`）」。它是**真实秒**，属于宿主把墙钟翻译成 tick 的参数，**引擎不读** ⇒ 不应进 `content/config/settings.json`（那是给引擎的 TUNING）。⚠️ 连带一条：若确认只有宿主用它，那它连 `content/config/` 都不该待 —— `content/` 是引擎读的东西，放进去会让人误以为引擎消费它。落点由宿主票定 |
+| O6 | **要不要时间谓词**（如"只在夜里能进"） | `spec/02` §5.3 谓词表里今天**零**时间相关谓词（全文 `tick` 零命中）。倾向：M4 **不**加，等第一个内容真的需要时按既有三处同步流程加（引擎／`condition.schema.json`／spec/02 §5.3） |
+| O7 | **创建 `calendar.json` 那张票的文档同步债** | 文件落地时要一并改：`docs/agents/content.md` 的 config 清单（现写「dimensions、display-tiers、settings」三类）、`docs/spec/06` §2 的「config **三类**与 condition 除外」、schema 总数口径（19 → 20，`HANDBOOK` 三处数字）。按 ADR-0003 三处同步（`core` 类型／编辑器表单／`content.md`）执行 —— **本轮故意没提前改**，数字不能先于文件撒谎 |
+| O8 | **★引擎侧要用到 calendar／到期桶处理器时，走什么通道** | `runCommand(spec, command, deps)` 的 `CommandDeps` 里**没有 registry**（今天只有 `rng`/`world`/`sink`/`verbs`/`subjectOf`/`predicates`）。今天不构成问题（段名是渲染层的事，M4 也不加时间谓词，见 O6）；但 `settleTo` 一旦要跑到期桶，就**必须**拿到宿主注入的处理器 ⇒ 得新增一个 `CommandDeps` 字段。通道照 `subjectOf` 的先例**由宿主注入**，不是让 `runCommand` 直接读 registry —— 后者会破坏「引擎只读 `ContentRegistry`、且 deps 显式」这条既有形状 |
+| O9 | **★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`** | 这是**会卡住实现**的一条，三选项与倾向见 §1.5 约定 3（倾向 `serializeWorld(world, meta)` ／ `restoreWorld → { state, meta }`）。**拆票时必须落到具体某张票上**，否则 T6 开工即阻塞 |

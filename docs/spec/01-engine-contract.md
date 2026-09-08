@@ -9,7 +9,7 @@
 
 | 端口 | 契约 | 宿主实现 |
 |---|---|---|
-| `Clock` | `nowTick(): number` — **引擎 tick 计数**，不是毫秒 | 单机：由宿主按固定步长推进；将来服务端：权威 tick |
+| `Clock` | `nowTick(): number` — **引擎 tick 计数**，不是毫秒。⚠️ **语义已于 2026-09-08 翻转（ADR-0031）**：它是**引擎对外暴露的高水位读数**，不再是宿主注入的依赖 | 宿主不再实现它；宿主只负责**产生** tick，并放进每条 `Command`（见 §2） |
 | `Rng` | `next(): number` — **种子化**，种子进存档 | 确定性 PRNG（如 mulberry32 / xorshift） |
 | `SaveStore` | `load(): Promise<Snapshot \| null>`、`save(s): Promise<void>` | Web：`localStorage`；小程序：`wx.setStorage`；将来：云端 |
 | `Authority` | 见 §3 | `LocalAuthority`（现在）／`RemoteAuthority`（将来） |
@@ -17,7 +17,8 @@
 ⚠️ **引擎内禁止出现**：`Date.now()`、`new Date()`、`Math.random()`、`setTimeout`、`setInterval`、`performance.*`。
 **由 `engine-purity` 测试强制**（已实现，覆盖 `packages/core/src/`）。
 
-A-1. **Tick 不是毫秒**。ADR-0016 定的「双时钟」里，心跳是固定步长的 tick；离线结算是一次性 O(1) 补算。两者语义隔离，不共用代码路径。
+A-1. **Tick 不是毫秒**。ADR-0016 定的「双时钟」里，心跳是固定步长的 tick；离线结算是一次性 O(1) 补算。
+⚠️ **「不共用代码路径」已被 ADR-0032 覆盖**：两者收敛为**同一个推进函数的两个跨度**（离线结算 = 跨度很大的那次调用）。被保留下来的是**语义**隔离，不是代码隔离 —— 离线只补资源与基础熟练度，不自动战斗、不推层、不产掉落。
 
 ## 2. 命令契约（Command）
 
@@ -25,6 +26,7 @@ A-1. **Tick 不是毫秒**。ADR-0016 定的「双时钟」里，心跳是固定
 interface Command {
   seq: number;          // 单调递增，由客户端分配
   actorId: string;      // ★ 显式携带，不依赖「当前角色」
+  tick: number;         // ★ 这条命令发生在第几 tick（ADR-0031）；引擎取所有命令 tick 的高水位作为「现在」
   raw: string;          // 玩家原始输入
 }
 ```
@@ -144,7 +146,7 @@ schemas/                内容 JSON Schema
 - [x] `dispatch` 的返回区分 `rejected` / `invalid` / `transport`（M1-T1；M2-T1 补执行段拒绝通道 `CommandRejection`——func 期拒绝同样消耗 seq）
 - [x] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围（类型契约已定义：`GameListener`/`EventMeta`；驱动它的 Authority 实归宿主票）
 - [x] `packages/core/tests` 可独立运行，不依赖 `apps/`
-- [x] `Clock` 是 **tick 计数**而非毫秒（`TestClock` 可控推进）
+- [x] `Clock` 是 **tick 计数**而非毫秒 —— ⚠️ 语义已翻转（ADR-0031）：它是**引擎高水位读数**，不再是宿主注入的时钟；`TestClock.advance()` 相应地改为「改下一条命令的默认 tick」
 - [ ] 效果／条件／事件／状态／命令／时间 **六条契约**已定义为类型与接口——条件（`conditions.ts`）、事件（`GameEvent`）、命令（`CommandSpec` + cmdset）、状态（`state/tree.ts` 种子，M2-T1）已定义；效果与调度原语随各自里程碑
 - [ ] 机制模块之间**不互相 import**，只通过契约交互（尚无机制模块，随第一个机制票验证）
 - [x] **没有**插件加载器 / 动态模块注册（见 `08-non-goals.md` A7、ADR-0027：扩展靠契约）

@@ -1,6 +1,8 @@
 import type { Command, CommandResult, GameEvent } from "../types.js";
 import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
+import { createTickClock, observeDispatch } from "../clock.js";
+import type { TickClock } from "../clock.js";
 import { runCommand } from "./pipeline.js";
 import type { CommandSpec, Message } from "./pipeline.js";
 import { createVerbTable } from "./parser.js";
@@ -13,24 +15,40 @@ import type { CmdSetSource } from "./cmdset.js";
  * stages and returns the recorded output, so every command gets at least one
  * `call()` case asserting its output sequence.
  *
- * The five injected dependencies: clock (tick counter), output sink
- * (collector), world fixture (deep-copied per call), RNG seed — the one
- * Evennia never had, its dice rolls are unseeded — and an explicit receiver
- * list.
+ * The injected dependencies: the tick clock (the engine's high-water mark,
+ * which the harness owns between calls), output sink (collector), world
+ * fixture (deep-copied per call), RNG seed — the one Evennia never had, its
+ * dice rolls are unseeded — and an explicit receiver list.
  */
 
-/** A clock the test controls: fixed until advanced. */
-export interface TestClock {
-  nowTick(): number;
+/**
+ * A tick clock the test controls. It stands in for the host that *produces*
+ * ticks plus the high-water mark the engine reads back (ADR-0031).
+ *
+ * ⚠️ `advance()` no longer means "advance the engine's now". The engine's now
+ * IS the commands: `advance()` moves the tick the NEXT command will carry.
+ */
+export interface TestClock extends TickClock {
+  /** The tick the next command will carry unless the call overrides it. */
+  nextTick(): number;
+  /** Moves that default tick forward (or back) by `ticks`. */
   advance(ticks: number): void;
 }
 
 export function createTestClock(startTick = 0): TestClock {
-  let tick = startTick;
+  const clock = createTickClock(startTick);
+  let pending = startTick;
   return {
-    nowTick: () => tick,
+    nowTick: () => clock.nowTick(),
+    observe(tick) {
+      // Later default calls continue from the high-water mark, so an
+      // explicitly backwards tick does not drag the following ones back.
+      pending = clock.observe(tick);
+      return pending;
+    },
+    nextTick: () => pending,
     advance(ticks) {
-      tick += ticks;
+      pending += ticks;
     },
   };
 }
@@ -53,7 +71,10 @@ export interface HarnessOptions<W> {
   receivers: string[];
   /** RNG seed. Fixed default so every harness is reproducible. */
   seed?: number;
-  /** Starting engine tick. */
+  /**
+   * Starting engine tick: the initial high-water mark and the tick the first
+   * command carries (spec/04 §2.2). The harness owns it from then on.
+   */
   nowTick?: number;
   /**
    * Verb entries for the engine's parse stage: specs declaring `argForm`
@@ -88,6 +109,11 @@ export interface CallOptions {
   seq?: number;
   /** Defaults to "actor-1". */
   actorId?: string;
+  /**
+   * The engine tick this command happens at (ADR-0031). Defaults to the
+   * harness's next tick — move it with `harness.clock.advance()`.
+   */
+  tick?: number;
   /** Queued player inputs for interactive flows (ADR-0023 §1d). */
   inputs?: string[];
 }
@@ -104,6 +130,8 @@ export interface CommandHarness<W> {
 }
 
 export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarness<W> {
+  // The high-water mark lives on the side that drives the world — here, the
+  // harness (spec/04 §2.2). runCommand stays a pure function of its inputs.
   const clock = createTestClock(options.nowTick ?? 0);
   const receiverSet = new Set(options.receivers);
   // One RNG stream per harness: a session replays as a command sequence, so
@@ -127,6 +155,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
       const command: Command = {
         seq: callOptions.seq ?? nextSeq++,
         actorId: callOptions.actorId ?? "actor-1",
+        tick: callOptions.tick ?? clock.nextTick(),
         raw: input,
       };
       const messages: Message[] = [];
@@ -138,7 +167,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         },
       };
       const result = runCommand(spec, command, {
-        clock,
+        nowTick: clock.nowTick(),
         rng,
         world: options.liveWorld ? options.world : structuredClone(options.world),
         sink,
@@ -147,6 +176,9 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         subjectOf: options.subjectOf,
         predicates: options.predicates,
       });
+      // Only a command that reached the execution stage moves the world
+      // (spec/04 §4.1): an invalid input must not fast-forward it.
+      observeDispatch(clock, command, result);
       return { result, messages };
     },
   };

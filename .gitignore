@@ -16,3 +16,6 @@ docs/research/ui-mockups/archive/
 .git-commit-msg.txt
 .issue-close-comment.json
 .deps-check.json
+
+# 设计访谈的临时工作稿（定案后由 /to-tickets 消费，票拆完即删）
+.scratch/

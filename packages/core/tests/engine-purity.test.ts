@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
  * separated from the content layer and from the host platform.
  * - No theme vocabulary may appear anywhere in core source; theme belongs in
  *   content files and host UI copy.
- * - No platform API may be referenced; hosts provide Clock/SaveStore/Rng.
+ * - No platform API may be referenced; hosts provide Rng/SaveStore/Authority.
+ *   Ticks they *produce* and stamp onto each command — `Clock` is the engine's
+ *   high-water reading back to them, not a host implementation (ADR-0031).
  * The scanner lives in the test suite (not src/) because the pattern tables
  * themselves contain the vocabulary being banned.
  */

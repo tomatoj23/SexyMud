@@ -2,11 +2,15 @@
  * Public surface of the engine.
  *
  * This package is a library: it holds no theme vocabulary and imports no
- * content. Hosts supply Clock / Rng / SaveStore / Authority implementations and
- * render GameEvents themselves. See docs/spec/00-overview.md.
+ * content. Hosts supply Rng / SaveStore / Authority implementations and render
+ * GameEvents themselves; ticks they *produce* and stamp onto each command —
+ * `Clock` is the engine's high-water reading back to them (ADR-0031). See
+ * docs/spec/00-overview.md.
  */
 export { SAVE_VERSION, migrateSnapshot } from "./save/migrations.js";
 export { createSeededRng } from "./rng.js";
+export { createTickClock, observeDispatch } from "./clock.js";
+export type { TickClock } from "./clock.js";
 export {
   checkAccess,
   createPredicateRegistry,

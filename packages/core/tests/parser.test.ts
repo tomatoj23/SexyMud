@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import { runCommand } from "../src/command/pipeline.js";
-import { createCommandHarness, createTestClock } from "../src/command/testing.js";
+import { createCommandHarness } from "../src/command/testing.js";
 import { createSeededRng } from "../src/rng.js";
 import { createVerbTable, parseArgForm } from "../src/command/parser.js";
 
@@ -239,7 +239,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
   const world: TestWorld = { room: "room-1" };
 
   function deps(verbs?: ReturnType<typeof createVerbTable>) {
-    return { clock: createTestClock(), rng: createSeededRng(1), world, sink: noopSink, verbs };
+    return { nowTick: 0, rng: createSeededRng(1), world, sink: noopSink, verbs };
   }
 
   it("cuts the verb inside the pipeline and parses the arg per the spec's argForm", () => {
@@ -257,7 +257,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
       { verb: "杀", commandKey: "cmd-kill" },
     ]);
 
-    const result = runCommand(spec, { seq: 1, actorId: "actor-1", raw: "打第二个强盗" }, deps(table));
+    const result = runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "打第二个强盗" }, deps(table));
 
     expect(result).toMatchObject({ ok: true, seq: 1 });
     expect(seen).toEqual([{ noun: "强盗", ordinal: 2 }]);
@@ -274,7 +274,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
       { verb: "笑傲江湖", commandKey: "cmd-swordplay" },
     ]);
 
-    const result = runCommand(spec, { seq: 1, actorId: "actor-1", raw: "笑傲江湖" }, deps(table));
+    const result = runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "笑傲江湖" }, deps(table));
 
     // 笑傲江湖 is the longest match and belongs to another command: running
     // cmd-laugh with this input is a dispatch error, reported as invalid.
@@ -285,13 +285,13 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
     const spec: CommandSpec<TestWorld> = { key: "cmd-attack", argForm: "none", func: () => {} };
     const table = createVerbTable([{ verb: "打", commandKey: "cmd-attack" }]);
 
-    expect(runCommand(spec, { seq: 1, actorId: "actor-1", raw: "睡觉" }, deps(table))).toEqual({
+    expect(runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "睡觉" }, deps(table))).toEqual({
       ok: false,
       seq: 1,
       kind: "invalid",
       reason: "unknownVerb",
     });
-    expect(runCommand(spec, { seq: 2, actorId: "actor-1", raw: "  " }, deps(table))).toEqual({
+    expect(runCommand(spec, { seq: 2, actorId: "actor-1", tick: 0, raw: "  " }, deps(table))).toEqual({
       ok: false,
       seq: 2,
       kind: "invalid",
@@ -302,7 +302,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
   it("rejects an argForm spec when no verb table was wired: programmer error, thrown loudly", () => {
     const spec: CommandSpec<TestWorld> = { key: "cmd-attack", argForm: "none", func: () => {} };
 
-    expect(() => runCommand(spec, { seq: 1, actorId: "actor-1", raw: "打" }, deps())).toThrow(
+    expect(() => runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "打" }, deps())).toThrow(
       /cmd-attack.*argForm.*verb table/,
     );
   });
@@ -317,7 +317,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
     };
     const table = createVerbTable([{ verb: "打", commandKey: "cmd-attack" }]);
 
-    const result = runCommand(spec, { seq: 1, actorId: "actor-1", raw: "打 强盗" }, deps(table));
+    const result = runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "打 强盗" }, deps(table));
 
     expect(result).toMatchObject({ ok: true });
     // The hook receives the FULL raw input — its contract since M1-T1.
@@ -328,7 +328,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
     const seen: unknown[] = [];
     const spec: CommandSpec<TestWorld> = { key: "cmd-legacy", func: (ctx) => void seen.push(ctx.args) };
 
-    const result = runCommand(spec, { seq: 1, actorId: "actor-1", raw: "原样参数" }, deps());
+    const result = runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "原样参数" }, deps());
 
     expect(result).toMatchObject({ ok: true });
     expect(seen).toEqual(["原样参数"]);

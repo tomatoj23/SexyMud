@@ -10,11 +10,17 @@
  */
 
 /**
- * Monotonic engine tick counter.
+ * The engine's reading of "now": the high-water mark of command ticks.
  *
- * NOT milliseconds, and never derived from a wall clock. The engine advances
- * by ticks; anything time-based is computed from this counter so the same
- * command sequence always produces the same result (ADR-0017).
+ * NOT milliseconds, and never derived from a wall clock. Anything time-based
+ * is computed from this counter so the same command sequence always produces
+ * the same result (ADR-0017).
+ *
+ * ⚠️ The direction matters (ADR-0031): a host does NOT implement this to model
+ * time. Translating wall time into a tick is the host's job and it happens
+ * once — when the {@link Command} is built, which carries its own `tick`. This
+ * port is the engine's *reading*: the maximum tick it has admitted, exposed
+ * back to commands. There is no second "now" to disagree with.
  */
 export interface Clock {
   nowTick(): number;
@@ -44,6 +50,12 @@ export interface Command {
    * signature (ADR-0025 §1.1).
    */
   actorId: string;
+  /**
+   * The engine tick this command happened at. Same law as `actorId`: context
+   * is carried by the command, not inferred from the environment. The engine
+   * keeps the high-water mark of these ticks and calls it "now" (ADR-0031).
+   */
+  tick: number;
   /** Raw player input, before parsing. */
   raw: string;
 }
