@@ -22,7 +22,7 @@
 | `AGENTS.md` | agent 环境、技能、管线入口 | ✅ |
 | `docs/agents/domain.md` | 工程技能如何消费本仓库文档（含 monorepo 路径规范） | ✅ |
 | `docs/agents/issue-tracker.md` | Issues 走 GitHub（`gh` CLI） | ✅ |
-| `schemas/` | JSON Schema（**19 个**；`config` 拆 3 类：dimensions / display-tiers / settings；两个**被引用库**：`condition`（条件表达式）、`common`（条目通用字段 tags／flags／prototypeKey／prototypeParent，14 个条目集合统一 `$ref`）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 **12 个**无内容映射（= 2 个被引用库 + 10 个尚无内容的放置期集合）；放置期集合 schema 共 **11 个**（那 10 个 + `monster.schema.json`，它已进编译但重估未做） |
+| `schemas/` | JSON Schema **19 个**：`config` 拆 3 类：dimensions / display-tiers / settings；两个**被引用库**：`condition`（条件表达式）、`common`（条目通用字段 tags／flags／prototypeKey／prototypeParent，14 个条目集合统一 `$ref`）；`content/` 现有 **15 个 JSON**（3 config + 4 commands + 4 rooms + 3 npcs + 1 monster），均通过校验 | 🚧 **12 个**无内容映射（= 2 个被引用库 + 10 个尚无内容的放置期集合）；放置期集合 **11 个**（那 10 个 + `monster.schema.json`，它已进编译但重估未做） |
 | `docs/research/xkx100-*.md` | **一手调研**：房间/NPC/物品/任务结构、武功体系、**战斗文本模板与 50 档造诣完整列表** | 参考（高价值） |
 
 **冲突处置顺序**：**`docs/spec/`（活规格，最高）** > `CONTEXT.md`（术语）／ `content.md`（内容管线）> `docs/adr/`（决策历史）> `content/style-guide.md`（文风）> `docs/engine-reservations.md`（**参考**：设计清单，不是定案）。
@@ -93,10 +93,10 @@
 | **不做插件系统** | 现在不做（YAGNI，边界未验证）。扩展靠契约。待第二套内容包出现时，把已实现的机制**抽**成模块——**先做对，再拆开** | ADR-0027 |
 | **标签模型** | **维度 + 键，不带值**：形状唯一 `{<维度>: [键…]}`，取值由维度表封闭；**两侧都住**（内容条目 → 注册表倒排索引 `byTag`**〔M3-T2 已落〕**，运行时实体 → 状态树 `tags` 槽**〔M3-T5 已落：`hasTag(维度, 键)` = 自身 ∪ `tagsOf(id)`，`has_tag` 实参为 `[维度, 键]` 二元组〕**）；与**标记位**并存互不取代；维度表随内容包走，**传了才校验、没传跳过**；四个集合与出口的 id **同属一个唯一性空间**（跨集合重名加载期大声失败——否则 `byTag` 会把两个实体静默并成一行） | ADR-0029 |
 | **原型继承** | **加载期展平、注册表内、同集合**，顺序 `id 去重 → 展平 → 引用完整性校验`；`prototypeKey` = 条目 id，展平剥掉 `prototypeParent`；环检测双保险。**〔M3-T3 已落〕** `content/prototype.ts` 的 `flattenCollection`：`tags`/`attrs` 互补合并（字典序 + 去重）、其余整体替换、多亲左→右自身最后；无 `prototypeParent` 的条目原样穿过；环检测（菱形不误报）已落。**〔M3-T6 已落〕** 双保险自此两边齐：`content:check` 的**离线环检测**在 `scripts/check-content.mjs`（按集合遍历 `prototypeParent` 图，成环即失败并打印环；沿先例无单测、手工验证）。⚠️ 它扫的是 `content/`（迷你包是测试夹具，不在范围内），而 `content/` 至今零原型 ⇒ **这道门禁今天无内容可守** | ADR-0030 |
-| **tick 的真相** | **`Command` 自带 `tick`**，**高水位** `maxTick` 由 `createTickClock` 实例维护、**驱动侧持有**（`runCommand` 只被喂一个数，自己不持有）；**非 `invalid` 的命令（`ok`／`rejected`）**才抬高水位；倒退的命令照常执行、判定取高水位（不大声失败）；**`CommandDeps.clock` 删除**，`Clock` 端口翻转语义为「**引擎**对外暴露的读数」，不再是宿主注入的依赖。⚠️ 覆盖了 `spec/01` 端口表 `Clock` 行的「宿主实现」一列。**〔M4-T1 已落〕** `src/clock.ts`：`createTickClock`（水位单调不减）＋ `observeDispatch`（`ok`／`rejected` 抬高、`invalid` 不抬高）；`runCommand` 收 `deps.nowTick`、给命令 `ctx.clock = max(nowTick, command.tick)`；`TestClock.advance()` 改为「改下一条命令的默认 tick」 | ADR-0031 |
-| **日历与时间换算** | **全内容化**：日历 = `content/config/calendar.json`（**一组独立的环**，环周期 = Σ 段 tick，不是扁平分段表），速率类调参留 `settings.time`（三分法：前者 STRUCTURE、后者 TUNING）；走与 `dimensions` 同构的通道，缺失时**引擎侧大声失败、无默认公历**。M4 只落**四个**原语（Clock／stage 求值／补偿结算／到期桶），区域 tick 与 on-change 留给消费者；**大跨度不加数值上限**，靠 O(事件数) 的构造性保证 + 测试钉死。⚠️ 覆盖了 ADR-0016 §4 的「双时钟不共用代码路径」——双时钟降级为**同一推进函数的两个跨度** | ADR-0032 |
-| **存档 v2** | `Rng` 端口加强制 `getState()`；v2 载荷增加 `nowTick`／`rngState`／实体 `lastSeenTick`；迁移给 v1 补默认，**恢复时一律「缺即空」不加特例**，**不做 v2→v3 连迁**（nicks 属玩家层，不同趟）。这是迁移链**首条真实迁移** | ADR-0033 |
-| **两层推进** | **世界层**（到期桶）每条命令补到高水位，只需存 `nowTick`；**实体层**（补偿结算／离线补算）**只在该实体参与时**推进，用自身 `lastSeenTick`——否则它会恒等于 `nowTick`，离线结算跨度为 0。`lastSeenTick` 由引擎写、宿主不碰；**结算事件时间戳必须写 `dueTick`**，否则重放顺序依赖谁先上线；结算事件与触发它的命令**同 seq 且排在前面** | ADR-0034 |
+| **tick 的真相** | **`Command` 自带 `tick`**；高水位 = **非 `invalid` 的命令**（`ok`／`rejected`）的 tick 最大值，倒退照常执行、判定取水位，`invalid` 不推进；引擎不再被注入时钟。**〔M4-T1 已落〕** ⇒ 规则细节**只在** `spec/04` §2.2–§2.5（一处权威，别处只引不述） | ADR-0031 |
+| **日历与时间换算** | **全内容化**：日历 = `content/config/calendar.json`（**一组独立的环**），调参留 `settings.time`；缺失时**引擎侧大声失败、无默认公历**。⇒ 细节**只在** `spec/04` §3 | ADR-0032 |
+| **存档 v2** | `Rng` 加强制 `getState()`；v2 增 `nowTick`／`rngState`／实体 `lastSeenTick`；恢复时一律「缺即空」，**不做 v2→v3 连迁**。⇒ 细节**只在** `spec/04` §1.5 | ADR-0033 |
+| **两层推进** | **世界层**（每条非 `invalid` 的命令）与**实体层**（只推进 actor，用自身 `lastSeenTick`）分开推进；结算事件时间戳写 `dueTick`、与触发它的命令同 seq 且排前。⇒ 细节**只在** `spec/04` §4.3 | ADR-0034 |
 | **世界运行时** | **静态在场/动态占用二分**：NPC 不物化（放置清单直读），运行时实体 = 持有可变状态者（M2 只有玩家）；**走/看/说/穿行由引擎出厂**（注入缝保留）；门禁外置：traverse 门禁 → enter 门禁 → `moveTo`（零权限检查） | ADR-0028 |
 
 ## MVP 范围（待重估，勿按此排产）
@@ -116,6 +116,7 @@
 - **`content/config/` 3 个文件**：`dimensions.json`（10 个维度）、`display-tiers.json`（造诣 50 档，**已逐项比对 xkx100 §5.1 原表**）、`settings.json`（空壳——数字随消费它的系统落地）
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
 - **第二内容包（M2-T6，`packages/core/tests/fixtures/mini-pack/`）**：非武侠（近轨灯塔站，M3-T6 后 **5 房间／6 出口／2 命令／2 人物**——含「舱室基类」原型 `room-orb-000` 与舷外作业平台，方向词 前/后/内/外），与 `content/` 走**同一装载函数**（换包 = 换目录，**维度表也随包装载**），经同一引擎跑通走/看/说——**验收标准 2 首次机械化，引擎零改动**，换包只换宿主的「命令 id → 出厂行为」绑定表
+- **文档门禁（`corepack pnpm docs:check`，`scripts/check-docs.mjs`）**：扫**活文档**（`docs/spec/**`、`HANDBOOK.md`、`AGENTS.md`、`CONTEXT.md`）三件事——① 被后来的 ADR 覆盖掉的旧口径（如 `进入执行段`／`不共用代码路径`／已删除的 `CommandDeps.clock`）② 数字口径（测试规模只在 HANDBOOK「当前事实」；schema／ADR 总数必须与目录实际一致）③ `ADR-00NN` 引用是否指向存在的文件。**故意不扫 `docs/adr/`**：ADR 是决策日志，里面的旧措辞正是历史本身。改术语或改数字后必跑
 - **`content:check` 五道**：① Schema 校验（有内容者硬失败）② **已废概念门禁**（命中即失败）③ **原型环检测**（按集合遍历 `prototypeParent` 图，成环即失败并打印环；M3-T6 落，`content/` 至今零原型故暂无内容可守）④ 无内容可映射 schema 的反向扫描 ⑤ **draft-07 合法性清扫**（全部 schema 编译；无内容者的违规 WARN 呈现不阻塞）
 - 术语词典 / 文风指南 / 内容管线约定 / **34 个 ADR** 齐备；兽数据归 `beast/` 集合，获取走 sect `exchange` 贡献兑换
 

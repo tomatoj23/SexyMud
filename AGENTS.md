@@ -28,6 +28,13 @@
 
 Issues live in the repo's GitHub Issues, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
+**关票前的两张清单**（不是"再通读一遍全文"——通读会漏，清单不会）：
+
+1. **按 AC 逐条对照**：实现与测试各在哪、断言了什么；AC 里没被任何测试覆盖的一条就是缺口。
+2. **grep 本次引入/改动的每个术语，连同它的同义词**，把命中处逐个对齐（"进入执行段"／"非 invalid"／"ok 与 rejected" 是同一个意思的三种写法，改一种就会漏两种）。然后跑 `corepack pnpm check`。
+
+**设计与落盘的次序**：设计访谈/定案先落 `.scratch` 决策表；**实现并跑绿之后**才升级成 `docs/spec/` 正文与 ADR。口径先于事实就会漂——M4 那 4 篇 ADR 与 spec 重写之后，实现期又查出 5 处口径错，原因就在这里。
+
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
@@ -38,6 +45,8 @@ Game content lives as JSON files under `content/`, validated by JSON Schema (`co
 
 > **Note**: `corepack pnpm content:check` is the committed pipeline contract (ADR-0003); the script (`scripts/check-content.mjs`, landed with issue #2) auto-discovers every JSON under `content/` and validates it against `schemas/` by directory convention — currently `content/config/`, `content/commands/` (M1-T5) and `content/rooms/`, `content/npcs/`, `content/monster/` (M1-T6). Cross-file `$ref` between schemas is supported (all schemas are pre-registered by `$id`). Every schema is also compile-swept for draft-07 legality: failures on content-mapped schemas fail the gate; schemas with no content mapping — including the two `$ref` libraries (`condition.schema.json` / `common.schema.json`, which are referenced by other schemas and never mapped by a directory) — surface their violations as WARN lines (the script reports them).
 > **Authoritative docs (descending precedence)**: **`docs/spec/` (living spec — HIGHEST)** > `CONTEXT.md` (glossary, **wuxia content pack scope, not the engine**) / `docs/agents/content.md` (content pipeline) > `docs/adr/` (decision history) > `content/style-guide.md` (writing style) > `docs/engine-reservations.md` (**reference / lowest**: a design inventory, not a decision).
+>
+> ⚠️ **Docs gate**: `corepack pnpm docs:check` (`scripts/check-docs.mjs`) scans the LIVING docs — `docs/spec/**`, `docs/HANDBOOK.md`, `AGENTS.md`, `CONTEXT.md` — for ① wording an ADR has retired (`进入执行段`、`不共用代码路径`、`CommandDeps.clock`…) ② counts that must have one home (test size: HANDBOOK only) or match reality (schema/ADR totals) ③ `ADR-00NN` references whose file does not exist. **`docs/adr/` is deliberately NOT scanned** — an ADR is a log, its superseded wording is the history. Run it after any terminology or count change; `corepack pnpm check` runs both gates.
 >
 > ⚠️ ADRs are a decision LOG, not the current spec — they override each other in a tangled web (0025 revises 0017; 0024 corrects 0022 and 0023). **On conflict, `docs/spec/` wins.**
 > `docs/design-spec-BRIEF.md`, `docs/archive/`, `docs/design/` were **deleted on 2026-09-01** (idle-game era, stale after the MUD pivot). Don't reference them; recover with `git checkout 79bd991 -- docs/design-spec-BRIEF.md docs/archive/` if ever needed.

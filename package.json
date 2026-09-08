@@ -5,6 +5,8 @@
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "content:check": "node scripts/check-content.mjs",
+    "docs:check": "node scripts/check-docs.mjs",
+    "check": "corepack pnpm run content:check && corepack pnpm run docs:check",
     "test": "corepack pnpm --filter @sexymud/core test",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
     "dev:web": "corepack pnpm --filter @sexymud/web dev",

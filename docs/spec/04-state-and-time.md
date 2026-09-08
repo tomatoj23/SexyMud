@@ -107,8 +107,7 @@ Command { seq, actorId, tick, raw }
 
 - **tick 倒退的命令照常执行**，但一切时间判定用高水位。**不**大声失败：tick 倒退**不改变任何已发生的事实**，只影响「现在」，而「现在取最大值」是唯一无歧义的解释；丢命令比采纳命令代价大。
 - **不保留两个真相**：既有 `CommandDeps.clock`（宿主注入的时钟）**删除**（**#20 已完成**），改为 `CommandDeps.nowTick`。
-  **代价（2026-09-08 实测，不夸大也不缩小）**：`clock` 在 `packages/core/src` 里**零消费者**（只有 `types.ts` 定义、`pipeline.ts` 注入并透传给 `CommandContext`、`testing.ts` 的 `TestClock`），但在测试里有 **1 处**消费者 —— `tests/command-harness.test.ts` 的 `tickProbe` 用例读 `ctx.clock.nowTick()` 并断言 `harness.clock.advance(7)` 后拿到 `[100, 107]`；`tests/parser.test.ts` 的 `deps()` 也造了一个 `createTestClock()`。`Command` 的构造点共 **8 处**：`testing.ts` 的 `call()` 1 处 + `parser.test.ts` 绕过 harness 直接调 `runCommand` 的 **7 处**。
-  合计改动约 10 处，**不是零回归，但仍是今天最便宜的时点**（等战斗系统开始读 `ctx.clock` 之后再改就是几十处）。好消息是那条 `tickProbe` 用例的**断言值不变**：`advance(7)` 改为「改下一条命令的默认 tick」之后仍是 `[100, 107]`，只需重写表达方式。
+  **改动面（2026-09-08 实测，#20 已完成，不夸大也不缩小）**：`Command` 的构造点共 **8 处**（`testing.ts` 的 `call()` 1 处 + `parser.test.ts` 绕过 harness 直接调 `runCommand` 的 7 处）全部带上 `tick`；`parser.test.ts` 的 `deps()` 去掉 `clock`；`command-harness.test.ts` 的 `tickProbe` 改读 `ctx.command.tick`。合计约 10 处，**不是零回归**，但它发生在「全仓只有 1 处读时钟」的时点 —— 等战斗系统开始读 `ctx.clock` 之后再改就是几十处。那条 `tickProbe` 的**断言值不变**：`advance(7)` 改为「改下一条命令的默认 tick」之后仍是 `[100, 107]`。
 - **附带**：`TestClock.advance()` 的语义从「推进引擎的现在」变为「改下一条命令的默认 tick」。
 - **实现落点（#20 已落）**：`packages/core/src/clock.ts` 导出 `createTickClock(startTick)`（`TickClock = Clock & { observe(tick) }`）与 `observeDispatch(clock, command, result)` —— 后者封装 §4.1 那张表（`ok`／`rejected` 抬高水位，`invalid` 不抬高），让这条规则只有一个副本。`runCommand` **自己不持有时钟**：它从 `deps.nowTick`（驱动侧在本条命令之前的水位）取，算 `now = max(deps.nowTick, command.tick)`，再把它包成 `ctx.clock` 交给命令。`deps.nowTick` 与 `command.tick` 任一不是非负安全整数时**大声失败** —— 那是接线错误，不是玩家输入（NaN 水位会让下游所有判定静默失真，必须挡在入口）。
 - **高水位住在「推进世界的那一侧」，不在 `runCommand` 里**：`runCommand` 是纯函数（它因此**不持有**任何时钟，这正是能删掉 `CommandDeps.clock` 的原因）。推进与高水位由**驱动世界的那一侧**持有 —— 生产上是 `WorldRuntime`／宿主 `Authority`，测试上是 `createCommandHarness`。纯对象模式（`liveWorld: false`）每次调用深拷贝一个全新夹具，本就不存在跨调用的时间，需要跨调用观察时间的用例改用 `liveWorld: true`（该开关已存在）。
@@ -213,7 +212,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 
 **接缝要写进本节**（避免将来被当成「忘了做」而悄悄侵蚀）：区域 tick 的插入点是「一条结算跨度内的分组订阅」，on-change 的插入点是「状态树写入钩子」，两者都**不需要改 `settleTo` 自身**。
 
-#### ★ 只有「进入执行段」的命令才推进世界 —— 否则时间可被刷
+#### ★ 只有非 `invalid` 的命令（`ok`／`rejected`）才推进世界 —— 否则时间可被刷
 
 推进发生在命令处理前，于是有个必须回答的问题：**一条 `invalid`（无法解析）的输入，推进世界吗？**
 
@@ -244,7 +243,7 @@ pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 
 | 层 | 推进时机 | 用谁的 tick | 装什么 |
 |---|---|---|---|
-| **世界层** | 每条**进入执行段的**命令（`ok`／`rejected`）处理前都补到高水位 | 全局（推进后 = `nowTick`，故只需存 `nowTick`） | 到期桶、一次性世界事件 |
+| **世界层** | 每条**非 `invalid` 的**命令（`ok`／`rejected`）处理前都补到高水位 | 全局（推进后 = `nowTick`，故只需存 `nowTick`） | 到期桶、一次性世界事件 |
 | **实体层** | **只推进这条命令的 actor** | 实体自己的 `lastSeenTick` | 补偿结算、离线补算 |
 
 ⚠️ **为什么是 actor 而不是「所有在场者」**：在场 ≠ 在线。离线玩家的实体仍然在树里、仍然「在同房间」，若把在场者一起推进，**甲的活动就会消耗乙的离线补算额度**，乙的离线结算就不再发生在「他自己回来」的那一次 —— 玩家会发现自己「什么都没干，回来时补的却变少了」。actor-only 是唯一没有歧义的解释。
