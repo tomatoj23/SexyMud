@@ -1,0 +1,6 @@
+# Husky hooks are executed by `sh`: a CRLF hook fails with "\r: command not
+# found", and on Windows a checkout under core.autocrlf would produce exactly
+# that. Pin the hooks (and the shell scripts like them) to LF in the working
+# copy, whatever the platform.
+.husky/* text eol=lf
+scripts/*.mjs text eol=lf
