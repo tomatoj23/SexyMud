@@ -16,10 +16,13 @@ import { describe, expect, it } from "vitest";
  */
 
 const THEME_PATTERN =
-  /修为|闭关|境界|宗师|绝顶|不入流|秘籍|丹|秘境|装备|武器|招式|心法|门派|洗练|分解|江湖|武侠|奇遇|采集|炼丹|武功|流派|贡献|品阶|下乘|中乘|上乘|绝学|稀有度|寻常|精良|罕见|绝世|词缀|底材|丹方|药材/g;
+  /修为|闭关|境界|宗师|绝顶|不入流|秘籍|丹|秘境|装备|武器|招式|心法|门派|洗练|分解|江湖|武侠|奇遇|采集|炼丹|武功|造诣|练功|流派|贡献|品阶|下乘|中乘|上乘|绝学|稀有度|寻常|精良|罕见|绝世|词缀|底材|丹方|药材/g;
 
+// `new Date` is banned alongside `Date.now`: both read a wall clock, and the
+// spec (04 §2.1) claims both are mechanically enforced here — so both must
+// actually be in the table.
 const PLATFORM_PATTERN =
-  /\bwindow\b|\bdocument\b|\blocalStorage\b|\bsessionStorage\b|\bnavigator\b|\bfetch\s*\(|\bXMLHttpRequest\b|\bsetTimeout\b|\bsetInterval\b|\brequestAnimationFrame\b|\bDate\.now\b|\bperformance\.|\bprocess\.|\bglobalThis\b|\bMath\.random\b/g;
+  /\bwindow\b|\bdocument\b|\blocalStorage\b|\bsessionStorage\b|\bnavigator\b|\bfetch\s*\(|\bXMLHttpRequest\b|\bsetTimeout\b|\bsetInterval\b|\brequestAnimationFrame\b|\bDate\.now\b|\bnew\s+Date\b|\bperformance\.|\bprocess\.|\bglobalThis\b|\bMath\.random\b/g;
 
 /**
  * The parser's Chinese GRAMMAR charset (spec/07 §0: mechanism in engine,
@@ -104,11 +107,18 @@ describe("engine purity (ADR-0004)", () => {
     const fixturePath = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures/purity-violations.ts");
     const fixtureText = readFileSync(fixturePath, "utf8");
     const offenders = scanText(fixtureText);
+    // The theme words `spec/08` names explicitly (§E), not just any CJK: today
+    // the CJK charset scan would catch them too, but the word list is the rule
+    // the doc points at, so it has to actually contain them.
     expect(offenders.theme).toContain("闭关");
     expect(offenders.theme).toContain("修为");
+    expect(offenders.theme).toContain("造诣");
+    expect(offenders.theme).toContain("练功");
     expect(offenders.platform).toContain("window");
     expect(offenders.platform).toContain("localStorage");
     expect(offenders.platform).toContain("setTimeout");
+    expect(offenders.platform).toContain("Date.now");
+    expect(offenders.platform).toContain("new Date");
     expect(scanNonGrammarCjk(fixtureText)).toContain("闭");
   });
 });

@@ -98,7 +98,7 @@ describe("command tick through the pipeline (spec/04 §2.2)", () => {
 });
 
 describe("only commands that run advance the world (spec/04 §4.1)", () => {
-  it("feeds ok and rejected into the clock, and nothing at all for invalid", () => {
+  it("feeds ok and rejected into the clock, and nothing at all for invalid or transport", () => {
     const command = { seq: 1, actorId: "actor-1", tick: 50, raw: "go" };
 
     const afterOk = createTickClock(10);
@@ -122,6 +122,17 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
       reason: "unknownVerb",
     });
     expect(afterInvalid.nowTick()).toBe(10);
+
+    // `transport` = never delivered, seq NOT consumed, safe to retry. A
+    // retryable command must not move the clock once per attempt.
+    const afterTransport = createTickClock(10);
+    observeDispatch(afterTransport, command, {
+      ok: false,
+      seq: 1,
+      kind: "transport",
+      reason: "notDelivered",
+    });
+    expect(afterTransport.nowTick()).toBe(10);
   });
 
   it("pins it end to end: spamming invalid input cannot fast-forward the world", () => {

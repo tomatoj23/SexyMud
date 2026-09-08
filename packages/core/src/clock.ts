@@ -53,13 +53,23 @@ export function createTickClock(startTick = 0): TickClock {
  * tick must not raise the high-water mark. Otherwise spamming malformed input
  * would fast-forward the world: due buckets would fire early and offline
  * catch-up spans would grow out of nothing.
+ *
+ * `transport` is excluded for the same reason one level up: it means the
+ * command was never delivered (seq NOT consumed, safe to retry — types.ts).
+ * Letting a retryable command move the clock would fast-forward the world once
+ * per attempt. The engine never produces `transport` itself (`runCommand` only
+ * answers `ok` / `rejected` / `invalid`), but a host `Authority` does, and it
+ * is the one holding this clock — hence the guard lives here, not in the
+ * pipeline.
  */
 export function observeDispatch(
   clock: TickClock,
   command: Command,
   result: CommandResult,
 ): void {
-  const reachedExecution = result.ok ? true : result.kind !== "invalid";
+  // Whitelist rather than "anything but invalid": a third failure kind added
+  // later must not silently inherit the right to move the clock.
+  const reachedExecution = result.ok ? true : result.kind === "rejected";
   if (reachedExecution) {
     clock.observe(command.tick);
   }
