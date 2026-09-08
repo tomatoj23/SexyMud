@@ -66,6 +66,17 @@ export type {
   DimensionTable,
   MonsterRecord,
 } from "./content/registry.js";
+export type {
+  Calendar,
+  CalendarRing,
+  CalendarSegment,
+  SettingsGroup,
+  SettingsTable,
+} from "./content/config.js";
+export { createGameTime, ringPeriod, segmentAt, segmentIndexAt } from "./time/calendar.js";
+export type { GameTime } from "./time/calendar.js";
+export { createTimeTuning } from "./time/tuning.js";
+export type { TimeTuning } from "./time/tuning.js";
 export type { EntryCommon, TagMap } from "./content/entry.js";
 export type { ExitEntry, NpcEntry, PlacementEntry, RoomEntry } from "./world/entry.js";
 export { MOVE_TYPES, createEntity } from "./world/entity.js";

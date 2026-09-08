@@ -1,5 +1,7 @@
 import type { CommandEntry } from "../command/entry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
+import { assertCalendar, assertSettingsTable } from "./config.js";
+import type { Calendar, SettingsTable } from "./config.js";
 import type { EntryCommon, TagMap } from "./entry.js";
 import { compareIds } from "./order.js";
 import { flattenCollection } from "./prototype.js";
@@ -31,6 +33,14 @@ import type { FlattenableEntry } from "./prototype.js";
  * index (`byTag`, ADR-0029 §2) and, when the host hands it a dimensions
  * table, closes the tag vocabulary against it (ADR-0029 §5) — see the
  * comments on buildTagIndex.
+ *
+ * The three config tables ride the same channel: `dimensions`, `settings`
+ * and `calendar` are all handed over by the host (which read config/ itself)
+ * and all validated here for the one thing a schema cannot check —
+ * consistency BETWEEN values in one file. None of them is REQUIRED: the
+ * registry does not know what the engine needs, and a missing calendar or
+ * `time` group is the engine's failure to raise when it first wants time
+ * (spec/04 §3.3), not a load-time one.
  *
  * The load order is a contract, not an arrangement (spec/03 §6.1):
  *
@@ -78,6 +88,18 @@ export interface DimensionTable {
 export interface ContentRegistryOptions {
   /** Present → tag values are validated against it; absent → skipped. */
   readonly dimensions?: DimensionTable;
+  /**
+   * The pack's tuning numbers (`config/settings.json`). Present → checked
+   * for shape; absent → nothing to check. Which groups EXIST is never
+   * asserted here (spec/04 §6 O3).
+   */
+  readonly settings?: SettingsTable;
+  /**
+   * The pack's calendar (`config/calendar.json`). Present → ring and
+   * segment ids are checked for uniqueness and tick counts for sanity;
+   * absent → nothing to check (spec/04 §3.3).
+   */
+  readonly calendar?: Calendar;
 }
 
 /** The read side of loaded content: lookups over validated collections. */
@@ -144,6 +166,19 @@ export interface ContentRegistry {
    * `byTag` (ADR-0029 §4).
    */
   tagsOf(id: string): TagMap;
+  /**
+   * The pack's calendar, exactly as handed over — `undefined` when the host
+   * had none. Read BACK out of the registry rather than kept alongside it so
+   * there is one validated copy: the engine side that turns a tick into a
+   * segment (`createGameTime`) takes it from here, and swapping the content
+   * directory swaps the calendar with it (spec/04 §3, ADR-0032).
+   */
+  readonly calendar: Calendar | undefined;
+  /**
+   * The pack's tuning numbers, `undefined` when the host had none — the same
+   * one-copy arrangement as `calendar`.
+   */
+  readonly settings: SettingsTable | undefined;
 }
 
 /**
@@ -321,6 +356,13 @@ export function createContentRegistry(
   },
   options: ContentRegistryOptions = {},
 ): ContentRegistry {
+  // The config tables are validated FIRST: they are the pack's own
+  // declarations and the checks are self-contained, so a bad calendar is
+  // reported before any collection work runs. Both are optional — see
+  // ContentRegistryOptions.
+  assertSettingsTable(options.settings);
+  assertCalendar(options.calendar);
+
   // ONE id space for everything loaded here — the four collections and the
   // exits (see addUnique). Declared before any collection is filled so the
   // first taker of an id is whoever the host handed over first.
@@ -498,5 +540,7 @@ export function createContentRegistry(
     tagsOf(id) {
       return byEntity.get(id) ?? NO_TAGS;
     },
+    calendar: options.calendar,
+    settings: options.settings,
   };
 }

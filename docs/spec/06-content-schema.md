@@ -1,6 +1,6 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**19 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）是**新落的集合 schema**，其余 **14 个**需随本规格重估（**限定语**：= 19 − 3 新落集合 − 2 被引用库；这 14 个里含 `config` 三类与 **11 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（3 个 JSON）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
+> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**20 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）是**新落的集合 schema**，其余 **15 个**需随本规格重估（**限定语**：= 20 − 3 新落集合 − 2 被引用库；这 15 个里含 `config` 四类与 **11 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（4 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合

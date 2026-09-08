@@ -1,0 +1,19 @@
+{
+  "id": "calendar",
+  "rings": [
+    {
+      "id": "shift",
+      "segments": [
+        { "id": "night-watch", "ticks": 900 },
+        { "id": "day-watch", "ticks": 900 }
+      ]
+    },
+    {
+      "id": "orbit",
+      "segments": [
+        { "id": "sunlit", "ticks": 4200 },
+        { "id": "eclipse", "ticks": 600 }
+      ]
+    }
+  ]
+}

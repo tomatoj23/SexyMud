@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "config.calendar.schema.json",
+  "title": "日历（content/config/calendar.json）",
+  "description": "游戏内时间的**唯一载体**（docs/spec/04 §3，ADR-0032）。引擎不认识「时辰／刻／季节」，它只会算「第几 tick 落在哪个环的第几段」——段名、段数、每段多长、有几条刻度轴，全在这份数据里。换包即换历法（验收标准 2）。\n\n**形状 = 一组具名独立的环（ring），不是一张扁平分段表**：一个 tick 同时落在多条刻度轴上（日内是「哪个时辰」，年内是「哪个季节」），扁平表只能表达一个环，将来加季节就得改 schema + 改引擎。环之间互相独立、各自取模，引擎不关心 `day` 与 `year` 是否成整数倍关系——那是数据的事。\n\n**环周期 = Σ segments[].ticks**，不另设 `periodTicks` 字段：不让「每日 tick 数」与「环周期」两个数字各说一遍。换算数字（`TICKS_PER_HOUR` 那一类）的家是本文件，不进引擎（硬标准 1）。\n\n**求值用半开区间 + 显式排序数组**：段在环内按书写顺序首尾相接，`[start, start + ticks)`，越界由取模处理。**不抄 Evennia `extended_room` 的 `if start < end` 写法**——它让跨年区间永远匹配不上，只是靠「遍历完返回最后一个键」侥幸正确。\n\n**Schema 管不了的两件事由注册表在加载期硬校验**（与维度表同律）：环 id 全局唯一、段 id 环内唯一。\n\n**配置三分法（spec/06 §6）**：本文件是 **STRUCTURE**（装配图），段名与段数属此类，故**不进 `settings.json`**；速率与时长一类数字归 `settings.time`（TUNING）。缺 `calendar` 时由**引擎侧在首次使用时间时大声失败**，没有默认公历兜底。",
+  "type": "object",
+  "required": ["id", "rings"],
+  "properties": {
+    "id": { "type": "string", "const": "calendar" },
+    "rings": {
+      "type": "array",
+      "minItems": 1,
+      "description": "一组具名独立的环。顺序即声明顺序，不是优先级。",
+      "items": { "$ref": "#/definitions/ring" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ring": {
+      "type": "object",
+      "description": "一条独立的刻度轴（日内时辰是一条，年内季节是另一条）。周期 = Σ segments[].ticks。",
+      "required": ["id", "segments"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/lowerId",
+          "description": "环 id，全表唯一（由注册表校验）。语义名，如 `day`／`year`。"
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "description": "环上的段，按书写顺序首尾相接；最后一段接回第一段。",
+          "items": { "$ref": "#/definitions/segment" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "segment": {
+      "type": "object",
+      "description": "环上的一段（一个时辰、一个季节）。",
+      "required": ["id", "ticks"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/lowerId",
+          "description": "段名，环内唯一（由注册表校验）。它是**键**不是文案：显示名是宿主／渲染层的事，引擎只认 id。"
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "本段占用的 tick 数。正整数——零长段会让环周期为 0，取模失去意义。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "lowerId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "description": "小写字母、数字、连字符（与 `docs/agents/content.md` 的 id 规则一致）。"
+    }
+  }
+}

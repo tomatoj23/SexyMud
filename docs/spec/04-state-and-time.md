@@ -155,7 +155,7 @@ Rng { next(): number; getState(): number }
 
 - 引擎只有 **`f(环, tick) → 段索引`** 这一个概念。段名、段数、每段多长、有哪些环，全在数据里。
 - **没有默认公历兜底**：包没给 `calendar`，用到时间时**大声失败**（与 `settings` 缺失同一条规则，见 §3.3）。
-- 换算数字（`TICKS_PER_HOUR`／`TICKS_PER_DAY`／`DAYS_PER_YEAR` 那一类）**一律不进引擎**（硬标准 1「零写死数量」），它们的家是内容。
+- 换算数字（`TICKS_PER_HOUR`／`TICKS_PER_DAY`／`DAYS_PER_YEAR` 那一类）**一律不进引擎**（硬标准 1「零写死数量」），它们的家是内容。段 id（`zi`／`chun`…）同理只住在内容 JSON —— 引擎源码里一个历法词都搜不到，由 `tests/engine-purity.test.ts` 的 CJK 扫描机械保证（#21）。
 - **不需要 `TIME_FACTOR`** —— tick 频率本身就是缩放因子（Evennia 需要它是因为它绑真实时间）。
 
 ### 3.2 形状：一组**独立**的环，不是一张扁平分段表
@@ -179,6 +179,8 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 - ⚠️ **别抄 `extended_room` 的区间写法**：它的 `if start < end` 让跨年区间（winter `(1.0, 0.25)`）**永远匹配不上**，只是靠「遍历完返回最后一个键」侥幸正确。用**半开区间 + 显式排序数组**。
 - 房间描述与 NPC 在场判定做成 `(nowTick) => descKey` 的纯选择函数。
 
+> **落地（M4-T2，#21）**：`packages/core/src/time/calendar.ts` —— `ringPeriod(环)`（Σ 段 tick，周期只有一个来源）、`segmentIndexAt(环, tick)`（`tick % period` 一次取模 + 半开区间扫描，O(段数)）、`segmentAt`、`createGameTime(calendar?)`（按环 id 查；**缺日历时首次使用才抛**，不是构造时、更不是加载期）。武侠包 `content/config/calendar.json` = `day`（十二时辰，各 1200 tick，周期 14400）＋ `year`（四季，各 1296000 tick）；迷你包是另一套（`shift`／`orbit`）。
+
 依据：ADR-0025 §四
 
 ### 3.3 通道：与 `dimensions` 同构（ADR-0032）
@@ -194,6 +196,8 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 - 注册表**校验跨字段一致性**（如「环周期 > 0」「段 id 在环内唯一」）——那是 schema 管不了的那类约束，与今天的引用完整性同一层。
 - **缺 `settings.time` 或 `calendar` 时，由引擎侧在首次使用时间时大声失败**，不是注册表加载期：注册表不该知道引擎需要哪些参数（与它今天不知道引擎用不用 `byTag` 同一分寸）。
 - **新增 schema 需走 ADR-0003 的三处同步**：`core` 类型／编辑器表单（`apps/editor` 今日仍是占位）／`docs/agents/content.md` 字段说明。
+
+> **落地（M4-T2，#21）**：`createContentRegistry(content, { dimensions?, settings?, calendar? })` — 三张表同构进注册表，校验只做 schema 管不了的那一层（`src/content/config.ts` 的 `assertCalendar`／`assertSettingsTable`：环 id 全表唯一、段 id 环内唯一、tick 为正整数、每个组是对象；**`id` 戳豁免**）。注册表把两张表**原样读出**（`registry.calendar`／`registry.settings`），让引擎侧只有一份已校验的副本。引擎侧读数在 `createGameTime`（日历）与 `createTimeTuning`（`settings.time`）——**两者都是惰性抛错**，这正是「不是注册表加载期」的字面实现。
 
 ## 4. 调度（ADR-0032／0034）
 
@@ -296,11 +300,11 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] `Clock` 是 **tick 计数**不是毫秒 —— ⚠️ 语义已翻转：它是**引擎高水位读数**，不再是宿主注入的时钟（ADR-0031）
 - [x] `Command` 自带 `tick`；引擎维护高水位；`CommandDeps.clock` 已删除（ADR-0031，#20：`src/clock.ts` 的 `TickClock`／`observeDispatch`，`deps.nowTick`）
 - [ ] `Rng.getState()` 存在且强制；种子/状态进 v2 存档（ADR-0033）
-- [ ] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储；**日历在内容里**（ADR-0032）
-- [ ] 日历是**一组独立的环**，不是一张扁平分段表（第 19 条）
-- [ ] `settings` / `calendar` 走与 `dimensions` 同构的通道；缺失时**引擎侧大声失败**，无默认公历兜底
-- [ ] 时间参数零写死：`TICKS_PER_*` 一类换算数字不在引擎源码里（硬标准 1）
-- [ ] 时间区间用**半开区间 + 显式排序数组**（不是 `if start < end`）
+- [x] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储；**日历在内容里**（ADR-0032，#21：`content/config/calendar.json` + `createGameTime`）
+- [x] 日历是**一组独立的环**，不是一张扁平分段表（第 19 条）（#21：`rings[]`，多环各自取模）
+- [x] `settings` / `calendar` 走与 `dimensions` 同构的通道；缺失时**引擎侧大声失败**，无默认公历兜底（#21：`createContentRegistry(content, { settings?, calendar? })` ＋ `createGameTime`／`createTimeTuning` 的惰性抛错）
+- [x] 时间参数零写死：`TICKS_PER_*` 一类换算数字不在引擎源码里（硬标准 1）（#21：换算数字全部住在 `calendar.json`）
+- [x] 时间区间用**半开区间 + 显式排序数组**（不是 `if start < end`）（#21：`segmentIndexAt`）
 - [ ] 冷却存**到期 tick** 不存时间戳；`cooldowns` 槽进存档
 - [ ] DoT 类机制用**观察时补偿结算**，不是定时器
 - [ ] 无任何 per-object timer（六原语里的区域 tick / on-change 在 M4 不落，接缝已写在 §4.1）
@@ -324,11 +328,11 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 |---|---|---|
 | O1 | **`GameEvent` 要不要带 `tick`** | §4.3 要求结算事件写 `dueTick`，但 `spec/01` §5 的事件形状里没有 tick 字段。倾向**加**，且所有事件都带（不只是结算事件）—— 渲染「三天前发生的事」需要它 |
 | ~~O2~~ | ~~**`seq` 与 `tick` 不同序时谁定顺序**~~ | **✅ 已定案（#20）**：**seq 定投递顺序、tick 定世界时间**，二者独立、不互相校验。见 §2.5 |
-| O3 | **`settings.time` 缺**组内某个键**（如 `regenPerTick`）怎么算 | 该组是开放参数组、`required` 为空，而 §3.3 只定了「缺 `time` 组 → 大声失败」。倾向：缺**组**失败，缺**键**由消费该键的系统自己大声失败（引擎不替它猜默认值） |
+| ~~O3~~ | ~~**`settings.time` 缺**组内某个键**（如 `regenPerTick`）怎么算~~ | **✅ 已定案（#21）**：缺**组**失败（缺 `settings` 表或缺 `time` 组）、缺**键**由消费该键的系统自己大声失败，**引擎绝不替它猜默认值**。落点 `src/time/tuning.ts` 的 `createTimeTuning(settings).number(键)`，两条错误文案分别点名「组」与「键」 |
 | O4 | **到期桶的项没有锚点** | `Map<dueTick, payload[]>` 是全局的，"这个房间的炸弹"只能靠宿主把 `roomId` 塞进 opaque payload。可接受，但要写明：**引擎不提供按房间/区域索引到期项的能力**（避免将来误以为有） |
 | O5 | **`tickSeconds` 归谁** | ADR-0016 §4 提到「固定步长（`content/config/`：`tickSeconds`）」。它是**真实秒**，属于宿主把墙钟翻译成 tick 的参数，**引擎不读** ⇒ 不应进 `content/config/settings.json`（那是给引擎的 TUNING）。⚠️ 连带一条：若确认只有宿主用它，那它连 `content/config/` 都不该待 —— `content/` 是引擎读的东西，放进去会让人误以为引擎消费它。落点由宿主票定 |
 | O6 | **要不要时间谓词**（如"只在夜里能进"） | `spec/02` §5.3 谓词表里今天**零**时间相关谓词（全文 `tick` 零命中）。倾向：M4 **不**加，等第一个内容真的需要时按既有三处同步流程加（引擎／`condition.schema.json`／spec/02 §5.3） |
-| O7 | **创建 `calendar.json` 那张票的文档同步债** | 文件落地时要一并改：`docs/agents/content.md` 的 config 清单（现写「dimensions、display-tiers、settings」三类）、`docs/spec/06` §2 的「config **三类**与 condition 除外」、schema 总数口径（19 → 20，`HANDBOOK` 三处数字）。按 ADR-0003 三处同步（`core` 类型／编辑器表单／`content.md`）执行 —— **本轮故意没提前改**，数字不能先于文件撒谎 |
+| ~~O7~~ | ~~**创建 `calendar.json` 那张票的文档同步债**~~ | **✅ 已在 #21 一并改**：`docs/agents/content.md` 的 config 清单（四类 + 新增「日历集合」字段约定节）、`docs/spec/06` 状态行与 `spec/00` 的 schema 总数口径（19 → **20**、`config` 三类 → **四类**、14 → **15** 待重估）、`HANDBOOK` 三处数字与 `content/config/` 文件数。**编辑器表单那一处**待 `apps/editor` 脱离占位后随行 |
 | O8 | **★引擎侧要用到 calendar／到期桶处理器时，走什么通道** | `runCommand(spec, command, deps)` 的 `CommandDeps` 里**没有 registry**（今天只有 `nowTick`/`rng`/`world`/`sink`/`verbs`/`subjectOf`/`predicates`）。今天不构成问题（段名是渲染层的事，M4 也不加时间谓词，见 O6）；但 `settleTo` 一旦要跑到期桶，就**必须**拿到宿主注入的处理器 ⇒ 得新增一个 `CommandDeps` 字段。通道照 `subjectOf` 的先例**由宿主注入**，不是让 `runCommand` 直接读 registry —— 后者会破坏「引擎只读 `ContentRegistry`、且 deps 显式」这条既有形状 |
 | O9 | **★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`** | 这是**会卡住实现**的一条，三选项与倾向见 §1.5 约定 3（倾向 `serializeWorld(world, meta)` ／ `restoreWorld → { state, meta }`）。**拆票时必须落到具体某张票上**，否则 T6 开工即阻塞 |
 | O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26** |

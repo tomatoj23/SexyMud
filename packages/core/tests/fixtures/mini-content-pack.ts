@@ -9,6 +9,7 @@ import type {
   MonsterRecord,
 } from "../../src/content/registry.js";
 import type { NpcEntry, RoomEntry } from "../../src/world/entry.js";
+import type { Calendar, SettingsTable } from "../../src/content/config.js";
 
 /**
  * The second content pack (issue #12, spec/00 acceptance criterion 2):
@@ -60,12 +61,24 @@ function readCollection(rootDir: string, name: string): string[] {
  * no such file loads with no table, and the closure is then skipped, exactly
  * as it is for a host that declines to pass one.
  */
-function readDimensions(rootDir: string): DimensionTable | undefined {
-  const file = join(rootDir, "config", "dimensions.json");
+/**
+ * Any config table a pack declares (`config/<name>.json`), by name. The
+ * calendar travels with the pack for the same reason the dimensions table
+ * does (ADR-0032 §3): it IS the pack's calendar, so "swap the directory"
+ * swaps the calendar too — the lighthouse station does not answer questions
+ * about shichen. A pack with no such file loads with none, and the engine
+ * side then fails loudly the first time anyone asks for the time.
+ */
+function readConfig<T>(rootDir: string, name: string): T | undefined {
+  const file = join(rootDir, "config", `${name}.json`);
   if (!existsSync(file)) {
     return undefined;
   }
-  return JSON.parse(readFileSync(file, "utf8")) as DimensionTable;
+  return JSON.parse(readFileSync(file, "utf8")) as T;
+}
+
+function readDimensions(rootDir: string): DimensionTable | undefined {
+  return readConfig<DimensionTable>(rootDir, "dimensions");
 }
 
 /** The four collections a host hands the registry, plus the pack's raw text. */
@@ -76,6 +89,10 @@ export interface LoadedPack {
   readonly monsters: readonly MonsterRecord[];
   /** The pack's own dimensions table (config/dimensions.json), when it has one. */
   readonly dimensions?: DimensionTable;
+  /** The pack's own calendar (config/calendar.json), when it has one. */
+  readonly calendar?: Calendar;
+  /** The pack's own tuning numbers (config/settings.json), when it has one. */
+  readonly settings?: SettingsTable;
   /**
    * Every file's raw JSON text, concatenated. A pack's theme lives in its
    * copy as much as in its verbs, so the "no other pack's vocabulary" scan
@@ -96,6 +113,8 @@ export function loadPack(rootDir: string): LoadedPack {
     npcs: npcTexts.map((text) => JSON.parse(text) as NpcEntry),
     monsters: monsterTexts.map((text) => JSON.parse(text) as MonsterRecord),
     dimensions: readDimensions(rootDir),
+    calendar: readConfig<Calendar>(rootDir, "calendar"),
+    settings: readConfig<SettingsTable>(rootDir, "settings"),
     text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...configTexts].join("\n"),
   };
 }
@@ -114,11 +133,12 @@ export function packRegistry(rootDir: string): ContentRegistry {
       npcs: pack.npcs,
       monsters: pack.monsters,
     },
-    // The dimensions table travels WITH the pack (ADR-0029 §5): the same
-    // loader that finds rooms/ finds config/, so swapping the directory swaps
-    // the vocabulary tags are closed against as well. A pack with no table
-    // hands over `undefined`, and the registry then skips the closure.
-    { dimensions: pack.dimensions },
+    // The config tables travel WITH the pack (ADR-0029 §5, ADR-0032 §3): the
+    // same loader that finds rooms/ finds config/, so swapping the directory
+    // swaps the tag vocabulary AND the calendar AND the tuning numbers. A
+    // pack with none hands over `undefined`, and the corresponding checks are
+    // then skipped — missing tables fail at first USE, not here.
+    { dimensions: pack.dimensions, calendar: pack.calendar, settings: pack.settings },
   );
 }
 

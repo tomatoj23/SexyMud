@@ -6,9 +6,10 @@
 
 ```
 content/
-├── config/           # 结构性配置：dimensions、display-tiers、settings（维度表／
-│                     #   显示档位区间表／阈值与公式常数——引擎零写死数量的载体；
-│                     #   settings 顶层九类封闭，组内开放，见 spec/06 §6）
+├── config/           # 结构性配置：dimensions、display-tiers、settings、calendar（维度表／
+│                     #   显示档位区间表／阈值与公式常数／日历——引擎零写死数量的载体；
+│                     #   settings 顶层九类封闭，组内开放，见 spec/06 §6；
+│                     #   calendar 见下文「日历集合」节，M4-T2 已落）
 │                     #   ⚠️ realms（境界序列）已随 ADR-0019 删除；造诣是纯显示层
 ├── effects/          # 效果定义：primitive 组合条目（武功/怪物/层主共用）
 ├── martial/          # 武功（招式 + 心法），字段 kind 区分
@@ -64,7 +65,7 @@ assets/               # 美术资产（MVP 允许为空）
 - `tags`：标签 = **维度 → 键列表**，形状**唯一** `{ "<维度>": ["<键>", …] }`（一个维度可挂多个键、**不带值**——需要带值用属性）。**优先用标签表达语义，不建特殊类型**。维度名（lowerCamelCase）与键取值由 `content/config/dimensions.json` 封闭，但**schema 不写死枚举**（ADR-0004 扩展留白）——「在不在维度表里」由注册表在拿到维度表时硬校验（M3-T2 **已落**：`createContentRegistry(content, { dimensions })`——传了才校验、没传跳过）。维度表里的维度／键都能被 `byTag(维度, 键)` 批量捞出。形状定义只有一份：`schemas/common.schema.json#/definitions/tags`，14 个条目集合统一 `$ref`（改形状 = 改一处）。
 - `flags`：标记位 = **裸字符串数组**，无维度、**不进倒排索引**（不可批量查询）。回答「有没有」（执灯、任务道具、不可丢弃），与 `tags` 回答的「归在哪一类」分工，**并存且互不取代**。例：纯叙事道具 = 普通条目 + `flags:["quest"]` + 价值归零（此处原写 `tags:["quest"]`，已按 ADR-0029 §3 改正——它的语义是布尔判断，不是归类）。
 - `prototypeKey`／`prototypeParent`：原型继承的两个半边（ADR-0030 §3–§4），**同集合内**继承、不跨集合；原型就塞在被继承的集合里，不开 `prototypes/` 集合。`prototypeKey` 的值 = 本条目 id——**显式声明才可被继承**，且**不参与继承**（没声明的条目展平后就没有它）；`prototypeParent` 是父条目 id 数组（多亲，左→右优先级递增）。展平在加载期、注册表内完成，展平结果**不含** `prototypeParent`（它是已消费的指令）。**M3-T3 已落**：展平器是 `packages/core/src/content/prototype.ts` 的 `flattenCollection`，由注册表按集合调用，位置在 **id 去重之后、引用完整性之前**（继承来的 `exits`／放置清单／`monsterId` 与 `tags` 一样要过校验与索引）。合并律 = `tags`／`attrs` **互补合并**（合并后键列表**字典序升序 + 去重**）、其余键**整体替换**；多亲左→右优先级递增，自身 > 最右父。加载期大声失败四种：`prototypeKey` ≠ 本条目 id、父 id 不在本集合（**同集合内**继承）、父未声明 `prototypeKey`、原型**成环**（自环／二环／长环；菱形不是环）。**没声明 `prototypeParent` 的条目原样穿过**（同一个对象引用，零重写；`prototypeParent: []` 算已声明，照样剥掉）。
-- 四个通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）一律**可选**（唯一例外：`equipment` 词缀的 `tags` 是该集合自定的必填）、一律只在**实体层**：**条目**带，**出口**也带（出口是独立实体，`ExitEntry extends CommandEntry`，spec/02 §4——带这四个字段是「出口即命令」的推论，故 schema 与类型一并开口子）；房间的 `objects[]` **放置清单项不是实体，不带**。`config` 三类与 `condition` 库同理不在此列。⚠️ 出口上的 `prototypeKey`／`prototypeParent` **今天无消费者**，而且**出口不可继承是构造性的、不是待办**：展平按集合做（ADR-0030 §3），房间的 `exits` 走整体替换、不参与互补合并（spec/03 §6）；加上 `exits` 在 schema 里**必填**、出口 id 又全局唯一 ⇒ schema 合法内容永远不会从原型继承出口，即便绕过 schema 省略 `exits`，两个房间共用同一个出口对象也会报 `duplicate exit id`（各房间的边目标本来就不同，共用本身也无意义）。**离线环检测已落（#19，M3-T6）**：`scripts/check-content.mjs` 按集合遍历 `prototypeParent` 图，成环即失败并打印环（自环／二环／长环；菱形不是环）；父是否存在、父是否声明 `prototypeKey` 仍归注册表展平在加载期管（离线不重复实现）。**基类原型只能带描述／进入文本／标签／放置清单这类字段，出口由各房间自己声明。**而出口的 `tags` **有消费者**：出口**进 `byTag` 倒排索引**（2026-09-02 定案、M3-T2 已落，见 spec/03 §5.1；出口 id 与条目 id 同空间，混排 id 升序），`flags` 与条目侧同律、不进索引。
+- 四个通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）一律**可选**（唯一例外：`equipment` 词缀的 `tags` 是该集合自定的必填）、一律只在**实体层**：**条目**带，**出口**也带（出口是独立实体，`ExitEntry extends CommandEntry`，spec/02 §4——带这四个字段是「出口即命令」的推论，故 schema 与类型一并开口子）；房间的 `objects[]` **放置清单项不是实体，不带**。`config` 四类与 `condition` 库同理不在此列。⚠️ 出口上的 `prototypeKey`／`prototypeParent` **今天无消费者**，而且**出口不可继承是构造性的、不是待办**：展平按集合做（ADR-0030 §3），房间的 `exits` 走整体替换、不参与互补合并（spec/03 §6）；加上 `exits` 在 schema 里**必填**、出口 id 又全局唯一 ⇒ schema 合法内容永远不会从原型继承出口，即便绕过 schema 省略 `exits`，两个房间共用同一个出口对象也会报 `duplicate exit id`（各房间的边目标本来就不同，共用本身也无意义）。**离线环检测已落（#19，M3-T6）**：`scripts/check-content.mjs` 按集合遍历 `prototypeParent` 图，成环即失败并打印环（自环／二环／长环；菱形不是环）；父是否存在、父是否声明 `prototypeKey` 仍归注册表展平在加载期管（离线不重复实现）。**基类原型只能带描述／进入文本／标签／放置清单这类字段，出口由各房间自己声明。**而出口的 `tags` **有消费者**：出口**进 `byTag` 倒排索引**（2026-09-02 定案、M3-T2 已落，见 spec/03 §5.1；出口 id 与条目 id 同空间，混排 id 升序），`flags` 与条目侧同律、不进索引。
 - `effects`：效果引用列表（`["eff-xxx"]`），指向 `content/effects/` 的效果定义条目；效果 = primitive 组合（候选集限定 **13 项**，见 `docs/engine-reservations.md` §3），武功/怪物/层主共用。
 - `progression`：仅用于生产活动（采集、炼丹等），内容侧只放**等级参数** `maxLevel`（等级上限）与 `xpPerCycle`（每次产出获得的经验）。**玩家的当前等级与经验是运行时状态，存于存档，不写进内容条目**。等级与战力门槛（`powerMin`）共同决定可进入的采集区。
 - `rates`：活动直接产出的资源列表；**产出为物品（如药材）的活动可为空数组**，此时产出由物品表定义。
@@ -121,6 +122,21 @@ assets/               # 美术资产（MVP 允许为空）
 - 武功**品阶**：下乘 / 中乘 / 上乘 / 绝学
 - 装备**稀有度**：寻常 / 精良 / 罕见 / 绝世
 - **造诣 / 显示档位**（数值→造诣描述，由 config `displayTiers` 区间表推导，不写死在条目里）：**50 档**（完整列表见 `docs/research/xkx100-kungfu-combat.md` §5.1）；代表性档位：不堪一击 / 初窥门径 / 驾轻就熟 / 炉火纯青 / 出神入化 / 返璞归真。**造诣是纯显示层，不产生任何门槛**（ADR-0019）
+
+## 日历集合（content/config/calendar.json，M4-T2 已落）
+
+一包一份，`id` 恒为 `calendar`。**它是「游戏内时间」的唯一载体**：引擎不认识时辰／刻／季节，只会算「第几 tick 落在哪个环的第几段」——段名、段数、每段多长、有几条刻度轴，全在这份数据里（spec/04 §3，ADR-0032）。换包即换历法。
+
+- 形状 = **一组具名独立的环**（`rings[]`），**不是一张扁平分段表**：一个 tick 同时落在多条轴上（日内是哪一时辰、年内是哪一季节），扁平表只能表达一条，加季节就得改 schema + 改引擎。环之间互相独立、各自取模，引擎不关心 `day` 与 `year` 是否成整数倍。
+- `rings[].id`：环 id，全表唯一，小写字母／数字／连字符；`rings[].segments[]`：环上的段，按书写顺序首尾相接，最后一段接回第一段。
+- `segments[].id`：段名，**环内唯一**；它是**键**不是文案——显示名（「子时」）是渲染层的事，引擎只认 id。
+- `segments[].ticks`：本段占用的 tick 数，**正整数**（零长段会让环周期为 0）。
+- **环周期 = Σ segments[].ticks**，不另设 `periodTicks` 字段：不让「每日 tick 数」与环周期两个数字各说一遍。
+- 引擎侧 `f(环, tick) → 段索引` 用**半开区间 + 显式排序数组**（`[start, start + ticks)`，越界由一次取模处理），不抄 Evennia `extended_room` 那个 `if start < end`（它让跨年区间永远匹配不上）。
+- **Schema 管不了的两件事由注册表在加载期硬校验**：环 id 全表唯一、段 id 环内唯一（与维度表同律：形状归 schema，跨值一致性归注册表）。
+- 速率／时长／冷却默认这类**数字**不在这里，归 `settings.json` 的 `time` 组（三分法：本文件是 STRUCTURE，settings 是 TUNING）。缺 `calendar` 或 `settings.time` 时**引擎侧首次用到时间才大声失败**，没有默认公历。
+
+三处同步：`schemas/config.calendar.schema.json` ／ 引擎 `packages/core/src/content/config.ts`（`Calendar` 契约与 `assertCalendar`）＋ `src/time/calendar.ts`（`createGameTime`／`ringPeriod`／`segmentIndexAt`）／本节。
 
 ## combat-text 与效果
 
