@@ -104,6 +104,13 @@ export interface GameTime {
 export function createGameTime(calendar: Calendar | undefined): GameTime {
   const byId = new Map<string, CalendarRing>();
   for (const ring of calendar?.rings ?? []) {
+    // Two rings sharing an id would silently drop one axis — the same class
+    // of bug that made entry and exit ids share one space (#15). The
+    // registry rejects it at load; this catches a host that built its
+    // calendar in code and handed it straight over.
+    if (byId.has(ring.id)) {
+      throw new Error(`game time: calendar declares ring "${ring.id}" twice`);
+    }
     byId.set(ring.id, ring);
   }
 

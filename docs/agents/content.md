@@ -131,7 +131,7 @@ assets/               # 美术资产（MVP 允许为空）
 - `rings[].id`：环 id，全表唯一，小写字母／数字／连字符；`rings[].segments[]`：环上的段，按书写顺序首尾相接，最后一段接回第一段。
 - `segments[].id`：段名，**环内唯一**；它是**键**不是文案——显示名（「子时」）是渲染层的事，引擎只认 id。
 - `segments[].ticks`：本段占用的 tick 数，**正整数**（零长段会让环周期为 0）。
-- **环周期 = Σ segments[].ticks**，不另设 `periodTicks` 字段：不让「每日 tick 数」与环周期两个数字各说一遍。
+- **环周期 = Σ segments[].ticks**，不另设 `periodTicks` 字段：不让「每日 tick 数」与环周期两个数字各说一遍。本包取值：1 时辰 = 1200 tick ⇒ 1 日（`day` 周期）= 14400 tick；1 季 = 90 日 = 1296000 tick ⇒ 1 年（`year` 周期）= 5184000 tick = 360 日。
 - 引擎侧 `f(环, tick) → 段索引` 用**半开区间 + 显式排序数组**（`[start, start + ticks)`，越界由一次取模处理），不抄 Evennia `extended_room` 那个 `if start < end`（它让跨年区间永远匹配不上）。
 - **Schema 管不了的两件事由注册表在加载期硬校验**：环 id 全表唯一、段 id 环内唯一（与维度表同律：形状归 schema，跨值一致性归注册表）。
 - 速率／时长／冷却默认这类**数字**不在这里，归 `settings.json` 的 `time` 组（三分法：本文件是 STRUCTURE，settings 是 TUNING）。缺 `calendar` 或 `settings.time` 时**引擎侧首次用到时间才大声失败**，没有默认公历。

@@ -34,7 +34,10 @@ export interface TimeTuning {
 export function createTimeTuning(settings: SettingsTable | undefined): TimeTuning {
   return {
     number(key) {
-      const group = settings?.time;
+      // `?? undefined` folds a null group into "missing": schema and registry
+      // both forbid null, but a raw table reaching this accessor would
+      // otherwise fail with a TypeError about reading a key off null.
+      const group = settings?.time ?? undefined;
       if (group === undefined) {
         throw new Error(
           'time tuning: no settings table carries a "time" group — ' +

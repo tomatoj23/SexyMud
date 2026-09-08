@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import Ajv from "ajv";
-import type { Calendar, CalendarRing, SettingsTable } from "../src/content/config.js";
+import type { Calendar, CalendarRing, SettingsGroup, SettingsTable } from "../src/content/config.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import { createGameTime, ringPeriod, segmentAt, segmentIndexAt } from "../src/time/calendar.js";
 import { createTimeTuning } from "../src/time/tuning.js";
@@ -198,6 +198,16 @@ describe("game time: f(ring, tick) → segment (spec/04 §3.1)", () => {
     expect([199, 200, 300].map((tick) => time.segmentOf("year", tick).id)).toEqual(["q", "p", "q"]);
   });
 
+  it("rejects a ring with no segments — there is no period to divide by", () => {
+    expect(() => ringPeriod({ id: "day", segments: [] })).toThrow(/period of 0/);
+  });
+
+  it("refuses a calendar that declares one ring id twice (a silent axis loss)", () => {
+    expect(() =>
+      createGameTime(calendar(ring("day", [["a", 10]]), ring("day", [["b", 20]]))),
+    ).toThrow(/declares ring "day" twice/);
+  });
+
   it("throws on a tick that is not a non-negative safe integer", () => {
     const day = twoRings.rings[0]!;
     expect(() => segmentIndexAt(day, -1)).toThrow(/non-negative safe integer/);
@@ -243,6 +253,12 @@ describe("time tuning: settings.time (spec/04 §6 O3)", () => {
     );
     expect(() => createTimeTuning({ time: {} }).number("regenPerTick")).toThrow(
       /no numeric key "regenPerTick"/,
+    );
+  });
+
+  it("treats a null `time` group as missing instead of crashing on it", () => {
+    expect(() => createTimeTuning({ time: null as unknown as SettingsGroup }).number("regenPerTick")).toThrow(
+      /"time" group/,
     );
   });
 

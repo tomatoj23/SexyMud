@@ -85,8 +85,11 @@ corepack pnpm content:check
 | 类 | 内容 | 放哪 |
 |---|---|---|
 | **STRUCTURE** | 装配图：模块路径、typeclass、cmdset | **不进** settings，用 `$ref` 指向内容 |
+| **STRUCTURE**（结构性配置） | 没有内容集合可挂的装配图：**维度表、显示档位区间表、日历的环与段** | **另开** `content/config/<名>.json`（`dimensions`／`display-tiers`／`calendar`），**不进** settings |
 | **TUNING** | 数字：战斗/成长/经济/上限/时长/节流 | **进** `content/config/settings.json` |
 | **POLICY** | 决策：权限层级、多会话模式、默认策略 | **另开** `content/config/policy.json` |
+
+> ⚠️ **日历是这张表最容易放错的一处**：段的**名字与数量**是 STRUCTURE ⇒ `calendar.json`；**速率／时长／冷却默认**是 TUNING ⇒ `settings.time`。把段塞进 `settings` 会撞 C4，把速率塞进 `calendar` 会让「调平衡」变成改结构（ADR-0032 §3）。
 
 ### 6.1 `settings.json` 首发建议 9 类
 
