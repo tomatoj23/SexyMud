@@ -52,7 +52,8 @@ const targets = [
  * sight, so the guard is part of the rule.
  */
 /** A line that merely NAMES retired wording ("已被 ADR-0032 覆盖：…") is correct prose. */
-const MENTIONS_LEGITIMATELY = /覆盖|已被|原写|旧|不再|删|改为|更宽|比「|superseded|retired|removed/;
+const MENTIONS_LEGITIMATELY =
+  /覆盖|已被|原写|旧|不再|删|改为|更宽|比「|同义|废弃|superseded|retired|removed/;
 
 const SUPERSEDED = [
   {

@@ -22,6 +22,9 @@
 - 新依赖只进 workspace 的 dependencies/devDependencies；pnpm 要求审批构建脚本时逐个审慎添加
 - 详见 `docs/adr/0007-project-isolated-dependency-environment.md`
 
+**pre-commit 钩子（husky，`package.json` 的 `prepare` 脚本，装依赖时自动接上）**：`.husky/pre-commit` 依次跑 `corepack pnpm check`（content + docs 两道）→ `corepack pnpm typecheck` → `corepack pnpm test`，任一步失败即中止提交。
+**故意没有 lint-staged／Prettier**：本仓没有 Prettier 配置，装上会把整棵树重排在一个提交里；要加就当一次独立决策。⚠️ 卡住时**不要用 `--no-verify` 绕过** —— 门禁报的是真问题，修它。
+
 ## Agent skills
 
 ### Issue tracker

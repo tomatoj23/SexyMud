@@ -11,9 +11,11 @@
     "typecheck": "corepack pnpm -r --if-present run typecheck",
     "dev:web": "corepack pnpm --filter @sexymud/web dev",
     "build:web": "corepack pnpm --filter @sexymud/web build",
-    "preview:web": "corepack pnpm --filter @sexymud/web preview"
+    "preview:web": "corepack pnpm --filter @sexymud/web preview",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "ajv": "^8.17.0"
+    "ajv": "^8.17.0",
+    "husky": "^9.1.7"
   }
 }

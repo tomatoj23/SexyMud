@@ -1,0 +1,12 @@
+# The two gates first (fast, and they fail naming the file and line), then
+# typecheck, then the suite.
+#
+# No lint-staged/Prettier step on purpose: this repo has no Prettier config,
+# and adding one would reformat the whole tree in a single commit. Add it when
+# we actually want it, as its own decision.
+
+set -e
+
+corepack pnpm check
+corepack pnpm typecheck
+corepack pnpm test
