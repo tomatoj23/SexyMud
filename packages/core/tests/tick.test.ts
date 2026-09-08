@@ -150,6 +150,25 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
     harness.call(fine, "go", { tick: 3 });
     expect(harness.clock.nowTick()).toBe(3);
   });
+
+  it("a rejected command still advances the world — it is game content, not a parse failure", () => {
+    const vetoed: CommandSpec<TestWorld> = {
+      key: "vetoed",
+      at_pre_cmd: (ctx) => ctx.veto("gateClosed"),
+      func: () => {},
+    };
+    const harness = createCommandHarness<TestWorld>({
+      world: { rooms: {} },
+      receivers: ["actor-1"],
+      nowTick: 0,
+    });
+
+    // Rejected before the parse stage, yet it happened: the world moves.
+    const out = harness.call(vetoed, "go", { tick: 40 });
+
+    expect(out.result).toMatchObject({ ok: false, kind: "rejected" });
+    expect(harness.clock.nowTick()).toBe(40);
+  });
 });
 
 describe("seq and tick are independent (spec/04 §6 O2)", () => {

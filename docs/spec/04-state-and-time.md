@@ -12,7 +12,7 @@
 | 词 | 含义 | 不是 |
 |---|---|---|
 | **tick** | 引擎的单调计数。不是毫秒，不由墙钟推导 | 时间戳、毫秒 |
-| **高水位**（`maxTick`） | 引擎见过的**进入执行段的命令**的 tick 最大值。单调不减，是引擎唯一的「现在」（`invalid` 不计入，见 §4.1） | 最后一条命令的 tick |
+| **高水位**（`maxTick`） | 单调不减的「现在」= 所有**非 `invalid` 的命令**（即 `ok`／`rejected`）的 tick 最大值；`invalid` 不计入（§4.1）。⚠️ 初值由驱动侧播种（存档里的 `nowTick`／会话起点），**不是**某条命令给的 | 最后一条命令的 tick |
 | **结算跨度** | 一次补算覆盖的区间 `[fromTick, toTick)` | 「在线时长」 |
 | **游戏内时间** | tick 推导出的**段**（哪个时辰、哪个季节）。**推导，绝不存储** | tick 本身 |
 | **环**（`ring`） | 一条独立的游戏内时间刻度轴（日内时辰是一条，年内季节是另一条） | 「日历」整体 |
@@ -101,17 +101,19 @@ v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§
 Command { seq, actorId, tick, raw }
 ```
 
-引擎内部维护 **`maxTick = max(见过的所有「进入执行段的命令」的 tick)`**，这是引擎唯一承认的「现在」，由 §2.3 的 `Clock` 对外读出。
+**`maxTick = max(所有非 invalid 的命令的 tick)`**，由 `createTickClock` 的**实例**维护（单调不减），是引擎唯一承认的「现在」，由 §2.3 的 `Clock` 对外读出。⚠️ 「引擎维护」不等于「`runCommand` 维护」：那个实例由**驱动世界的那一侧**持有（§2.2 末条），`runCommand` 只是被喂一个数。
 
-> ⚠️ 「进入执行段」这个限定语不可省：`invalid`（无法解析）的 tick **不参与**高水位 —— 否则一条乱码就能把水位抬高、让下一条真实命令瞬间跨过一大段，等于间接快进世界。见 §4.1。
+> ⚠️ 限定语不可省，且**口径要比「进入执行段」更宽**：`ok` 与 `rejected` 都算（含被门禁／`at_pre_cmd` 在 parse 之前就拒掉的），只有 `invalid`（没解析成命令，它连命令都算不上）**不参与** —— 否则一条乱码就能把水位抬高、让下一条真实命令瞬间跨过一大段，等于间接快进世界。见 §4.1。
 
 - **tick 倒退的命令照常执行**，但一切时间判定用高水位。**不**大声失败：tick 倒退**不改变任何已发生的事实**，只影响「现在」，而「现在取最大值」是唯一无歧义的解释；丢命令比采纳命令代价大。
-- **不保留两个真相**：既有 `CommandDeps.clock`（宿主注入的时钟）**删除**。
+- **不保留两个真相**：既有 `CommandDeps.clock`（宿主注入的时钟）**删除**（**#20 已完成**），改为 `CommandDeps.nowTick`。
   **代价（2026-09-08 实测，不夸大也不缩小）**：`clock` 在 `packages/core/src` 里**零消费者**（只有 `types.ts` 定义、`pipeline.ts` 注入并透传给 `CommandContext`、`testing.ts` 的 `TestClock`），但在测试里有 **1 处**消费者 —— `tests/command-harness.test.ts` 的 `tickProbe` 用例读 `ctx.clock.nowTick()` 并断言 `harness.clock.advance(7)` 后拿到 `[100, 107]`；`tests/parser.test.ts` 的 `deps()` 也造了一个 `createTestClock()`。`Command` 的构造点共 **8 处**：`testing.ts` 的 `call()` 1 处 + `parser.test.ts` 绕过 harness 直接调 `runCommand` 的 **7 处**。
   合计改动约 10 处，**不是零回归，但仍是今天最便宜的时点**（等战斗系统开始读 `ctx.clock` 之后再改就是几十处）。好消息是那条 `tickProbe` 用例的**断言值不变**：`advance(7)` 改为「改下一条命令的默认 tick」之后仍是 `[100, 107]`，只需重写表达方式。
 - **附带**：`TestClock.advance()` 的语义从「推进引擎的现在」变为「改下一条命令的默认 tick」。
 - **实现落点（#20 已落）**：`packages/core/src/clock.ts` 导出 `createTickClock(startTick)`（`TickClock = Clock & { observe(tick) }`）与 `observeDispatch(clock, command, result)` —— 后者封装 §4.1 那张表（`ok`／`rejected` 抬高水位，`invalid` 不抬高），让这条规则只有一个副本。`runCommand` **自己不持有时钟**：它从 `deps.nowTick`（驱动侧在本条命令之前的水位）取，算 `now = max(deps.nowTick, command.tick)`，再把它包成 `ctx.clock` 交给命令。`deps.nowTick` 与 `command.tick` 任一不是非负安全整数时**大声失败** —— 那是接线错误，不是玩家输入（NaN 水位会让下游所有判定静默失真，必须挡在入口）。
 - **高水位住在「推进世界的那一侧」，不在 `runCommand` 里**：`runCommand` 是纯函数（它因此**不持有**任何时钟，这正是能删掉 `CommandDeps.clock` 的原因）。推进与高水位由**驱动世界的那一侧**持有 —— 生产上是 `WorldRuntime`／宿主 `Authority`，测试上是 `createCommandHarness`。纯对象模式（`liveWorld: false`）每次调用深拷贝一个全新夹具，本就不存在跨调用的时间，需要跨调用观察时间的用例改用 `liveWorld: true`（该开关已存在）。
+- ⚠️ **驱动侧必须把自己持有的水位喂进 `deps.nowTick`，不能图省事喂 `command.tick`**：后者会让「tick 倒退取高水位」这条规则整个失效（水位恒等于本条命令的 tick），而且**引擎侧无从检测** —— 传给 `runCommand` 的数与本条命令的 tick 恰好相等是完全合法的情形。这是驱动侧的纪律，不是引擎能守的约束（#26 的宿主实现要照做）。
+- ⚠️ **重放的限定**（ADR-0031 §1 那句「同一命令序列在不同 tick 重放」的准确含义）：重放**必须**从一个新的水位开始（或按不减的顺序喂入）。把一段旧序列喂进一个水位已经更高的时钟，每条命令看到的都是那个水位 —— 这是高水位语义的正确结果，不是 bug，但它意味着「乱序重放」不可表达，见 §2.5。
 
 ### 2.3 `Clock` 端口：方向翻转（ADR-0031）
 
@@ -328,5 +330,6 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 | O5 | **`tickSeconds` 归谁** | ADR-0016 §4 提到「固定步长（`content/config/`：`tickSeconds`）」。它是**真实秒**，属于宿主把墙钟翻译成 tick 的参数，**引擎不读** ⇒ 不应进 `content/config/settings.json`（那是给引擎的 TUNING）。⚠️ 连带一条：若确认只有宿主用它，那它连 `content/config/` 都不该待 —— `content/` 是引擎读的东西，放进去会让人误以为引擎消费它。落点由宿主票定 |
 | O6 | **要不要时间谓词**（如"只在夜里能进"） | `spec/02` §5.3 谓词表里今天**零**时间相关谓词（全文 `tick` 零命中）。倾向：M4 **不**加，等第一个内容真的需要时按既有三处同步流程加（引擎／`condition.schema.json`／spec/02 §5.3） |
 | O7 | **创建 `calendar.json` 那张票的文档同步债** | 文件落地时要一并改：`docs/agents/content.md` 的 config 清单（现写「dimensions、display-tiers、settings」三类）、`docs/spec/06` §2 的「config **三类**与 condition 除外」、schema 总数口径（19 → 20，`HANDBOOK` 三处数字）。按 ADR-0003 三处同步（`core` 类型／编辑器表单／`content.md`）执行 —— **本轮故意没提前改**，数字不能先于文件撒谎 |
-| O8 | **★引擎侧要用到 calendar／到期桶处理器时，走什么通道** | `runCommand(spec, command, deps)` 的 `CommandDeps` 里**没有 registry**（今天只有 `rng`/`world`/`sink`/`verbs`/`subjectOf`/`predicates`）。今天不构成问题（段名是渲染层的事，M4 也不加时间谓词，见 O6）；但 `settleTo` 一旦要跑到期桶，就**必须**拿到宿主注入的处理器 ⇒ 得新增一个 `CommandDeps` 字段。通道照 `subjectOf` 的先例**由宿主注入**，不是让 `runCommand` 直接读 registry —— 后者会破坏「引擎只读 `ContentRegistry`、且 deps 显式」这条既有形状 |
+| O8 | **★引擎侧要用到 calendar／到期桶处理器时，走什么通道** | `runCommand(spec, command, deps)` 的 `CommandDeps` 里**没有 registry**（今天只有 `nowTick`/`rng`/`world`/`sink`/`verbs`/`subjectOf`/`predicates`）。今天不构成问题（段名是渲染层的事，M4 也不加时间谓词，见 O6）；但 `settleTo` 一旦要跑到期桶，就**必须**拿到宿主注入的处理器 ⇒ 得新增一个 `CommandDeps` 字段。通道照 `subjectOf` 的先例**由宿主注入**，不是让 `runCommand` 直接读 registry —— 后者会破坏「引擎只读 `ContentRegistry`、且 deps 显式」这条既有形状 |
 | O9 | **★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`** | 这是**会卡住实现**的一条，三选项与倾向见 §1.5 约定 3（倾向 `serializeWorld(world, meta)` ／ `restoreWorld → { state, meta }`）。**拆票时必须落到具体某张票上**，否则 T6 开工即阻塞 |
+| O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26** |
