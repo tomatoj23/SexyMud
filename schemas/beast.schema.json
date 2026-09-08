@@ -14,7 +14,7 @@
     "name": { "type": "string", "minLength": 1 },
     "slot": {
       "const": "beast",
-      "description": "随从栏。slot 维度取值 beast（dimensions 表）由 schema const 锁死——兽永远落随从栏，不占 7 装备槽（ADR-0013）"
+      "description": "随从栏，恒为 `beast`（由 `const` 锁死——兽永远落随从栏，ADR-0013）。⚠️ 字段名 `slot` 沿用装备的字段名，但取值 `beast` **不是** `content/config/dimensions.json` 里 `slot` 维度的取值：那个维度只有 7 个装备槽（weapon/head/armor/wrist/waist/legs/boots），随从栏**独立且不占 7 槽**，故 `beast` 不进维度表——对照 `equipment.schema.json` 的 `slot`，那一个才取自 `slot` 维度。同名不同域，勿把两者当同一个取值空间"
     },
     "element": {
       "type": "string",

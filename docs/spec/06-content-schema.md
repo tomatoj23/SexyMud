@@ -5,7 +5,7 @@
 
 ## 1. 集合
 
-`content/` 下 **15 个条目集合**（见下表）+ `config/`（结构性配置）+ `lore/`（纯 Markdown，由 style-guide 约束，无 schema）。**每个条目一个 JSON 文件**。
+`content/` 下 **14 个条目集合**（见下表）+ `config/`（结构性配置）+ `lore/`（纯 Markdown，由 style-guide 约束，无 schema）。**每个条目一个 JSON 文件**。
 
 | | | |
 |---|---|---|

@@ -110,7 +110,7 @@ TerminalView 实现                   style-guide.md（文风约束）
 
 配套（非本目录）：
 - `docs/adr/` — 决策历史（34 篇；其中 **0031–0034 = M4 时间与调度**）
-- `docs/chinese-mud-concerns.md` — 中文特有问题全景（35 条，5 条待定）
+- `docs/chinese-mud-concerns.md` — 中文特有问题全景（43 条，5 条待定）
 - `CONTEXT.md` — **武侠内容包**术语词典（作用域：内容层，不是引擎）
 - `content/style-guide.md` — 叙事文风约束
 
@@ -143,7 +143,7 @@ TerminalView 实现                   style-guide.md（文风约束）
 | **时间／调度 · T2：日历内容化与求值（M4-T2，#21）** | ✅ **已落**（`content/config/calendar.json` ＋ `schemas/config.calendar.schema.json`（新，第 20 个 schema）：**一组具名独立的环**，环周期 = Σ 段 tick 数，不另设字段；`packages/core/src/content/config.ts`（新）：`Calendar`／`SettingsTable` 契约 + `assertCalendar`／`assertSettingsTable` 加载期一致性校验（环 id 全表唯一、段 id 环内唯一、tick 为正整数——schema 管不了的那类）；`createContentRegistry` 收 `settings?`／`calendar?`（与 `dimensions` 同构：传了才校验、没传跳过）并**原样读出**；`src/time/calendar.ts`（新）：`ringPeriod`／`segmentIndexAt`／`segmentAt`／`createGameTime`（半开区间 + 一次取模，多环独立求值，**缺日历时首次使用才大声失败**，无默认公历）；`src/time/tuning.ts`（新）：`createTimeTuning` 定死 O3（缺组失败、缺键由消费者失败、**引擎绝不猜默认值**）。迷你包补自己的 `config/calendar.json`（`shift`／`orbit` 两条环，与武侠包零重合）⇒ **换目录即换历法**。`tests/calendar.test.ts` 37 例；全量规模见 `HANDBOOK`「当前事实」） |
 | **时间／调度（＝ M4，T3–T7）** | ⏳ **设计已定案、部分未实现**（19 条，见 `spec/04` §2–§4 与 ADR-0031–0034；T1／T2 已关，余 #22–#26） |
 | 输出管线、中文层其余部分 | ❌ 未实现（规格已定，见各文件） |
-| 放置期集合的 schema（15 个，口径见 `HANDBOOK`） | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做）。**限定语**：`schemas/` 现共 **20 个** = 2 个被引用库（`condition`／`common`）+ 3 个新落集合（`commands`／`rooms`／`npcs`）+ `config` 四类 + **11 个**放置期集合；「15」= 20 − 2 库 − 3 新落（口径不同、数字都对，别去统一它们） |
+| 待重估的 schema（15 个，口径见 `HANDBOOK`） | ⚠️ 放置期设计，需随本规格重估（`monster.schema.json` 已随 `mon-lq-001` 进入编译，重估仍未做）。**限定语**：`schemas/` 现共 **20 个** = 2 个被引用库（`condition`／`common`）+ 3 个新落集合（`commands`／`rooms`／`npcs`）+ `config` 四类 + **11 个**放置期集合；「15」= 20 − 2 库 − 3 新落（口径不同、数字都对，别去统一它们） |
 
 **下一步**：~~M2 最小可玩世界运行时（走/看/说，六张 tracer 票，形态见 ADR-0028）~~（**六票全关**）→ ~~M3 标签与原型（spec/03 §5.1／§6.1）—— 设计已定案（ADR-0029／ADR-0030），已拆六票（#14–#19，规格快照 #13）；T1 四字段 schema 与类型落地（**#14 已关，3c4a470**）→ T2 内容侧标签（`byTag` 倒排索引 + 维度表硬校验，**#15 已关，2776306**）→ T3 原型展平（合并律／多亲优先级／环检测，**#16 已关，e83a064**；T4 编排已被 #16 吸收，**#18 已关**）→ T5 运行时标签（状态树槽 + `hasTag(维度, 键)` + 门禁贯穿，**#17 已关，37cab68**）→ T6 迷你包验收（异种维度表 + 真实继承链 + 离线环检测，**#19 已关，7dccf0f**）~~（**六票全关，spec/03 §8 自检清单 19 条全勾**）→ **M4 时间与调度（spec/04 §2–§4，战斗前夜）—— 设计已定案**（2026-09-08 `grill-with-docs` 访谈 19 条，见 **ADR-0031／0032／0033／0034** 与 `spec/04` §0 术语表）；**已拆七票 #20–#26**（M4-T1…T7，全部带 `ready-for-agent`；阻塞边见 `docs/HANDBOOK.md`「下一步」）。**#20（M4-T1）已关，43c028b**：`Command` 携带 tick + 高水位 + `Clock` 翻转 + `invalid` 不推进，O2（seq／tick 分工）一并定案写进 `spec/04` §2.5。**#21（M4-T2）已关，2fd9ba7**：日历内容化与求值（`calendar.json` ＋ 第 20 个 schema ＋ 注册表 `settings?`／`calendar?` 通道 ＋ `createGameTime`／`createTimeTuning`），O3 一并定案、O7 同步债结清。⚠️ 两条覆盖既有决策：ADR-0031 覆盖 `spec/01` 端口表 `Clock` 的宿主实现一列；ADR-0032 覆盖 ADR-0016 §4 的「双时钟不共用代码路径」。每完成一个子系统，跑该文件末尾的自检清单。
 
