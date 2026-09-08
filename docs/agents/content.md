@@ -136,7 +136,7 @@ assets/               # 美术资产（MVP 允许为空）
 - **Schema 管不了的两件事由注册表在加载期硬校验**：环 id 全表唯一、段 id 环内唯一（与维度表同律：形状归 schema，跨值一致性归注册表）。
 - 速率／时长／冷却默认这类**数字**不在这里，归 `settings.json` 的 `time` 组（三分法：本文件是 STRUCTURE，settings 是 TUNING）。缺 `calendar` 或 `settings.time` 时**引擎侧首次用到时间才大声失败**，没有默认公历。
 
-三处同步：`schemas/config.calendar.schema.json` ／ 引擎 `packages/core/src/content/config.ts`（`Calendar` 契约与 `assertCalendar`）＋ `src/time/calendar.ts`（`createGameTime`／`ringPeriod`／`segmentIndexAt`）／本节。
+三处同步（ADR-0003）：① `schemas/config.calendar.schema.json`；② 引擎 —— `packages/core/src/content/config.ts`（`Calendar` 契约与 `assertCalendar`）＋ `src/time/calendar.ts`（`createGameTime`／`ringPeriod`／`segmentIndexAt`）；③ 本节（内容作者入口）。
 
 ## combat-text 与效果
 

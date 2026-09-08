@@ -43,9 +43,12 @@ export function ringPeriod(ring: CalendarRing): number {
 /**
  * `f(ring, tick) → segment index`: which segment of the ring a tick falls on.
  *
- * O(segments), segments being a handful. A zero-length segment is simply
- * never selected (its half-open interval is empty) rather than an error —
- * the alternative would be a second validation pass over the same data.
+ * O(segments), segments being a handful. On data that never went through the
+ * registry a zero-length segment is simply never selected (its half-open
+ * interval is empty) rather than an error — the alternative would be a
+ * second validation pass over the same data. A ring whose segments sum to
+ * nothing is a different matter: `ringPeriod` rejects it, because there is
+ * no period to divide by.
  */
 export function segmentIndexAt(ring: CalendarRing, tick: number): number {
   assertTick(tick, "tick");

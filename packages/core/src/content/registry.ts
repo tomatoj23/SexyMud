@@ -169,9 +169,12 @@ export interface ContentRegistry {
   /**
    * The pack's calendar, exactly as handed over — `undefined` when the host
    * had none. Read BACK out of the registry rather than kept alongside it so
-   * there is one validated copy: the engine side that turns a tick into a
-   * segment (`createGameTime`) takes it from here, and swapping the content
-   * directory swaps the calendar with it (spec/04 §3, ADR-0032).
+   * there is ONE validated source (the same object, not a copy): the engine
+   * side that turns a tick into a segment (`createGameTime`) takes it from
+   * here, and swapping the content directory swaps the calendar with it
+   * (spec/04 §3, ADR-0032). The whole registry's contract is that loaded
+   * content is immutable; a host mutating what it handed over desyncs
+   * everything downstream.
    */
   readonly calendar: Calendar | undefined;
   /**

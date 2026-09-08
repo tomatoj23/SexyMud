@@ -63,15 +63,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Load-time consistency checks for a calendar — the ones a JSON Schema
- * cannot make: uniqueness of ring ids and of segment ids within a ring, and
- * the tick arithmetic that makes "period > 0" a consequence rather than a
- * separately maintained number (spec/04 §3.2).
+ * Load-time consistency checks for a calendar (spec/04 §3.2).
  *
- * It is the registry's job and not the schema's for the same reason the tag
- * vocabulary is: the values being compared live in one file and no schema
- * can cross-reference them. Host-assembled data that bypassed
- * content:check gets the same failures here, exactly as the collections do.
+ * Two of them only the registry can make — ring ids unique across the
+ * calendar, segment ids unique within a ring — because the values being
+ * compared live in one file and no schema can cross-reference them (draft-07
+ * has no `uniqueItemProperties`). That is the same reason the tag vocabulary
+ * is closed here.
+ *
+ * The rest (rings non-empty, ids non-empty, ticks a positive integer) DO
+ * restate what the schema already says. That is deliberate and is the
+ * registry's standing arrangement, not a second implementation of the
+ * schema: shape validation belongs to content:check for content on disk,
+ * while a host that assembled its data in code and bypassed the gate gets
+ * the same failures here instead of a `NaN` period and a silently wrong
+ * clock. The check exists for the arithmetic below it — `ringPeriod` divides
+ * by Σ ticks — not for its own sake.
  */
 export function assertCalendar(calendar: Calendar | undefined): void {
   if (calendar === undefined) {

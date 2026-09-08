@@ -77,6 +77,7 @@ function readConfig<T>(rootDir: string, name: string): T | undefined {
   return JSON.parse(readFileSync(file, "utf8")) as T;
 }
 
+/** The dimensions table, when the pack declares one (see readConfig). */
 function readDimensions(rootDir: string): DimensionTable | undefined {
   return readConfig<DimensionTable>(rootDir, "dimensions");
 }

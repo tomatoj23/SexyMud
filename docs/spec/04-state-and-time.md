@@ -197,7 +197,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 - **缺 `settings.time` 或 `calendar` 时，由引擎侧在首次使用时间时大声失败**，不是注册表加载期：注册表不该知道引擎需要哪些参数（与它今天不知道引擎用不用 `byTag` 同一分寸）。
 - **新增 schema 需走 ADR-0003 的三处同步**：`core` 类型／编辑器表单（`apps/editor` 今日仍是占位）／`docs/agents/content.md` 字段说明。
 
-> **落地（M4-T2，#21）**：`createContentRegistry(content, { dimensions?, settings?, calendar? })` — 三张表同构进注册表，校验只做 schema 管不了的那一层（`src/content/config.ts` 的 `assertCalendar`／`assertSettingsTable`：环 id 全表唯一、段 id 环内唯一、tick 为正整数、每个组是对象；**`id` 戳豁免**）。注册表把两张表**原样读出**（`registry.calendar`／`registry.settings`），让引擎侧只有一份已校验的副本。引擎侧读数在 `createGameTime`（日历）与 `createTimeTuning`（`settings.time`）——**两者都是惰性抛错**，这正是「不是注册表加载期」的字面实现。
+> **落地（M4-T2，#21）**：`createContentRegistry(content, { dimensions?, settings?, calendar? })` — 三张表同构进注册表，校验只做 schema 管不了的那一层（`src/content/config.ts` 的 `assertCalendar`／`assertSettingsTable`：环 id 全表唯一、段 id 环内唯一、tick 为正整数、每个组是对象；**`id` 戳豁免**）。注册表把两张表**原样交回**（`registry.calendar`／`registry.settings`：同一个已校验的对象，不是第二份副本），让引擎侧只有一个来源可问。引擎侧读数在 `createGameTime`（日历）与 `createTimeTuning`（`settings.time`）——**两者都是惰性抛错**，这正是「不是注册表加载期」的字面实现。
 
 ## 4. 调度（ADR-0032／0034）
 

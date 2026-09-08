@@ -18,7 +18,7 @@
 
 `rooms/`、`npcs/` 两个集合的 schema **已落**（M1-T6：`schemas/rooms.schema.json`（含出口子实体——出口即命令，门禁词汇表 `enter`／`traverse`）+ `schemas/npcs.schema.json`（`monsterId` 引用不复制）+ 引擎类型 `packages/core/src/world/entry.ts` + 首批柳青镇内容）；`commands/` schema **已落**（M1-T5，`schemas/commands.schema.json`，首批条目 4 条）。
 
-> `schemas/common.schema.json`（M3-T1）是**第二个被引用库**：四个条目通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）属于**每一个条目集合**（config 三类与 condition 除外），因此只有一份定义，14 个集合 schema 统一 `$ref` 引用——「标签形状只有一种」由此从**约定**变成**结构**（ADR-0029 §1）。跨文件 `$ref` 因此有两个库：`content:check` 按 `$id` 预注册全部 schema，单元测试须把用到的库都 `addSchema` 之后再 compile（否则报 `can't resolve reference`）。
+> `schemas/common.schema.json`（M3-T1）是**第二个被引用库**：四个条目通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）属于**每一个条目集合**（config 四类与 condition 除外），因此只有一份定义，14 个集合 schema 统一 `$ref` 引用——「标签形状只有一种」由此从**约定**变成**结构**（ADR-0029 §1）。跨文件 `$ref` 因此有两个库：`content:check` 按 `$id` 预注册全部 schema，单元测试须把用到的库都 `addSchema` 之后再 compile（否则报 `can't resolve reference`）。
 >
 > `schemas/condition.schema.json`（M1-T3）是**被引用库**，不是集合 schema：条件内嵌于 commands / martial 等条目，没有 `content/condition/` 目录。集合 schema 以 `$ref` 引用它（单表达式 → `condition.schema.json`；门禁映射 → `#/definitions/accessRules`）。它不进 `content:check` 的正向映射，其 draft-07 合法性与递归结构由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试，即 spec/06 §3.1 缺口在该文件上的闭合）。
 
