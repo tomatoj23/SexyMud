@@ -1,6 +1,6 @@
 import type { SaveStore, Snapshot } from "@sexymud/core";
 
-/** Browser-local SaveStore implementation. CloudBase arrives with ticket #18. */
+/** Browser-local SaveStore implementation. A cloud-backed one arrives with ticket #29. */
 export class LocalSaveStore implements SaveStore {
   constructor(private readonly key: string) {}
 
