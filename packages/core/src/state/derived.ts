@@ -12,7 +12,7 @@ import type { EntityState } from "./tree.js";
  *     RecomputeDerived once per restored entity).
  *
  * The KEY table is deliberately NOT runtime-injectable: it decides the
- * snapshot's COMPILE-TIME shape (EntityRecordV1 is an Omit over it), and a
+ * snapshot's COMPILE-TIME shape (EntityRecord is an Omit over it), and a
  * type cannot follow a value passed in at runtime. Only the recompute half
  * is injectable (see RecomputeDerived).
  *
@@ -30,7 +30,7 @@ import type { EntityState } from "./tree.js";
  * can be recomputed from anything else. The modifiers system is the first
  * real consumer (a derived stat is the sum of its modifiers) — it registers
  * here, and this table plus a `recompute` body is the ENTIRE change: the
- * snapshot type shrinks by itself (EntityRecordV1 is an Omit over this
+ * snapshot type shrinks by itself (EntityRecord is an Omit over this
  * table) and serialization drops the field without a second edit.
  */
 export const DERIVED_ENTITY_KEYS = [] as const satisfies readonly (keyof EntityState)[];

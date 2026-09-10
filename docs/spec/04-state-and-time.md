@@ -1,6 +1,6 @@
 # 04 · 状态、存档、时间与调度
 
-> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 v1 ＝ M2-T5 已落**：`state/snapshot.ts`（`serializeWorld`／`restoreWorld` ＋ v1 形状）＋ `state/derived.ts`（`derived` 契约）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4）。
+> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 ＝ M2-T5 已落、M4-T5 升到 v2**：`state/snapshot.ts`（`serializeWorld(world, meta)`／`restoreWorld(snapshot) → { state, meta }` ＋ v2 形状，v1 仍可读并经首条真实迁移升级）＋ `state/derived.ts`（`derived` 契约）＋ `save/migrations.ts`（`SAVE_VERSION` = 2，`migrations[1]` 是链的首条真实迁移）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4／§1.5）。
 > **§2–§4（时间、游戏内时间、调度）＝ M4，设计已定案**：2026-09-08 的 `grill-with-docs` 访谈共 **19 条**（四轮 18 问 + 复核硬标准时补的第 19 条），本章正文即这 19 条，依据 **ADR-0031／0032／0033／0034**。
 > ⚠️ 其中 **2 条覆盖了既有决策**：**ADR-0031** 覆盖 `spec/01` 端口表里 `Clock` 的「宿主实现」一列与该手册自检清单里以 `TestClock` 为证据的那一条；**ADR-0032** 覆盖 **ADR-0016 §4「双时钟……不共用代码路径」**。照本仓惯例，ADR 是不回改的决策日志，但 **spec 是活规格，被覆盖的段落在正文中就地更正**，覆盖关系由新 ADR 记录。
 > **其余依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
@@ -48,42 +48,47 @@ Evennia 那一千多行缓存机器（`_cache`/`_catcache`/`SaverMutable` 代理
 
 依据：ADR-0022 §1、ADR-0025 §二
 
-### 1.4 快照 v1（M2-T5 已落）
+### 1.4 快照 v1（M2-T5 已落；v1 仍是**可读**的输入，迁移链把它升到 v2）
 
-`packages/core/src/state/snapshot.ts`：`serializeWorld(world) → Snapshot<SaveDataV1>` ／ `restoreWorld(snapshot, options?) → WorldState`。
+`packages/core/src/state/snapshot.ts`：v1 的形状是 `SaveDataV1 = { entities: Record<string, EntityRecord> }`；**当前写出的版本是 v2**（§1.5），签名见那里。
 
-- **载荷就是状态树**，不是平行结构：`SaveDataV1 = { entities: Record<string, EntityRecordV1> }`，`EntityRecordV1 = Omit<EntityState, DerivedEntityKey>`（`tags` 例外地可选——见下条）。序列化在树之上只加三样：① `version` 戳（迁移链入口）② `derived` 切分（见 §1.3）③ **规范序**（entities 按 id 升序、flags 排序、**tags 维度键升序 + 键列表排序去重**）——两个相等的世界存出**同一份字节**（ADR-0024 §2），确定性引擎的历史才可 diff、可比对。**规范序由 `serializeWorld` 负责，不要求写入方保持有序**（照 flags 的先例）。
+- **载荷就是状态树**，不是平行结构：`EntityRecord = Omit<EntityState, DerivedEntityKey>`（`tags`／`lastSeenTick`／`cooldowns` 例外地可选——见下条）。⚠️ 记录**故意不编号**：v1 与 v2 写的是同一份 per-entity 记录，v2 只加了**顶层**槽。序列化在树之上只加四样：① `version` 戳（迁移链入口）② `derived` 切分（见 §1.3）③ **规范序**（entities 按 id 升序、flags 排序、**tags 维度键升序 + 键列表排序去重**、**cooldowns 键升序**、**due 按 dueTick 升序**）——两个相等的世界存出**同一份字节**（ADR-0024 §2），确定性引擎的历史才可 diff、可比对。**规范序由 `serializeWorld` 负责，不要求写入方保持有序**（照 flags 的先例）④ **世界标量**（§1.5：`nowTick`／`rngState`／`due`）。
 - **新槽在恢复时可选、缺即空；`flags` 保持必填**（M3-T5 定案，写入此处以免同一份校验器两种口径被当 bug）：`tags` 是 v1 存档中途长出的槽——它落进树的那天（#17）之前写下的存档都没有这个字段，而「未显式写入的字段不落盘」（ADR-0022）意味着**缺 = 空**，不是损坏；`restoreWorld` 显式补 `{}`。`flags` 相反：**v1 起每份存档都写过它**，放宽只会白丢一条损坏检测。规则一句话：**在当前版本内中途落地的槽，恢复时一律可选**。
 - **NPC 不在快照里，是构造使然而非过滤**：静态在场直读放置清单（ADR-0028 §1），未显式写入的字段不落盘——这里没有 NPC 行可删，也永远不该有。
-- **恢复＝重放树，不是创建**：`restoreWorld` 只重建状态（`migrateSnapshot` → 形状校验 → 逐实体重建 → 重算 `derived`），宿主再用 `WorldRuntime.attachEntity` 重挂 hook 载体；**不跑** creation 两层（跑 `at_object_creation` 等于用代码默认值覆盖存档，正是两层接缝要防的反转）。挂载**顺序无关**（被携带者可先于携带者挂载），恢复后的位置必须仍能解析——内容漂移大声失败，不做半解释状态。
+- **恢复＝重放树，不是创建**：`restoreWorld` 只重建状态（`migrateSnapshot` → 形状校验 → 逐实体重建 → 重算 `derived`）并返回 `{ state, meta }`（§1.5），宿主再用 `WorldRuntime.attachEntity` 重挂 hook 载体；**不跑** creation 两层（跑 `at_object_creation` 等于用代码默认值覆盖存档，正是两层接缝要防的反转）。挂载**顺序无关**（被携带者可先于携带者挂载），恢复后的位置必须仍能解析——内容漂移大声失败，不做半解释状态。
 - **大声失败**（`tests/snapshot.test.ts` 逐条行使）：**版本**不合法（大于 `SAVE_VERSION`／小于 1／非数字）；**载荷** `data` 非对象、缺 `entities`、实体键为空、记录非对象、无 `locationId`、flags 非字符串数组、记录 id 与键不符——**七类**损坏载荷全部在加载时抛（ADR-0003）；**tags 存在但畸形**（非对象、某维度的键列表非字符串数组）是第八类（#17 起，与第七类同律：写进来了就必须合法）；**cooldowns 存在但畸形**（非对象、某键的值不是非负安全整数）是第九类（#23 起，同律）。
 - **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与七类损坏载荷大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩／**tags 往返与规范序、旧存档（无 tags 字段）缺即空、第八类畸形 tags 大声失败——M3-T5**）。**cooldowns 的往返／规范序／缺即空／第九类畸形**在 `tests/cooldown.test.ts`（#23，与它自己的槽同居）。
 
-### 1.5 快照 v2（M4 待实现，ADR-0033）
+### 1.5 快照 v2（M4-T5 已落，#24；ADR-0033）
 
-v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§4，所以那一天是 **v2 + 一条迁移**，不是往 v1 形状里静默加字段。
+v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§4，所以那一天是 **v2 + 一条迁移**，不是往 v1 形状里静默加字段。`SAVE_VERSION` 现为 **2**。
 
-**载荷增加三样**：
+**载荷增加四样**：
 
 | 槽 | 位置 | 语义 |
 |---|---|---|
 | `nowTick` | 顶层 | 引擎高水位（§2.2）。**必须存**：不存则恢复后时间倒退，`nowTick >= dueTick` 恒为假，**冷却会永远不到期**（不是"失效"，见下面约定 2） |
 | `rngState` | 顶层 | `Rng.getState()` 的读数（§2.4）。mulberry32 的状态就是一个 uint32 |
+| `due` | 顶层 | 到期桶待触发项 `[{ dueTick, payload }]`，按 `dueTick` 升序（§4.5）。⚠️ **ADR-0033 §2 只列了三样** —— 这一样是 #23 的交接：到期桶是唯一无法降级为纯函数的原语，不存则读档后延迟爆炸凭空消失 |
 | `lastSeenTick` | 每实体 | 该实体**上次被结算到**的 tick（§4.3 两层推进）。⚠️ **槽已随 #22 落树**（比 v2 早）：v1 存档里它是**可选**的（照 `tags` 的先例，§1.4），v2 起由迁移给默认值 |
+
+> **落地（M4-T5，#24）**：`SaveDataV2 = SaveDataV1 & { nowTick, rngState, due }`；`EntityRecord` 不编号（v1／v2 同形，见 §1.4）。迁移链 `migrations[1]` 是它的**首条真实迁移**（此前链机制就绪但为空，ADR-0003 要求不造假迁移）。迁移的**总规则**写在 `save/migrations.ts` 文件头并由测试钉死：**只补缺失的，绝不覆盖已有的** —— ADR-0033 §3 写「`lastSeenTick = nowTick`」时那个槽还不存在于 v1，而 #22 之后写的 v1 存档**带着**它；把 777 覆成 0 等于白送那个玩家一整个世界的离线补算。
 
 **种子（照 `tags` 的先例，别漏）**：`WorldRuntime.addEntity` 今天把树的每个槽都种子一遍（见其实现注释：「an absent `tags` would put a `??` in front of every hasTag read for no reason」）。`lastSeenTick` 与 `cooldowns` 同理必须在 `addEntity` 里种子 —— **`lastSeenTick` 种子为当前 tick**（新实体从现在开始，不是从 0），`cooldowns` 种子为 `{}`。
 
 **四条约定**：
 
-1. **迁移补默认值**（v1 → v2）：`nowTick = 0`、`rngState = 0`、`lastSeenTick = nowTick`。补的是「这份存档写下时那个字段还不存在」这一事实，不是猜测玩家状态。
+1. **迁移补默认值**（v1 → v2）：`nowTick = 0`、`rngState = 0`、`due = []`、`lastSeenTick = nowTick`（= 0，**仅在记录原本没有它时**才补）。补的是「这份存档写下时那个字段还不存在」这一事实，不是猜测玩家状态。
 2. **恢复时一律「缺即空」，不为 v2 新增槽加特例** —— 与 §1.4 那条规则同一个口径。⚠️ 代价要说准（此前措辞是错的）：v2 存档若 `nowTick` 丢失／损坏不会报错，游戏当成第 0 tick 继续跑 ⇒ 判定 `nowTick >= dueTick` 恒为假，**冷却不是「失效」，而是永远不到期**（技能要再等满 `dueTick` 个 tick）。这比「失效」糟，但仍是「时间回到过去」这一类可恢复的问题，且比多一条检测规则便宜。
-3. **⚠️ 顶层槽的进出通道是一个签名问题，实现前必须解决**：今天 `serializeWorld(world)` 只收一个 world、`restoreWorld(snapshot) → WorldState` 只返一棵树（`WorldState = { entities }`）。而按 §2.2，高水位住在**驱动世界的那一侧**（`WorldRuntime`／宿主 Authority），**不在 `WorldState` 里**。于是 `nowTick`／`rngState` 既**写不进**（`serializeWorld` 拿不到它们）也**读不出**（`restoreWorld` 的返回值里没有它们）。三条路，必须选一条并写进票：
-   - **(a)** 把它们并进 `WorldState`（树自带 `nowTick`）—— 签名最小改动，但 `WorldState` 从「实体树」变成「实体树 + 世界标量」，语义要跟着重写一遍；
-   - **(b)** 改签名：`serializeWorld(world, meta)` ／ `restoreWorld(snapshot) → { state, meta }`，`meta = { nowTick, rngState }` —— 语义最清（树与时钟分开），代价是动两个公开函数；
-   - **(c)** 由 `WorldRuntimeOptions` 接收 `nowTick?`／`rngState?`，存档读写都经 runtime —— 与 §2.2「高水位住在驱动侧」最一致，但要求宿主全程走 runtime，纯对象测试路径也要给一个等价物。
-
-   倾向 **(b)**：与 §2.2 的归属一致，且不要求 `WorldState` 承担它今天不承担的语义。
-4. **不做 v2 → v3 连迁**：v2 的形状这一次要想全。这也是这条迁移链**第一次被真实迁移检验**（`SAVE_VERSION` 保持 1、链机制就绪但为空至今，不造假迁移）。
+3. **✅ O9 已定案（#24）—— 顶层槽的进出通道**：定 **(b)**，与 §2.2 的归属一致（高水位住在驱动世界的那一侧，不在 `WorldState` 里），且不要求 `WorldState` 承担它今天不承担的语义：
+   ```
+   serializeWorld(world, meta) → Snapshot<SaveDataV2>      // meta 必填：没钟的世界没装载过
+   restoreWorld(snapshot, options?) → { state, meta }      // 树与世界标量一起交回
+   WorldMeta = { nowTick, rngState, due }
+   ```
+   被否的另外两条：(a) 把标量并进 `WorldState` —— `WorldState` 会从「实体树」变成「实体树 + 世界标量」，每个以树为参数的函数都要背一口它不拥有的钟；(c) 存档读写都经 `WorldRuntime` —— 要求宿主全程走 runtime，纯对象测试路径还得再造一个等价物。
+   `meta` **必填**（不是可选）：没有 `nowTick` 的 v2 存档会让世界时钟归零，没有 `rngState` 会让随机流重来 —— 两者都是静默且不可恢复的。写入侧的 `nowTick` 还要过 `assertTick`。
+4. **不做 v2 → v3 连迁**：v2 的形状这一次要想全。这也是这条迁移链**第一次被真实迁移检验**（`SAVE_VERSION` 从 1 升到 2，链机制此前为空，不造假迁移）。
 
 **nicks（玩家层别名，`spec/02` §8 至今未勾）不同趟** —— 它是**玩家层**不是实体层；把两层的东西塞进同一次迁移，正是走向「v2 → v3 连迁」的最快方式。等别名票自带那趟。
 
@@ -135,6 +140,8 @@ Rng { next(): number; getState(): number }
 `getState()` 是**强制**的：宿主不可提供一个不可序列化的 RNG，否则存档即失去确定性。mulberry32 的状态就是一个 uint32，导出成本近乎为零，恢复 O(1)。
 
 **被否的替代**：只存初始种子 + 快进 N 次 `next()` —— 恢复是 O(N)，N 随存档年龄无界增长。见 §1.5：`rngState` 进 v2。
+
+> **落地（M4-T5，#24）**：`types.ts` 的 `Rng` 加 `getState(): number`；`createSeededRng(state)` **一身二用**（既是新建也是恢复，不另开 `restoreRng` —— 两个入口会暗示两种语义，而它们收的是同一个 uint32）。`rngState` 走 `WorldMeta` 进出存档（§1.5）。
 
 ### 2.5 `seq` 与 `tick` 各管一段（O2 定案，#20）
 
@@ -314,7 +321,7 @@ pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 > - **宿主处理器由构造参数注入**（`fire(item, emit)`），命令侧只拿得到窄接口 `DueScheduler { schedule }` —— **O8 定死**：新增的是 `CommandDeps.due`（命令靠 `ctx.due.schedule` 布雷），照 `subjectOf` 的先例由宿主注入，不是让命令去读内容注册表；没给 `deps.due` 时布雷**大声失败**（`NO_DUE_BUCKET`），与 `deps.verbs` 缺失同一条纪律。
 > - **触发口径是 `dueTick <= span.toTick`** —— 与冷却的 `nowTick >= dueTick` 同一条「now >= due」：跨度 `[fromTick, toTick)` 说的是**流逝了什么**，不是说它末端那个 tick 还没到。已到期而未触发的项在**下一次推进**触发（不是丢弃），事件仍盖 `dueTick`。
 > - **事件 tick 由引擎盖**：处理器的 `emit` 类型里 `tick` 是 `never`（`DueEvent`），处理器**无从**写补跑时刻 —— ADR-0034 §3 在这里是构造性的，不是靠记性。
-> - **存档边界**：`snapshot()` 返回按 `dueTick` 升序的 `DueItem[]`（规范序，照 `flags` 先例），`restore(items)` 全量校验后才替换（畸形项大声失败、半加载不留）；测试行使其经 JSON 边界往返后 payload 原样存活。⚠️ **v2 的槽位由 #24 一并接上** —— 本票不改 `serializeWorld`／`restoreWorld` 的签名（那是 **O9**，#24 的定夺），到期桶这一侧先把「能存、能读、不解释」这条边界造好。
+> - **存档边界**：`snapshot()` 返回按 `dueTick` 升序的 `DueItem[]`（规范序，照 `flags` 先例），`restore(items)` 全量校验后才替换（畸形项大声失败、半加载不留）；测试行使其经 JSON 边界往返后 payload 原样存活。✅ **v2 的槽位已由 #24 接上**：到期项进 `SaveDataV2.due`（顶层，迁移默认 `[]`），宿主经 `WorldMeta.due` 存取（`bucket.snapshot()` 存、`bucket.restore(meta.due)` 读）。
 > - **O4 一并写明**：桶是全局扁平的，`Object.keys(bucket)` 只有 `schedule`／`settle`／`snapshot`／`restore` 四个键，由测试钉死 —— 引擎**不提供**按房间／区域／实体索引到期项的能力，「这个房间的炸弹」是 payload 里带了个 `roomId`，不是一个引擎回答的查询。
 
 ### 4.6 冷却
@@ -350,7 +357,7 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] 引擎里搜不到 `Date.now` / `setTimeout`（`tests/engine-purity.test.ts` 机械验证）
 - [x] `Clock` 是 **tick 计数**不是毫秒 —— ⚠️ 语义已翻转：它是**引擎高水位读数**，不再是宿主注入的时钟（ADR-0031）
 - [x] `Command` 自带 `tick`；引擎维护高水位；`CommandDeps.clock` 已删除（ADR-0031，#20：`src/clock.ts` 的 `TickClock`／`observeDispatch`，`deps.nowTick`）
-- [ ] `Rng.getState()` 存在且强制；种子/状态进 v2 存档（ADR-0033）
+- [x] `Rng.getState()` 存在且强制；状态进 v2 存档（ADR-0033）（#24：`Rng` 端口加 `getState(): number`，`createSeededRng(state)` **一身二用**——既是新建也是恢复，不另开 `restoreRng`，因为两者收的是同一个 uint32）
 - [x] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储；**日历在内容里**（ADR-0032，#21：`content/config/calendar.json` + `createGameTime`）
 - [x] 日历是**一组独立的环**，不是一张扁平分段表（第 19 条）（#21：`rings[]`，多环各自取模）
 - [x] `settings` / `calendar` 走与 `dimensions` 同构的通道；缺失时**引擎侧大声失败**，无默认公历兜底（#21：`createContentRegistry(content, { settings?, calendar? })` ＋ `createGameTime`／`createTimeTuning` 的惰性抛错）
@@ -366,16 +373,16 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] 世界层与实体层**分层推进**，实体用自身 `lastSeenTick`（ADR-0034）（#22：`settleTo` 两层 + 甲乙跨度场景）
 - [x] 结算事件的时间戳写 **`dueTick`**，不写补跑时刻（#22：`SettleDraft.tick` 必填，测试钉死「到期 300、补跑 1000 → 事件写 300」）
 - [x] `settleTo` 产生的事件与触发它的命令**同 seq，且排在命令自身事件之前**（#22）
-- [ ] v2 迁移存在且为迁移链首条真实迁移；**无 v2 → v3 连迁**
+- [x] v2 迁移存在且为迁移链首条真实迁移；**无 v2 → v3 连迁**（#24：`SAVE_VERSION` 1 → 2，`migrations[1]` 补 `nowTick=0`／`rngState=0`／`due=[]`／`lastSeenTick`（**只补缺失的**）；v3 存档直接「unsupported save version」，链一次只走一步）
 - [x] 宿主心跳（无命令的推进）由调用方**显式给 seq**，与命令 seq 同一单调空间；不伪造 `actorId: ""` 的系统命令（#22：`settleTo` 不传 `actorId` 即心跳，只跑世界层）
 - [x] **`invalid` 不推进世界、其 tick 不抬高 `maxTick`**（`ok`／`rejected` 才推进）；有一条测试钉死「刷无效输入不加速世界」（#20，`tests/tick.test.ts`；#22 补上「连推进函数都不调用」这一半——驱动侧预检）
 - [x] 每个 `GameEvent` 带 **`tick`**：命令事件写它看到的「现在」，结算事件写 `dueTick`（**O1 已定案，#22**；规则见 `spec/01` §5.0）
 - [x] `addEntity` 为 `lastSeenTick`（= 当前 tick）与 `cooldowns`（= `{}`）种子，照 `tags` 的先例（#22 落前半；#23 落 `cooldowns`）
-- [ ] `serializeWorld` 的规范序覆盖新槽（`nowTick`／`rngState` 为标量；`cooldowns` 的键排序）
+- [x] `serializeWorld` 的规范序覆盖新槽（`nowTick`／`rngState` 为标量；`cooldowns` 的键排序；`due` 按 `dueTick` 升序）（#23 落 `cooldowns` 那一半；#24 落标量 + `due`，一并钉在 `SaveDataV2` 里）
 
 ## 6. 开放问题
 
-> ⚠️ **O8 与 O9 会阻塞实现**，拆票时必须落到具体某张票上（O9 → 存档 v2 那张；O8 → 跑 `settleTo` 的那张），否则开工即卡。其余 O1–O7 在票内明确即可。
+> ⚠️ **O8 与 O9 曾会阻塞实现**，已分别落到 #23（O8）与 #24（O9）并双双定案（见下）。其余 O1–O7 在票内明确即可。
 
 | # | 问题 | 现状与倾向 |
 |---|---|---|
@@ -387,5 +394,5 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 | O6 | **要不要时间谓词**（如"只在夜里能进"） | `spec/02` §5.3 谓词表里今天**零**时间相关谓词（全文 `tick` 零命中）。倾向：M4 **不**加，等第一个内容真的需要时按既有三处同步流程加（引擎／`condition.schema.json`／spec/02 §5.3） |
 | ~~O7~~ | ~~**创建 `calendar.json` 那张票的文档同步债**~~ | **✅ 已在 #21 一并改**：`docs/agents/content.md` 的 config 清单（四类 + 新增「日历集合」字段约定节）、`docs/spec/06` 状态行与 `spec/00` 的 schema 总数口径（19 → **20**、`config` 三类 → **四类**、14 → **15** 待重估）、`HANDBOOK` 三处数字与 `content/config/` 文件数。**编辑器表单那一处**待 `apps/editor` 脱离占位后随行 |
 | ~~O8~~ | ~~**★引擎侧要用到 calendar／到期桶处理器时，走什么通道**~~ | **✅ 已定案（#23）**：**新增 `CommandDeps.due?: DueBucket`**，照 `subjectOf` 的先例**由宿主注入**（不是让命令执行函数读内容注册表），命令侧经 `ctx.due.schedule(dueTick, payload)` 布雷；`ctx.due` 只暴露窄接口 `DueScheduler`（能布雷，不能触发、不能窥视），缺 `deps.due` 时布雷**大声失败**（`NO_DUE_BUCKET`，与 `deps.verbs` 缺失同律）。**触发**那一半的处理器（`fire`）在 `createDueBucket({ fire })` 构造时注入 —— 引擎全程不知道 payload 是什么。**calendar 那一半**走的是另一条既有通道：注册表 `calendar?` → `createGameTime`（#21） |
-| O9 | **★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`** | 这是**会卡住实现**的一条，三选项与倾向见 §1.5 约定 3（倾向 `serializeWorld(world, meta)` ／ `restoreWorld → { state, meta }`）。**拆票时必须落到具体某张票上**，否则 T6 开工即阻塞 |
+| ~~O9~~ | ~~**★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`**~~ | **✅ 已定案（#24）：选 (b)** —— `serializeWorld(world, meta)`（`meta` **必填**）／`restoreWorld(snapshot) → { state, meta }`，`WorldMeta = { nowTick, rngState, due }`。理由与被否的两条见 §1.5 约定 3。`due` 是 #23 的交接（ADR-0033 §2 只列了三样），一并进了 v2 |
 | O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26**。⚠️ **#22 已落驱动侧那一半**：`WorldRuntime` 现在**持有 `clock`**、`addEntity` 从它取当前 tick 种子，测试 harness 的 `settle` 钩子按「预检 → 推进 → 分发 → `observeDispatch`」四步跑（§4.1）；**宿主 `Authority` 那一半仍归 #26**，它照同一四步做即可，**不要**指望 `runCommand` 回传水位 |

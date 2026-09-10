@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cooldownReady, cooldownRemaining } from "../src/time/cooldown.js";
 import { restoreWorld, serializeWorld } from "../src/state/snapshot.js";
+import type { SaveDataV2, WorldMeta } from "../src/state/snapshot.js";
 import type { EntityState, WorldState } from "../src/state/tree.js";
 import type { Snapshot } from "../src/types.js";
 import { createContentRegistry } from "../src/content/registry.js";
@@ -29,6 +30,15 @@ function runtime(nowTick = 0) {
     nowTick,
   });
 }
+
+/**
+ * An empty meta: this file is about the `cooldowns` slot, so the world
+ * scalars (§1.5) are just carried along. Helpers keep that out of every
+ * assertion below.
+ */
+const NO_META: WorldMeta = { nowTick: 0, rngState: 0, due: [] };
+const save = (world: WorldState): Snapshot<SaveDataV2> => serializeWorld(world, NO_META);
+const load = (snapshot: Snapshot): WorldState => restoreWorld(snapshot).state;
 
 /** A save whose entity carries the given cooldowns field (or omits it). */
 function saveWith(cooldowns?: unknown): Snapshot {
@@ -108,9 +118,7 @@ describe("the cooldowns slot in the state tree (spec/04 §4.6, §1.5)", () => {
   });
 
   it("does not re-seed on the load path: a restored table keeps its numbers", () => {
-    const restored = restoreWorld(
-      saveWith({ doorRelock: 777 }) as Snapshot,
-    );
+    const restored = load(saveWith({ doorRelock: 777 }));
     const world = createWorldRuntime({
       registry: createContentRegistry({ rooms: ROOMS }),
       state: restored,
@@ -131,8 +139,8 @@ describe("cooldowns in the save (spec/04 §4.6, §1.4)", () => {
     // M4 at all (§4.6: it must outlive the process).
     world.state.entities["player-1"]!.cooldowns = { doorRelock: 259_200, skill: 40 };
 
-    const wire = JSON.parse(JSON.stringify(serializeWorld(world.state))) as Snapshot;
-    const restored = restoreWorld(wire);
+    const wire = JSON.parse(JSON.stringify(save(world.state))) as Snapshot;
+    const restored = load(wire);
 
     expect(restored.entities["player-1"]!.cooldowns).toEqual({ doorRelock: 259_200, skill: 40 });
     expect(cooldownReady(restored.entities["player-1"]!.cooldowns, "doorRelock", 259_199)).toBe(
@@ -148,7 +156,7 @@ describe("cooldowns in the save (spec/04 §4.6, §1.4)", () => {
     world.addEntity(createEntity("player-1"), "room-a");
     world.state.entities["player-1"]!.cooldowns = { skill: 5, doorRelock: 90, aura: 1 };
 
-    const record = serializeWorld(world.state).data.entities["player-1"]!;
+    const record = save(world.state).data.entities["player-1"]!;
 
     // Same promise as flags and tags: two equal worlds save byte-identical,
     // and canonical order is the SERIALIZER's job, not the writer's.
@@ -163,24 +171,24 @@ describe("cooldowns in the save (spec/04 §4.6, §1.4)", () => {
       return world.state;
     };
 
-    expect(JSON.stringify(serializeWorld(armed([["skill", 5], ["aura", 1]])))).toBe(
-      JSON.stringify(serializeWorld(armed([["aura", 1], ["skill", 5]]))),
+    expect(JSON.stringify(save(armed([["skill", 5], ["aura", 1]])))).toBe(
+      JSON.stringify(save(armed([["aura", 1], ["skill", 5]]))),
     );
   });
 
   it("reads an old save that predates the slot: no cooldowns field, no error, empty", () => {
     // A field that was never written is not persisted (ADR-0022), and the
     // slot landed after v1's first save — so "absent" means empty.
-    const restored = restoreWorld(saveWith());
+    const restored = load(saveWith());
 
     expect(restored.entities["player-1"]!.cooldowns).toEqual({});
     expect(cooldownReady(restored.entities["player-1"]!.cooldowns, "skill", 0)).toBe(true);
   });
 
   it("is idempotent: saving a restored save yields the same bytes", () => {
-    const first = serializeWorld(restoreWorld(saveWith({ skill: 12 })) as WorldState);
+    const first = save(load(saveWith({ skill: 12 })));
 
-    expect(serializeWorld(restoreWorld(first))).toEqual(first);
+    expect(save(load(first))).toEqual(first);
   });
 
   it("rejects a malformed cooldowns field present in a save", () => {

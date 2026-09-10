@@ -1,6 +1,6 @@
 # 01 · 引擎对外契约
 
-> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约与快照 v1 M2-T5）**已落**；`time/` **部分已落**（M4-T2：`time/calendar.ts` 的游戏内时间求值 + `time/tuning.ts` 的 `settings.time` 读数；调度原语待 #22／#23。⚠️ tick 高水位不在这里，它在 `src/clock.ts`，M4-T1）；`effects/` 待实现。
+> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约 + 快照 v1 M2-T5 + **快照 v2 与首条真实迁移 M4-T5 #24**）**已落**；`time/` **已落**（M4-T2：`time/calendar.ts` 的游戏内时间求值 + `time/tuning.ts` 的 `settings.time` 读数；M4-T3 #22：`time/settle.ts` 两层推进；M4-T4 #23：`time/due.ts` 到期桶／`time/cooldown.ts` 冷却／`time/stage.ts` 纯 stage 求值。⚠️ tick 高水位不在这里，它在 `src/clock.ts`，M4-T1）；`effects/` 待实现。
 > **依据**：ADR-0002、ADR-0017、ADR-0025 §一、ADR-0006、ADR-0018。
 
 ## 1. 注入端口（Ports）
@@ -10,7 +10,7 @@
 | 端口 | 契约 | 宿主实现 |
 |---|---|---|
 | `Clock` | `nowTick(): number` — **引擎 tick 计数**，不是毫秒。⚠️ **语义已于 2026-09-08 翻转（ADR-0031）**：它是**引擎对外暴露的高水位读数**，不再是宿主注入的依赖 | 宿主不再实现它；宿主只负责**产生** tick，并放进每条 `Command`（见 §2） |
-| `Rng` | `next(): number` — **种子化**，种子进存档 | 确定性 PRNG（如 mulberry32 / xorshift） |
+| `Rng` | `next(): number` ／ `getState(): number` — **种子化且状态可导出**，状态进存档。⚠️ `getState()` 是**强制**的（ADR-0033 §1，#24 已落）：宿主不可提供一个不可序列化的随机源，否则「存档 → 重开 → 重放」得到不同的世界。mulberry32 的状态就是一个 uint32，恢复 O(1) | 确定性 PRNG（`createSeededRng(state)` **一身二用**：既是新建也是恢复） |
 | `SaveStore` | `load(): Promise<Snapshot \| null>`、`save(s): Promise<void>` | Web：`localStorage`；小程序：`wx.setStorage`；将来：云端 |
 | `Authority` | 见 §3 | `LocalAuthority`（现在）／`RemoteAuthority`（将来） |
 
@@ -128,7 +128,7 @@ packages/core/          引擎（可独立发布的库，零题材词）
     command/            解析、命令集合并、分发（M1-T1/T2 已落）
     save/               版本化存档迁移链
     world/              房间、出口、实体、hook
-    state/              typed 状态、derived、快照 v1
+    state/              typed 状态、derived、快照（v1 可读／v2 写出）
     time/               游戏内时间求值（calendar.ts／tuning.ts，M4-T2）
                         ＋ 推进 settle.ts（两层推进，M4-T3 #22）
                         ＋ 到期桶 due.ts／冷却 cooldown.ts／纯 stage 求值 stage.ts（#23）

@@ -26,9 +26,19 @@ export interface Clock {
   nowTick(): number;
 }
 
-/** Seeded deterministic random source. The seed lives in the save. */
+/**
+ * Seeded deterministic random source. The seed lives in the save.
+ *
+ * `getState()` is MANDATORY (ADR-0033 §1): a host may not supply a random
+ * source whose state it cannot export, because an unserializable stream makes
+ * "save, reload, replay" produce a different world — determinism is one of
+ * the three pillars (ADR-0017), and a save that does not round-trip is not a
+ * save. The state is one number, so the cost is nil and restoring is O(1).
+ */
 export interface Rng {
   next(): number;
+  /** The stream's whole state, as a single number (mulberry32: one uint32). */
+  getState(): number;
 }
 
 export interface Snapshot<T = unknown> {
