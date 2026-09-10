@@ -3,8 +3,9 @@ import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
 import { createTickClock, observeDispatch } from "../clock.js";
 import type { TickClock } from "../clock.js";
-import { runCommand } from "./pipeline.js";
+import { effectiveNowTick, parseCommand, runCommand } from "./pipeline.js";
 import type { CommandSpec, Message } from "./pipeline.js";
+import type { SettleRequest } from "../time/settle.js";
 import { createVerbTable } from "./parser.js";
 import type { VerbEntry } from "./parser.js";
 import { mergeCmdSets } from "./cmdset.js";
@@ -102,6 +103,18 @@ export interface HarnessOptions<W> {
   predicates?: PredicateRegistry;
   /** Live-world mode: share the world by reference across calls. Default false. */
   liveWorld?: boolean;
+  /**
+   * The advance hook (spec/04 §4.3): when present, EVERY call settles the
+   * world before the command runs — the harness is the side that drives the
+   * world, so this is where the two-layer advance is driven from in tests.
+   *
+   * Because an `invalid` input must not advance the world, a harness with
+   * this hook pre-flights the parse stage: an input that cannot become a
+   * command returns `invalid` without ever calling the hook (and without
+   * raising the high-water mark). A harness WITHOUT the hook skips the
+   * pre-flight, because there is no world to protect.
+   */
+  settle?: (request: SettleRequest) => Message[];
 }
 
 export interface CallOptions {
@@ -120,7 +133,11 @@ export interface CallOptions {
 
 export interface CallOutcome {
   result: CommandResult;
-  /** Messages to declared receivers, in call order, for this call only. */
+  /**
+   * Messages to declared receivers, in call order, for this call only.
+   * Settlement messages come FIRST: the world reaches "now" before the
+   * command happens (ADR-0034 §4).
+   */
   messages: Message[];
 }
 
@@ -166,7 +183,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
           }
         },
       };
-      const result = runCommand(spec, command, {
+      const deps = {
         nowTick: clock.nowTick(),
         rng,
         world: options.liveWorld ? options.world : structuredClone(options.world),
@@ -175,11 +192,39 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         verbs,
         subjectOf: options.subjectOf,
         predicates: options.predicates,
-      });
+      };
+      let settled: Message[] = [];
+      if (options.settle !== undefined) {
+        // Advanced BEFORE the command runs, and only for an input that can
+        // become one: a malformed input must not fast-forward the world
+        // (spec/04 §4.1), so it never reaches this hook at all.
+        const parsed = parseCommand(spec, command, deps);
+        if (!parsed.ok) {
+          return {
+            result: { ok: false, seq: command.seq, kind: "invalid", reason: parsed.reason },
+            messages: [],
+          };
+        }
+        settled = options.settle({
+          // The same "now" the command will see, from the same one function.
+          toTick: effectiveNowTick(deps.nowTick, command),
+          seq: command.seq,
+          actorId: command.actorId,
+        });
+      }
+      const result = runCommand(spec, command, deps);
       // Only a command that reached the execution stage moves the world
       // (spec/04 §4.1): an invalid input must not fast-forward it.
       observeDispatch(clock, command, result);
-      return { result, messages };
+      // Settlement events ride the command's seq and sit in front of its own
+      // events: the player reads "what happened while you were away" first.
+      const withSettlement = result.ok
+        ? { ...result, events: [...settled.map((message) => message.event), ...result.events] }
+        : result;
+      return {
+        result: withSettlement,
+        messages: [...settled.filter((message) => receiverSet.has(message.to)), ...messages],
+      };
     },
   };
 }

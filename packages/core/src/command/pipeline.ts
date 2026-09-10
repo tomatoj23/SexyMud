@@ -87,6 +87,80 @@ export interface CommandContext<W = unknown> {
 export type ParseOutcome = { ok: true; args: unknown } | { ok: false; reason: string };
 
 /**
+ * The driver's pre-flight: will this input BECOME a command? (spec/04 §4.1)
+ *
+ * The world is advanced BEFORE a command runs, and an `invalid` input must
+ * not advance it — so the driver has to know parseability first, which is
+ * why the parse stage is callable on its own. Only the parse stage runs: the
+ * world is untouched, and a parse hook's emissions are dropped here and
+ * re-emitted by the real dispatch that follows (parsing is not the stage that
+ * talks to the player; the execution stage is — spec/02 §1).
+ *
+ * The price is that `parse` runs twice per command, once here and once inside
+ * `runCommand`. That is the same trade the dispatcher already makes: the verb
+ * is re-cut inside the stage even though the dispatcher matched it first, so
+ * a stale dispatch turns into an `invalid` result instead of silently running
+ * the wrong command. A parse hook must therefore be pure.
+ */
+/**
+ * The ONE "now" a command runs at (spec/04 §2.2): the high-water mark this
+ * driver had, raised by this command's tick. A backwards tick changes nothing
+ * — it cannot rewind the mark.
+ *
+ * One function on purpose. The mark is the only "now" the engine admits, so a
+ * second copy of this `max` would be a second place for the rule to drift —
+ * the same reasoning that gives `observeDispatch` sole ownership of the "did
+ * it run?" table. Both halves are validated here, so a malformed tick cannot
+ * reach a command through either door (the pre-flight's or the real run's).
+ */
+export function effectiveNowTick(nowTick: number, command: Command): number {
+  // A malformed tick would silently poison every time judgement downstream;
+  // it is a wiring bug, not player input, so it fails loudly (ADR-0003).
+  assertTick(nowTick, "deps.nowTick");
+  assertTick(command.tick, "command.tick");
+  return Math.max(nowTick, command.tick);
+}
+
+/** The three behaviours the context owns that differ between the two runs. */
+type ContextHooks<W> = Pick<CommandContext<W>, "emit" | "veto" | "takeInput">;
+
+/**
+ * The context every stage sees, minus its three behaviours: the pre-flight
+ * builds it with no-ops, the real run with the recording ones, and a new
+ * context field is therefore added in ONE place.
+ */
+function createCommandContext<W>(
+  command: Command,
+  deps: CommandDeps<W>,
+  nowTick: number,
+  hooks: ContextHooks<W>,
+): CommandContext<W> {
+  return {
+    command,
+    args: undefined,
+    world: deps.world,
+    clock: { nowTick: () => nowTick },
+    rng: deps.rng,
+    predicates: deps.predicates ?? defaultPredicateRegistry,
+    ...hooks,
+  };
+}
+
+export function parseCommand<W>(
+  spec: CommandSpec<W>,
+  command: Command,
+  deps: CommandDeps<W>,
+): ParseOutcome {
+  const ctx = createCommandContext(command, deps, effectiveNowTick(deps.nowTick, command), {
+    // Parsing does not address the player; the real run words everything.
+    emit: () => {},
+    veto: () => false,
+    takeInput: () => null,
+  });
+  return parseStage(spec, command, deps, ctx);
+}
+
+/**
  * The execution stage's refusal: a legitimate mid-execution failure — a
  * gate beyond the entry's own (the target room's enter gate, the look
  * behaviour's visibility gate), a movement hook veto, a missing target.
@@ -230,26 +304,20 @@ function parseStage<W>(
  * describes delivery failure below the engine boundary.
  */
 export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: CommandDeps<W>): CommandResult {
-  // A malformed tick would silently poison every time judgement downstream;
-  // it is a wiring bug, not player input, so it fails loudly (ADR-0003).
-  assertTick(deps.nowTick, "deps.nowTick");
-  assertTick(command.tick, "command.tick");
   const events: GameEvent[] = [];
   let vetoReason: string | undefined;
-  // The one "now" (spec/04 §2.2): the high-water mark this driver had, raised
-  // by this command. A backwards tick leaves it where it was.
-  const nowTick = Math.max(deps.nowTick, command.tick);
-  const clock: Clock = { nowTick: () => nowTick };
+  const nowTick = effectiveNowTick(deps.nowTick, command);
 
-  const ctx: CommandContext<W> = {
-    command,
-    args: undefined,
-    world: deps.world,
-    clock,
-    rng: deps.rng,
-    predicates: deps.predicates ?? defaultPredicateRegistry,
+  const ctx = createCommandContext<W>(command, deps, nowTick, {
     emit(recipientId, draft) {
-      const event: GameEvent = { ...draft, seq: command.seq, actorId: command.actorId };
+      // `tick` is the now this command saw — not its raw tick, which may lie
+      // in the past (spec/01 §5, O1).
+      const event: GameEvent = {
+        ...draft,
+        seq: command.seq,
+        actorId: command.actorId,
+        tick: nowTick,
+      };
       events.push(event);
       deps.sink.emit({ to: recipientId, event });
     },
@@ -260,7 +328,7 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
     takeInput() {
       return deps.inputs?.shift() ?? null;
     },
-  };
+  });
 
   if (spec.access) {
     if (!deps.subjectOf) {

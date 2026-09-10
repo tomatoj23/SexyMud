@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandSpec } from "../src/command/pipeline.js";
-import { runCommand } from "../src/command/pipeline.js";
+import { parseCommand, runCommand } from "../src/command/pipeline.js";
 import { createCommandHarness } from "../src/command/testing.js";
 import { createSeededRng } from "../src/rng.js";
 import { createTickClock, observeDispatch } from "../src/clock.js";
@@ -93,6 +93,20 @@ describe("command tick through the pipeline (spec/04 §2.2)", () => {
     // A NaN high-water mark would silently skew every judgement downstream.
     expect(() =>
       runCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "ping" }, deps(Number.NaN)),
+    ).toThrow(/deps\.nowTick/);
+  });
+
+  it("guards the driver's pre-flight with the same one function, both halves", () => {
+    // The pre-flight settles the world BEFORE a command runs (spec/04 §4.1),
+    // so it is a door into the engine too: a malformed tick must not slip
+    // through it just because the full dispatch validates afterwards.
+    const spec: CommandSpec<TestWorld> = { key: "ping", func: () => {} };
+
+    expect(() =>
+      parseCommand(spec, { seq: 1, actorId: "actor-1", tick: -1, raw: "ping" }, deps(0)),
+    ).toThrow(/command\.tick/);
+    expect(() =>
+      parseCommand(spec, { seq: 1, actorId: "actor-1", tick: 0, raw: "ping" }, deps(Number.NaN)),
     ).toThrow(/deps\.nowTick/);
   });
 });

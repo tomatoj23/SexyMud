@@ -28,7 +28,7 @@ export type {
   PredicateFn,
   PredicateRegistry,
 } from "./conditions.js";
-export { runCommand } from "./command/pipeline.js";
+export { effectiveNowTick, parseCommand, runCommand } from "./command/pipeline.js";
 export type {
   CommandContext,
   CommandDeps,
@@ -75,6 +75,17 @@ export type {
 } from "./content/config.js";
 export { createGameTime, ringPeriod, segmentAt, segmentIndexAt } from "./time/calendar.js";
 export type { GameTime } from "./time/calendar.js";
+export { createSettler } from "./time/settle.js";
+export type {
+  EntitySettleHandler,
+  SettleDraft,
+  SettleEmitter,
+  SettleRequest,
+  SettleSpan,
+  Settler,
+  SettlerOptions,
+  WorldSettleHandler,
+} from "./time/settle.js";
 export { createTimeTuning } from "./time/tuning.js";
 export type { TimeTuning } from "./time/tuning.js";
 export type { EntryCommon, TagMap } from "./content/entry.js";

@@ -41,6 +41,21 @@ export interface EntityState {
    * vocabulary.
    */
   tags: TagMap;
+  /**
+   * The tick this entity was last settled TO (spec/04 §4.3, ADR-0034 §2) —
+   * the start of the entity layer's next advance, and the reason an offline
+   * span is ever non-zero. The entity layer advances the ACTOR only, so an
+   * offline player's number stays where it was and their catch-up is theirs
+   * alone (advancing the whole room would let one player's activity eat
+   * another's offline budget).
+   *
+   * Written by the ENGINE after settling the entity, never by the host: a
+   * host clock writing "last seen" would smuggle its own notion of time into
+   * the world — the very thing ADR-0031 turned `Clock` inside out to prevent.
+   * Seeded by `addEntity` at the CURRENT tick, not 0: a new entity starts now
+   * (spec/04 §1.5).
+   */
+  lastSeenTick: number;
 }
 
 /**

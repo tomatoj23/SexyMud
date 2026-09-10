@@ -46,10 +46,14 @@ import type { EntityState, WorldState } from "./tree.js";
  * restore fills an empty map in. Every slot added AFTER the version it lands
  * in is `?` here for exactly that reason; `flags` is not, because every v1
  * save ever written carries it and relaxing that check would drop a
- * corruption detector for nothing (spec/04 §1.4).
+ * corruption detector for nothing (spec/04 §1.4). `lastSeenTick` is the
+ * second slot of that kind (M4-T3, #22: the two-layer advance grew it): v2
+ * gives it a migration default, until then "absent" means tick 0 — which is
+ * exactly the tick a v1 save also starts at.
  */
-export type EntityRecordV1 = Omit<EntityState, DerivedEntityKey | "tags"> & {
+export type EntityRecordV1 = Omit<EntityState, DerivedEntityKey | "tags" | "lastSeenTick"> & {
   tags?: TagMap;
+  lastSeenTick?: number;
 };
 
 /** The whole v1 payload — the tree, canonical. */
@@ -127,13 +131,18 @@ export function restoreWorld(snapshot: Snapshot, options: RestoreOptions = {}): 
     // The record is the persisted half, taken as-is — the save is its truth,
     // and re-deriving it would be a second opinion nobody asked for. `id`
     // comes from the map key (the record's own copy was validated to agree
-    // with it). `tags` is the ONE field named here, and only because it was
-    // added after v1's first save: an older save omits it, and "omitted"
-    // means "no tags" (ADR-0022), not "recompute will fill it in". Every
-    // slot that lands after the version it joins costs exactly this one line
-    // — growing the tree is not free, but it costs no revalidation.
+    // with it). `tags` and `lastSeenTick` are the ONLY fields named here, and
+    // only because they were added after v1's first save: an older save omits
+    // them, and "omitted" means "empty" (ADR-0022), not "recompute will fill
+    // it in". Every slot that lands after the version it joins costs exactly
+    // one line — growing the tree is not free, but it costs no revalidation.
     const record = data.entities[id]!;
-    const state: EntityState = { ...record, id, tags: record.tags ?? {} };
+    const state: EntityState = {
+      ...record,
+      id,
+      tags: record.tags ?? {},
+      lastSeenTick: record.lastSeenTick ?? 0,
+    };
     recomputeDerived(state);
     entities[id] = state;
   }

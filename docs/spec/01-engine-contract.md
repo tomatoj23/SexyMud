@@ -86,11 +86,25 @@ interface Authority {
 ```ts
 interface GameEvent {
   seq: number;
+  tick: number;          // 见下「§5.0 tick」
   type: string;          // 语义类型，如 "attackResolved"
   actorId: string;
   // …纯语义字段（谁、对谁、做了什么、结果档位）
 }
 ```
+
+### 5.0 `tick`：**每个事件都带**（O1 已定案，#22）
+
+事件要能被渲染成「三天前发生的事」，就必须自带世界时间。**两种盖章规则，一个理由**：
+
+| 事件 | `tick` 写什么 |
+|---|---|
+| 命令自身的事件 | 那条命令看到的「现在」＝高水位抬高后的值（`max(驱动侧水位, command.tick)`）。不是命令的原始 tick —— 倒退的 tick 不能把事件日期写回过去 |
+| **结算事件**（推进产生的） | 它**本该发生**的 tick（到期桶就是 `dueTick`），**不是补跑它的时刻**（`spec/04` §4.3、ADR-0034 §3） |
+
+写补跑时刻的话，事件顺序会依赖**谁先上线**，重放就不再确定 —— 正是 ADR-0024 §2 要封死的。
+
+依据：ADR-0034 §3–§4
 
 ### 5.1 铁律：**绝不含已渲染文本**
 
@@ -116,7 +130,8 @@ packages/core/          引擎（可独立发布的库，零题材词）
     world/              房间、出口、实体、hook
     state/              typed 状态、derived、快照 v1
     time/               游戏内时间求值（calendar.ts／tuning.ts，M4-T2）
-                        —— 调度六原语待 #22／#23；tick 高水位另在 src/clock.ts（M4-T1）
+                        ＋ 推进 settle.ts（两层推进，M4-T3 #22）
+                        —— 到期桶／冷却／stage 求值归 #23；tick 高水位另在 src/clock.ts（M4-T1）
     effects/            效果执行
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑
@@ -153,7 +168,7 @@ schemas/                内容 JSON Schema
 - [x] 引擎 `src/` 里搜不到任何题材词（跑 `engine-purity` 测试）
 - [x] 引擎不 import `content/` 下任何 JSON，只经 `ContentRegistry`（M1-T5 已落：src/ 零内容导入，测试扮演宿主读文件喂注册表，`engine-purity` 守卫）
 - [x] 每条命令带 `actorId` 与 `seq`（M1-T1：`Command` 接口；harness/测试全程断言）
-- [x] 每个 `GameEvent` 带 `seq`，且**不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案）
+- [x] 每个 `GameEvent` 带 `seq` 与 `tick`，且**不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案；`tick` 由 #22 定死，规则见 §5.0）
 - [x] `dispatch` 的返回区分 `rejected` / `invalid` / `transport`（M1-T1；M2-T1 补执行段拒绝通道 `CommandRejection`——func 期拒绝同样消耗 seq）
 - [x] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围（类型契约已定义：`GameListener`/`EventMeta`；驱动它的 Authority 实归宿主票）
 - [x] `packages/core/tests` 可独立运行，不依赖 `apps/`

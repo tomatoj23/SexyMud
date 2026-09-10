@@ -91,6 +91,20 @@ export type CommandResult =
  */
 export interface GameEvent {
   seq: number;
+  /**
+   * The tick this event is FOR (O1, spec/01 §5): the world time at which it
+   * happened, never milliseconds and never a wall clock.
+   *
+   * Two stamping rules, one reason — a reader has to be able to render "three
+   * days ago":
+   * - a command's own events carry the now that command saw (the high-water
+   *   mark raised by its tick);
+   * - a SETTLEMENT event carries the tick it was DUE (a due bucket's
+   *   `dueTick`), never the tick it was caught up on (ADR-0034 §3). Stamping
+   *   the catch-up tick would make event order depend on which player logged
+   *   in first, and replay would stop being deterministic.
+   */
+  tick: number;
   type: string;
   actorId: string;
   [key: string]: unknown;

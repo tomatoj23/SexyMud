@@ -41,10 +41,10 @@ describe("command test harness (ADR-0023 §1)", () => {
     expect(out.result).toEqual({
       ok: true,
       seq: 1,
-      events: [{ seq: 1, type: "pong", actorId: "actor-1" }],
+      events: [{ seq: 1, tick: 0, type: "pong", actorId: "actor-1" }],
     });
     expect(out.messages).toEqual([
-      { to: "actor-1", event: { seq: 1, type: "pong", actorId: "actor-1" } },
+      { to: "actor-1", event: { seq: 1, tick: 0, type: "pong", actorId: "actor-1" } },
     ]);
   });
 
@@ -74,7 +74,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     expect(out.messages).toEqual([
       {
         to: "actor-1",
-        event: { seq: 1, type: "commandRefused", actorId: "actor-1", reason: "gateClosed" },
+        event: { seq: 1, tick: 0, type: "commandRefused", actorId: "actor-1", reason: "gateClosed" },
       },
     ]);
   });
@@ -159,7 +159,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     const messages = [
       {
         to: "actor-1",
-        event: { seq: 1, type: "damageDealt", actorId: "actor-1", amount: 12, tier: "medium" },
+        event: { seq: 1, tick: 7, type: "damageDealt", actorId: "actor-1", amount: 12, tier: "medium" },
       },
     ];
 
@@ -171,8 +171,8 @@ describe("command test harness (ADR-0023 §1)", () => {
   it("asserts the message count, not just the prefixes (ADR-0023 §1e)", () => {
     // Prefix matching alone would let one extra wrong message slip through.
     const messages = [
-      { to: "actor-1", event: { seq: 1, type: "a", actorId: "actor-1" } },
-      { to: "actor-1", event: { seq: 1, type: "b", actorId: "actor-1" } },
+      { to: "actor-1", event: { seq: 1, tick: 0, type: "a", actorId: "actor-1" } },
+      { to: "actor-1", event: { seq: 1, tick: 0, type: "b", actorId: "actor-1" } },
     ];
 
     expect(() =>
@@ -299,6 +299,7 @@ describe("command test harness (ADR-0023 §1)", () => {
         to: "actor-1",
         event: {
           seq: 1,
+          tick: 0,
           type: "commandRefused",
           actorId: "actor-1",
           reason: "targetMissing",

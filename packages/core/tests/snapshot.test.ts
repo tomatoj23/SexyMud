@@ -94,6 +94,7 @@ describe("the snapshot v1 shape (spec/04 §1)", () => {
             locationId: "room-b",
             flags: ["lantern-lit"],
             tags: {},
+            lastSeenTick: 0,
           },
         },
       },
@@ -112,6 +113,7 @@ describe("the snapshot v1 shape (spec/04 §1)", () => {
       "locationId",
       "flags",
       "tags",
+      "lastSeenTick",
     ]);
   });
 
@@ -185,6 +187,7 @@ describe("the round trip (serialize → migrate → load)", () => {
       locationId: "room-b",
       flags: ["a-flag", "b-flag"],
       tags: {},
+      lastSeenTick: 0,
     });
   });
 
@@ -308,13 +311,24 @@ describe("derived fields (spec/04 §1.3)", () => {
   });
 
   it("stripDerived excludes exactly the registered keys, leaving the source alone", () => {
-    const state: EntityState = { id: "player-1", locationId: "room-a", flags: ["lantern-lit"], tags: {} };
-    expect(stripDerived(state, ["flags", "locationId"])).toEqual({ id: "player-1", tags: {} });
+    const state: EntityState = {
+      id: "player-1",
+      locationId: "room-a",
+      flags: ["lantern-lit"],
+      tags: {},
+      lastSeenTick: 40,
+    };
+    expect(stripDerived(state, ["flags", "locationId"])).toEqual({
+      id: "player-1",
+      tags: {},
+      lastSeenTick: 40,
+    });
     expect(state).toEqual({
       id: "player-1",
       locationId: "room-a",
       flags: ["lantern-lit"],
       tags: {},
+      lastSeenTick: 40,
     });
   });
 
@@ -327,6 +341,7 @@ describe("derived fields (spec/04 §1.3)", () => {
       locationId: "room-a",
       flags: ["lantern-lit"],
       tags: { zone: ["outdoors"] },
+      lastSeenTick: 40,
     };
     const record = serializeWorld({ entities: { "player-1": state } }).data.entities["player-1"]!;
     const expected = Object.keys(state).filter(
@@ -476,8 +491,8 @@ describe("restore is a replay, not a creation", () => {
   it("attaches in any order: a carried entity may precede its carrier", () => {
     const tree: WorldState = {
       entities: {
-        "holder-1": { id: "holder-1", locationId: "room-a", flags: [], tags: {} },
-        "held-1": { id: "held-1", locationId: "holder-1", flags: [], tags: {} },
+        "holder-1": { id: "holder-1", locationId: "room-a", flags: [], tags: {}, lastSeenTick: 0 },
+        "held-1": { id: "held-1", locationId: "holder-1", flags: [], tags: {}, lastSeenTick: 0 },
       },
     };
     const running = makeRuntime(restoreWorld(serializeWorld(tree)));

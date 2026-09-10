@@ -1,3 +1,5 @@
+import { createTickClock } from "../clock.js";
+import type { TickClock } from "../clock.js";
 import type { ContentRegistry } from "../content/registry.js";
 import type { ConditionSubject } from "../conditions.js";
 import type { EntityState, WorldState } from "../state/tree.js";
@@ -21,6 +23,15 @@ export interface WorldRuntime {
   readonly registry: ContentRegistry;
   /** The one state tree — mutated in place; serialized by state/snapshot.ts. */
   readonly state: WorldState;
+  /**
+   * The high-water mark (spec/04 §2.2). It lives HERE — on the side that
+   * drives the world — not in `runCommand`, which is a pure function and
+   * keeps no clock of its own. A host raises it with `observeDispatch` (or
+   * `observe` for a heartbeat) after each dispatch; the world layer of the
+   * advance settles from this very number, so "the world's settle point" and
+   * "now" are one fact, not two (ADR-0034 §1).
+   */
+  readonly clock: TickClock;
 
   /**
    * Registers an entity: its hook-carrying instance plus its seed state
@@ -74,11 +85,18 @@ export interface WorldRuntimeOptions {
   registry: ContentRegistry;
   /** A previously saved tree to adopt; default a fresh empty one. */
   state?: WorldState;
+  /**
+   * The starting high-water mark: a restored save's `nowTick`, or a session's
+   * first tick. Entities added later are seeded at the mark *then*, not here
+   * (spec/04 §1.5: a new entity starts now, not at 0).
+   */
+  nowTick?: number;
 }
 
 export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
   const { registry } = options;
   const state: WorldState = options.state ?? { entities: {} };
+  const clock = createTickClock(options.nowTick ?? 0);
   const instances = new Map<string, Entity>();
 
   const isRoom = (locationId: string): boolean =>
@@ -113,6 +131,7 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
   return {
     registry,
     state,
+    clock,
     addEntity(entity, locationId) {
       assertUsableId(entity);
       if (instances.has(entity.id) || state.entities[entity.id] !== undefined) {
@@ -125,8 +144,16 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
       }
       instances.set(entity.id, entity);
       // The seed carries every slot the tree owns — an absent `tags` would
-      // put a `??` in front of every hasTag read for no reason.
-      const entityState: EntityState = { id: entity.id, locationId, flags: [], tags: {} };
+      // put a `??` in front of every hasTag read for no reason, and a
+      // `lastSeenTick` of 0 would hand a brand-new entity a whole world of
+      // offline catch-up it never earned (spec/04 §1.5).
+      const entityState: EntityState = {
+        id: entity.id,
+        locationId,
+        flags: [],
+        tags: {},
+        lastSeenTick: clock.nowTick(),
+      };
       state.entities[entity.id] = entityState;
     },
     attachEntity(entity) {

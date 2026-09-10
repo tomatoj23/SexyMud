@@ -371,6 +371,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
         to: "actor-1",
         event: {
           seq: 1,
+          tick: 0,
           type: "attackLaunched",
           actorId: "actor-1",
           args: { noun: "强盗", ordinal: 2 },
