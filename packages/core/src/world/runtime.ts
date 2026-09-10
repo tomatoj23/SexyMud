@@ -144,15 +144,17 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
       }
       instances.set(entity.id, entity);
       // The seed carries every slot the tree owns — an absent `tags` would
-      // put a `??` in front of every hasTag read for no reason, and a
+      // put a `??` in front of every hasTag read for no reason, a
       // `lastSeenTick` of 0 would hand a brand-new entity a whole world of
-      // offline catch-up it never earned (spec/04 §1.5).
+      // offline catch-up it never earned, and an absent `cooldowns` would put
+      // a `??` in front of every readiness read (spec/04 §1.5).
       const entityState: EntityState = {
         id: entity.id,
         locationId,
         flags: [],
         tags: {},
         lastSeenTick: clock.nowTick(),
+        cooldowns: {},
       };
       state.entities[entity.id] = entityState;
     },

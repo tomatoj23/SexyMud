@@ -56,8 +56,8 @@ Evennia 那一千多行缓存机器（`_cache`/`_catcache`/`SaverMutable` 代理
 - **新槽在恢复时可选、缺即空；`flags` 保持必填**（M3-T5 定案，写入此处以免同一份校验器两种口径被当 bug）：`tags` 是 v1 存档中途长出的槽——它落进树的那天（#17）之前写下的存档都没有这个字段，而「未显式写入的字段不落盘」（ADR-0022）意味着**缺 = 空**，不是损坏；`restoreWorld` 显式补 `{}`。`flags` 相反：**v1 起每份存档都写过它**，放宽只会白丢一条损坏检测。规则一句话：**在当前版本内中途落地的槽，恢复时一律可选**。
 - **NPC 不在快照里，是构造使然而非过滤**：静态在场直读放置清单（ADR-0028 §1），未显式写入的字段不落盘——这里没有 NPC 行可删，也永远不该有。
 - **恢复＝重放树，不是创建**：`restoreWorld` 只重建状态（`migrateSnapshot` → 形状校验 → 逐实体重建 → 重算 `derived`），宿主再用 `WorldRuntime.attachEntity` 重挂 hook 载体；**不跑** creation 两层（跑 `at_object_creation` 等于用代码默认值覆盖存档，正是两层接缝要防的反转）。挂载**顺序无关**（被携带者可先于携带者挂载），恢复后的位置必须仍能解析——内容漂移大声失败，不做半解释状态。
-- **大声失败**（`tests/snapshot.test.ts` 逐条行使）：**版本**不合法（大于 `SAVE_VERSION`／小于 1／非数字）；**载荷** `data` 非对象、缺 `entities`、实体键为空、记录非对象、无 `locationId`、flags 非字符串数组、记录 id 与键不符——**七类**损坏载荷全部在加载时抛（ADR-0003）；**tags 存在但畸形**（非对象、某维度的键列表非字符串数组）是第八类（#17 起，与第七类同律：写进来了就必须合法）。
-- **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与七类损坏载荷大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩／**tags 往返与规范序、旧存档（无 tags 字段）缺即空、第八类畸形 tags 大声失败——M3-T5**）。
+- **大声失败**（`tests/snapshot.test.ts` 逐条行使）：**版本**不合法（大于 `SAVE_VERSION`／小于 1／非数字）；**载荷** `data` 非对象、缺 `entities`、实体键为空、记录非对象、无 `locationId`、flags 非字符串数组、记录 id 与键不符——**七类**损坏载荷全部在加载时抛（ADR-0003）；**tags 存在但畸形**（非对象、某维度的键列表非字符串数组）是第八类（#17 起，与第七类同律：写进来了就必须合法）；**cooldowns 存在但畸形**（非对象、某键的值不是非负安全整数）是第九类（#23 起，同律）。
+- **测试**：`tests/snapshot.test.ts`（形状钉死／往返经 JSON 边界后位置与 flags 存活／字节稳定与幂等／`derived` 表驱动排除＋加载后重算／未来版本与七类损坏载荷大声失败／NPC 不入档且加载后仍在场／重挂不跑 creation 两层、顺序无关、重挂后继续可玩／**tags 往返与规范序、旧存档（无 tags 字段）缺即空、第八类畸形 tags 大声失败——M3-T5**）。**cooldowns 的往返／规范序／缺即空／第九类畸形**在 `tests/cooldown.test.ts`（#23，与它自己的槽同居）。
 
 ### 1.5 快照 v2（M4 待实现，ADR-0033）
 
@@ -216,6 +216,10 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 
 **接缝要写进本节**（避免将来被当成「忘了做」而悄悄侵蚀）：区域 tick 的插入点是「一条结算跨度内的分组订阅」，on-change 的插入点是「状态树写入钩子」，两者都**不需要改 `settleTo` 自身**。
 
+> **复杂度那一列说的是「与结算跨度无关」，不是「与内容规模无关」**：到期桶是 O(到期项数)、stage 求值与日历环是 O(段数)（段数是内容里的一个小常数）。被封死的是 **O(tick 数)** 那一类 —— 见 §4.4。
+>
+> **落地（M4-T4，#23）**：`src/time/due.ts`（到期桶）／`src/time/cooldown.ts`（冷却判定）／`src/time/stage.ts`（纯 stage 求值）。到期桶接的是 §4.1 那个**世界层注册位**（`createSettler({ world: bucket.settle })`）—— `settleTo` 自身一行未改，这正是接缝先行的兑现；冷却是状态树新槽（§4.6）；stage 求值是三个里唯一连注册位都不需要的（§4.7）。
+
 #### ★ 只有非 `invalid` 的命令（`ok`／`rejected`）才推进世界 —— 否则时间可被刷
 
 推进发生在命令处理前，于是有个必须回答的问题：**一条 `invalid`（无法解析）的输入，推进世界吗？**
@@ -295,6 +299,8 @@ pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 - **不加 `settings.time.maxCatchUpTicks`**。截断会让世界状态依赖玩家多久上线一次，违反「世界不因观察而不同」；而且那是个**写死的护栏数字**，会改变游戏语义（跟 `caps.maxConcurrent*` 那种不改变语义的技术护栏不是一类）。
 - 替代：**构造性保证 + 一条测试钉死**（推进 100 万 tick，断言迭代次数／耗时上界）。写法照本仓既有口味（「出口不可继承是构造性的」、「不可混淆是构造性保证」）。
 
+> **落地（M4-T4，#23）**：`tests/due.test.ts` 的「构造性保证」两例 —— ①推进 **100 万 tick**、桶里 3 项：断言**世界层回调 1 次、到期处理器 3 次**（迭代次数上界）＋ 耗时 < 100 ms（耗时上界，是迭代上界背后的烟雾报警器：真写了 per-tick 循环会先造出一百万个事件）；②扫 `src/` 与 `content/config/`，断言 `maxCatchUpTicks` **一个都没有**（不是"没启用"，是引擎与调参表里都不存在这个旋钮）。
+
 ### 4.5 到期桶的载荷
 
 约束：到期桶是唯一**不能**降级为纯函数的原语（爆炸是副作用，降不了），于是它必须能进存档 —— 否则读档后延迟爆炸凭空消失。而闭包不可序列化。
@@ -302,6 +308,14 @@ pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 - 载荷 = **`{ dueTick, payload }`**，`payload` 是 opaque，**引擎不解释**，推进时按 `dueTick` 升序交给**宿主注入的处理器**。⚠️ 那个处理器需要一个 `CommandDeps` 字段才能进引擎 —— 见 §6 O8。这与 §4.1 的「接缝先行」一致，也与拒绝为它提前建具名 effect 表同一个理由（那张表是分支内容那族的问题，今天不存在）。
 - `payload` 进存档。引擎只保证**按 `dueTick` 升序、稳定序**触发。
 - 「opaque 数据往返存档」在本仓有先例：`Snapshot<T = unknown>`（`types.ts`）。运行时产生的数据本就不进 `content/`，不由 `content:check` 校验 —— 这是它与内容数据的分工，不是漏检。
+
+> **落地（M4-T4，#23）**：`packages/core/src/time/due.ts` 的 `createDueBucket({ fire })` → `DueBucket { schedule, settle, snapshot, restore }`。
+> - ⚠️ **§0 术语表与 ADR-0025 写的是 `Map<dueTick, 载荷[]>`，那是概念形状**（强调「按到期 tick 分组」）；实现是一条按 `dueTick` 升序的**扁平表**，同一 tick 的项按布雷顺序触发 —— 两者同义，不是要求引擎真的建一张 Map（一张 Map 反而要为"同 tick 内谁先"再定一条规则）。
+> - **宿主处理器由构造参数注入**（`fire(item, emit)`），命令侧只拿得到窄接口 `DueScheduler { schedule }` —— **O8 定死**：新增的是 `CommandDeps.due`（命令靠 `ctx.due.schedule` 布雷），照 `subjectOf` 的先例由宿主注入，不是让命令去读内容注册表；没给 `deps.due` 时布雷**大声失败**（`NO_DUE_BUCKET`），与 `deps.verbs` 缺失同一条纪律。
+> - **触发口径是 `dueTick <= span.toTick`** —— 与冷却的 `nowTick >= dueTick` 同一条「now >= due」：跨度 `[fromTick, toTick)` 说的是**流逝了什么**，不是说它末端那个 tick 还没到。已到期而未触发的项在**下一次推进**触发（不是丢弃），事件仍盖 `dueTick`。
+> - **事件 tick 由引擎盖**：处理器的 `emit` 类型里 `tick` 是 `never`（`DueEvent`），处理器**无从**写补跑时刻 —— ADR-0034 §3 在这里是构造性的，不是靠记性。
+> - **存档边界**：`snapshot()` 返回按 `dueTick` 升序的 `DueItem[]`（规范序，照 `flags` 先例），`restore(items)` 全量校验后才替换（畸形项大声失败、半加载不留）；测试行使其经 JSON 边界往返后 payload 原样存活。⚠️ **v2 的槽位由 #24 一并接上** —— 本票不改 `serializeWorld`／`restoreWorld` 的签名（那是 **O9**，#24 的定夺），到期桶这一侧先把「能存、能读、不解释」这条边界造好。
+> - **O4 一并写明**：桶是全局扁平的，`Object.keys(bucket)` 只有 `schedule`／`settle`／`snapshot`／`restore` 四个键，由测试钉死 —— 引擎**不提供**按房间／区域／实体索引到期项的能力，「这个房间的炸弹」是 payload 里带了个 `roomId`，不是一个引擎回答的查询。
 
 ### 4.6 冷却
 
@@ -311,7 +325,17 @@ pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 - 为什么 M4 就落它：**长冷却必须跨存档存活**（「门 N tick 后重锁」），不进存档会直接坏掉。
 - ⚠️ 它是 M4 里**第二个没有真消费者的状态槽**（第一个是 `derived` 表）。形状被本节钉死、不会错，接受这个代价。
 
-### 4.7 明确不需要
+> **落地（M4-T4，#23）**：`EntityState.cooldowns: Record<string, number>`（`state/tree.ts`），`addEntity` 种子 `{}`、`attachEntity` 不重新种子；判定在 `src/time/cooldown.ts`：`cooldownReady(table, key, nowTick)` = `nowTick >= dueTick`、`cooldownRemaining(table, key, nowTick)`（派生、不存；**缺键＝就绪**，没有第三个状态）。进存档走 `tags`／`lastSeenTick` 的同一条规则：**v1 记录里可选、缺即空**；`serializeWorld` 排序键（规范序）；**存在但畸形大声失败**（非对象／值不是非负安全整数 —— `NaN >= dueTick` 恒为假，那件装备会永远"还在冷却"，所以这是写进来了就必须合法，第九类损坏载荷）。引擎侧只有**读**：写是一个赋值，归拥有那个键的系统 —— 这里刻意没有 `cancel`／`extend`，一个带生命周期的冷却对象就是被换掉马甲的 per-object timer。
+
+### 4.7 纯 stage 求值（M4-T4，#23）
+
+`f(startTick, nowTick, stages)` —— ADR-0025 §三给它列了三个需求：**门几 tick 后重锁**（那是冷却，§4.6）、**技能还有多久好**（也是冷却）、**作物 4 阶段**（这个）。
+
+- **落地**：`src/time/stage.ts` 的 `stageAt(startTick, nowTick, stages) → { index, stage, elapsed, remaining, done }`。`stages` 是 `{ id, ticks }[]`，**线性且在最后一段夹紧**：熟了就一直是熟的，不会退回幼苗 —— 这与**环**（§3.2，取模循环）语义相反，所以是两个函数而不是一个带 `cyclic` 开关的函数。
+- **O(1) 指跨度无关**：一次减法 + 一次走过若干段（内容里的小常数），不碰 tick 数；离开十万 tick 再回来，问的是同一个函数、同一个答案。无注册、无状态、无回调 —— 没有"阶段变化时发生什么"，也就没有 Evennia 那个「stage 回调 is not guaranteed to be called」的问题。
+- **`startTick` 在未来读作"还没开始"**（elapsed 0）而不是失败：这对数据可能来自尚未追上的存档，而开始之前没有阶段可名。
+
+### 4.8 明确不需要
 
 Script 实体、per-object timer、线程、async/await、任何墙钟。
 
@@ -332,12 +356,13 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] `settings` / `calendar` 走与 `dimensions` 同构的通道；缺失时**引擎侧大声失败**，无默认公历兜底（#21：`createContentRegistry(content, { settings?, calendar? })` ＋ `createGameTime`／`createTimeTuning` 的惰性抛错）
 - [x] 时间参数零写死：`TICKS_PER_*` 一类换算数字不在引擎源码里（硬标准 1）（#21：换算数字全部住在 `calendar.json`）
 - [x] 时间区间用**半开区间 + 显式排序数组**（不是 `if start < end`）（#21：`segmentIndexAt`）
-- [ ] 冷却存**到期 tick** 不存时间戳；`cooldowns` 槽进存档
+- [x] 冷却存**到期 tick** 不存时间戳；`cooldowns` 槽进存档（#23：`state/tree.ts` 新槽 + `addEntity` 种子 `{}` + 判定 `nowTick >= dueTick`（`src/time/cooldown.ts`，不是回调）+ 规范序与第九类畸形载荷）
+- [x] 纯 stage 求值 `f(startTick, nowTick, stages)` 落地：O(1)（跨度无关）、无注册无状态无回调、末端夹紧（#23：`src/time/stage.ts` 的 `stageAt`，§4.7）
+- [x] 无任何 per-object timer（六原语里的区域 tick / on-change 在 M4 不落，接缝已写在 §4.1）（#23：三个剩余原语里没有任何一个是每对象定时器 —— 到期桶 O(到期项数)、冷却是 tick 比较、stage 是纯函数）
 - [ ] DoT 类机制用**观察时补偿结算**，不是定时器
-- [ ] 无任何 per-object timer（六原语里的区域 tick / on-change 在 M4 不落，接缝已写在 §4.1）
 - [x] 离线结算与在线心跳走**同一个推进函数**（只差跨度），不是两套代码（ADR-0032 覆盖 ADR-0016 §4）（#22：`settleTo` 一个函数，跨度是参数）
 - [ ] 离线补算**只补资源与基础熟练度**，不自动战斗、不推层、不产掉落（ADR-0016 §4 未被覆盖的那一半）—— 随第一个真消费者钉死
-- [ ] 推进复杂度是 O(事件数) 不是 O(tick 数)，由测试钉死（无 `maxCatchUpTicks`）（#22 已钉「一次调用覆盖 100 万 tick、跨度不被截断」；**耗时上界断言归 #23**）
+- [x] 推进复杂度是 O(事件数) 不是 O(tick 数)，由测试钉死（无 `maxCatchUpTicks`）（#22 钉「一次调用覆盖 100 万 tick、跨度不被截断」；#23 补齐**迭代次数上界（世界层 1 次／处理器 3 次）＋ 耗时上界**，并机械断言 `src/` 与 `content/config/` 里 `maxCatchUpTicks` 一个都没有 —— §4.4）
 - [x] 世界层与实体层**分层推进**，实体用自身 `lastSeenTick`（ADR-0034）（#22：`settleTo` 两层 + 甲乙跨度场景）
 - [x] 结算事件的时间戳写 **`dueTick`**，不写补跑时刻（#22：`SettleDraft.tick` 必填，测试钉死「到期 300、补跑 1000 → 事件写 300」）
 - [x] `settleTo` 产生的事件与触发它的命令**同 seq，且排在命令自身事件之前**（#22）
@@ -345,7 +370,7 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] 宿主心跳（无命令的推进）由调用方**显式给 seq**，与命令 seq 同一单调空间；不伪造 `actorId: ""` 的系统命令（#22：`settleTo` 不传 `actorId` 即心跳，只跑世界层）
 - [x] **`invalid` 不推进世界、其 tick 不抬高 `maxTick`**（`ok`／`rejected` 才推进）；有一条测试钉死「刷无效输入不加速世界」（#20，`tests/tick.test.ts`；#22 补上「连推进函数都不调用」这一半——驱动侧预检）
 - [x] 每个 `GameEvent` 带 **`tick`**：命令事件写它看到的「现在」，结算事件写 `dueTick`（**O1 已定案，#22**；规则见 `spec/01` §5.0）
-- [x] `addEntity` 为 `lastSeenTick`（= 当前 tick）种子，照 `tags` 的先例（#22；`cooldowns` 那一半归 #23）
+- [x] `addEntity` 为 `lastSeenTick`（= 当前 tick）与 `cooldowns`（= `{}`）种子，照 `tags` 的先例（#22 落前半；#23 落 `cooldowns`）
 - [ ] `serializeWorld` 的规范序覆盖新槽（`nowTick`／`rngState` 为标量；`cooldowns` 的键排序）
 
 ## 6. 开放问题
@@ -357,10 +382,10 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 | ~~O1~~ | ~~**`GameEvent` 要不要带 `tick`**~~ | **✅ 已定案（#22）**：**加，且所有事件都带**。命令事件写它看到的「现在」（高水位），**结算事件写 `dueTick`** 而不是补跑时刻 —— 写后者会让事件顺序依赖谁先上线，重放不再确定。落点 `types.ts` 的 `GameEvent.tick`（必填）＋ `pipeline.ts` 的盖章，规则见 `spec/01` §5.0 |
 | ~~O2~~ | ~~**`seq` 与 `tick` 不同序时谁定顺序**~~ | **✅ 已定案（#20）**：**seq 定投递顺序、tick 定世界时间**，二者独立、不互相校验。见 §2.5 |
 | ~~O3~~ | ~~**`settings.time` 缺**组内某个键**（如 `regenPerTick`）怎么算~~ | **✅ 已定案（#21）**：缺**组**失败（缺 `settings` 表或缺 `time` 组）、缺**键**由消费该键的系统自己大声失败，**引擎绝不替它猜默认值**。落点 `src/time/tuning.ts` 的 `createTimeTuning(settings).number(键)`，两条错误文案分别点名「组」与「键」 |
-| O4 | **到期桶的项没有锚点** | `Map<dueTick, payload[]>` 是全局的，"这个房间的炸弹"只能靠宿主把 `roomId` 塞进 opaque payload。可接受，但要写明：**引擎不提供按房间/区域索引到期项的能力**（避免将来误以为有） |
+| ~~O4~~ | ~~**到期桶的项没有锚点**~~ | **✅ 已定案（#23）**：桶**保持全局扁平**，「这个房间的炸弹」靠宿主把 `roomId` 塞进 opaque payload —— 已写进正文本节：**引擎不提供按房间／区域／实体索引到期项的能力**，并由一条测试把 `DueBucket` 的键列表钉死（`schedule`／`settle`／`snapshot`／`restore`，多一个键即红），避免将来误以为有 |
 | O5 | **`tickSeconds` 归谁** | ADR-0016 §4 提到「固定步长（`content/config/`：`tickSeconds`）」。它是**真实秒**，属于宿主把墙钟翻译成 tick 的参数，**引擎不读** ⇒ 不应进 `content/config/settings.json`（那是给引擎的 TUNING）。⚠️ 连带一条：若确认只有宿主用它，那它连 `content/config/` 都不该待 —— `content/` 是引擎读的东西，放进去会让人误以为引擎消费它。落点由宿主票定 |
 | O6 | **要不要时间谓词**（如"只在夜里能进"） | `spec/02` §5.3 谓词表里今天**零**时间相关谓词（全文 `tick` 零命中）。倾向：M4 **不**加，等第一个内容真的需要时按既有三处同步流程加（引擎／`condition.schema.json`／spec/02 §5.3） |
 | ~~O7~~ | ~~**创建 `calendar.json` 那张票的文档同步债**~~ | **✅ 已在 #21 一并改**：`docs/agents/content.md` 的 config 清单（四类 + 新增「日历集合」字段约定节）、`docs/spec/06` 状态行与 `spec/00` 的 schema 总数口径（19 → **20**、`config` 三类 → **四类**、14 → **15** 待重估）、`HANDBOOK` 三处数字与 `content/config/` 文件数。**编辑器表单那一处**待 `apps/editor` 脱离占位后随行 |
-| O8 | **★引擎侧要用到 calendar／到期桶处理器时，走什么通道** | `runCommand(spec, command, deps)` 的 `CommandDeps` 里**没有 registry**（今天只有 `nowTick`/`rng`/`world`/`sink`/`verbs`/`subjectOf`/`predicates`）。今天不构成问题（段名是渲染层的事，M4 也不加时间谓词，见 O6）；但 `settleTo` 一旦要跑到期桶，就**必须**拿到宿主注入的处理器 ⇒ 得新增一个 `CommandDeps` 字段。通道照 `subjectOf` 的先例**由宿主注入**，不是让 `runCommand` 直接读 registry —— 后者会破坏「引擎只读 `ContentRegistry`、且 deps 显式」这条既有形状 |
+| ~~O8~~ | ~~**★引擎侧要用到 calendar／到期桶处理器时，走什么通道**~~ | **✅ 已定案（#23）**：**新增 `CommandDeps.due?: DueBucket`**，照 `subjectOf` 的先例**由宿主注入**（不是让命令执行函数读内容注册表），命令侧经 `ctx.due.schedule(dueTick, payload)` 布雷；`ctx.due` 只暴露窄接口 `DueScheduler`（能布雷，不能触发、不能窥视），缺 `deps.due` 时布雷**大声失败**（`NO_DUE_BUCKET`，与 `deps.verbs` 缺失同律）。**触发**那一半的处理器（`fire`）在 `createDueBucket({ fire })` 构造时注入 —— 引擎全程不知道 payload 是什么。**calendar 那一半**走的是另一条既有通道：注册表 `calendar?` → `createGameTime`（#21） |
 | O9 | **★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`** | 这是**会卡住实现**的一条，三选项与倾向见 §1.5 约定 3（倾向 `serializeWorld(world, meta)` ／ `restoreWorld → { state, meta }`）。**拆票时必须落到具体某张票上**，否则 T6 开工即阻塞 |
 | O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26**。⚠️ **#22 已落驱动侧那一半**：`WorldRuntime` 现在**持有 `clock`**、`addEntity` 从它取当前 tick 种子，测试 harness 的 `settle` 钩子按「预检 → 推进 → 分发 → `observeDispatch`」四步跑（§4.1）；**宿主 `Authority` 那一半仍归 #26**，它照同一四步做即可，**不要**指望 `runCommand` 回传水位 |

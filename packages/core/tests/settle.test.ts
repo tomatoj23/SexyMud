@@ -41,8 +41,22 @@ const RECEIVERS = ["jia", "yi", "broadcast"];
 function offlineWorld(): WorldState {
   return {
     entities: {
-      jia: { id: "jia", locationId: "room-a", flags: [], tags: {}, lastSeenTick: 0 },
-      yi: { id: "yi", locationId: "room-a", flags: [], tags: {}, lastSeenTick: 100 },
+      jia: {
+        id: "jia",
+        locationId: "room-a",
+        flags: [],
+        tags: {},
+        lastSeenTick: 0,
+        cooldowns: {},
+      },
+      yi: {
+        id: "yi",
+        locationId: "room-a",
+        flags: [],
+        tags: {},
+        lastSeenTick: 100,
+        cooldowns: {},
+      },
     },
   };
 }
@@ -380,6 +394,7 @@ describe("mechanism and seam, no consumer (spec/04 §4.3)", () => {
     // `attrs` would be a promise about a shape nobody has designed — the
     // same reason §4.1 refuses a named effect table for the due bucket.
     expect(Object.keys(state.entities["jia"]!).sort()).toEqual([
+      "cooldowns",
       "flags",
       "id",
       "lastSeenTick",
@@ -449,7 +464,14 @@ describe("addEntity seeds lastSeenTick (spec/04 §1.5)", () => {
       registry: createContentRegistry({ rooms: rooms() }),
       state: {
         entities: {
-          p1: { id: "p1", locationId: "room-a", flags: [], tags: {}, lastSeenTick: 777 },
+          p1: {
+            id: "p1",
+            locationId: "room-a",
+            flags: [],
+            tags: {},
+            lastSeenTick: 777,
+            cooldowns: {},
+          },
         },
       },
     });

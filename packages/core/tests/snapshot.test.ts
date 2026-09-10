@@ -95,6 +95,7 @@ describe("the snapshot v1 shape (spec/04 §1)", () => {
             flags: ["lantern-lit"],
             tags: {},
             lastSeenTick: 0,
+            cooldowns: {},
           },
         },
       },
@@ -114,6 +115,7 @@ describe("the snapshot v1 shape (spec/04 §1)", () => {
       "flags",
       "tags",
       "lastSeenTick",
+      "cooldowns",
     ]);
   });
 
@@ -188,6 +190,7 @@ describe("the round trip (serialize → migrate → load)", () => {
       flags: ["a-flag", "b-flag"],
       tags: {},
       lastSeenTick: 0,
+      cooldowns: {},
     });
   });
 
@@ -317,11 +320,13 @@ describe("derived fields (spec/04 §1.3)", () => {
       flags: ["lantern-lit"],
       tags: {},
       lastSeenTick: 40,
+      cooldowns: {},
     };
     expect(stripDerived(state, ["flags", "locationId"])).toEqual({
       id: "player-1",
       tags: {},
       lastSeenTick: 40,
+      cooldowns: {},
     });
     expect(state).toEqual({
       id: "player-1",
@@ -329,6 +334,7 @@ describe("derived fields (spec/04 §1.3)", () => {
       flags: ["lantern-lit"],
       tags: {},
       lastSeenTick: 40,
+      cooldowns: {},
     });
   });
 
@@ -342,6 +348,7 @@ describe("derived fields (spec/04 §1.3)", () => {
       flags: ["lantern-lit"],
       tags: { zone: ["outdoors"] },
       lastSeenTick: 40,
+      cooldowns: {},
     };
     const record = serializeWorld({ entities: { "player-1": state } }).data.entities["player-1"]!;
     const expected = Object.keys(state).filter(
@@ -491,8 +498,22 @@ describe("restore is a replay, not a creation", () => {
   it("attaches in any order: a carried entity may precede its carrier", () => {
     const tree: WorldState = {
       entities: {
-        "holder-1": { id: "holder-1", locationId: "room-a", flags: [], tags: {}, lastSeenTick: 0 },
-        "held-1": { id: "held-1", locationId: "holder-1", flags: [], tags: {}, lastSeenTick: 0 },
+        "holder-1": {
+          id: "holder-1",
+          locationId: "room-a",
+          flags: [],
+          tags: {},
+          lastSeenTick: 0,
+          cooldowns: {},
+        },
+        "held-1": {
+          id: "held-1",
+          locationId: "holder-1",
+          flags: [],
+          tags: {},
+          lastSeenTick: 0,
+          cooldowns: {},
+        },
       },
     };
     const running = makeRuntime(restoreWorld(serializeWorld(tree)));

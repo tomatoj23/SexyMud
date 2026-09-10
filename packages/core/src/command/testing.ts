@@ -6,6 +6,7 @@ import type { TickClock } from "../clock.js";
 import { effectiveNowTick, parseCommand, runCommand } from "./pipeline.js";
 import type { CommandSpec, Message } from "./pipeline.js";
 import type { SettleRequest } from "../time/settle.js";
+import type { DueBucket } from "../time/due.js";
 import { createVerbTable } from "./parser.js";
 import type { VerbEntry } from "./parser.js";
 import { mergeCmdSets } from "./cmdset.js";
@@ -101,6 +102,12 @@ export interface HarnessOptions<W> {
   subjectOf?: (world: W, actorId: string) => ConditionSubject;
   /** Predicate registry for access gates; defaults to the engine's built-ins. */
   predicates?: PredicateRegistry;
+  /**
+   * The due bucket a called command may arm (spec/04 §4.5, §6 O8) — the
+   * harness passes it straight through, like `subjectOf`. Absent, a command
+   * that schedules fails loudly instead of losing the item.
+   */
+  due?: DueBucket;
   /** Live-world mode: share the world by reference across calls. Default false. */
   liveWorld?: boolean;
   /**
@@ -192,6 +199,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         verbs,
         subjectOf: options.subjectOf,
         predicates: options.predicates,
+        due: options.due,
       };
       let settled: Message[] = [];
       if (options.settle !== undefined) {

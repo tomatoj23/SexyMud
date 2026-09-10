@@ -49,11 +49,16 @@ import type { EntityState, WorldState } from "./tree.js";
  * corruption detector for nothing (spec/04 §1.4). `lastSeenTick` is the
  * second slot of that kind (M4-T3, #22: the two-layer advance grew it): v2
  * gives it a migration default, until then "absent" means tick 0 — which is
- * exactly the tick a v1 save also starts at.
+ * exactly the tick a v1 save also starts at. `cooldowns` is the third (#23):
+ * "absent" means empty, never "the cooldowns were lost".
  */
-export type EntityRecordV1 = Omit<EntityState, DerivedEntityKey | "tags" | "lastSeenTick"> & {
+export type EntityRecordV1 = Omit<
+  EntityState,
+  DerivedEntityKey | "tags" | "lastSeenTick" | "cooldowns"
+> & {
   tags?: TagMap;
   lastSeenTick?: number;
+  cooldowns?: Record<string, number>;
 };
 
 /** The whole v1 payload — the tree, canonical. */
@@ -87,6 +92,19 @@ function canonicalTags(tags: TagMap | undefined): TagMap {
 }
 
 /**
+ * A cooldown table in canonical form: keys ascending. Same promise as
+ * canonicalTags — two equal worlds save byte-identical, whatever order a
+ * system armed the keys in (the `flags` precedent).
+ */
+function canonicalCooldowns(cooldowns: Record<string, number> | undefined): Record<string, number> {
+  const canonical: Record<string, number> = {};
+  for (const key of Object.keys(cooldowns ?? {}).sort()) {
+    canonical[key] = cooldowns?.[key] ?? 0;
+  }
+  return canonical;
+}
+
+/**
  * serializeWorld — the tree into a versioned snapshot. Reads nothing but the
  * tree (no registry, no instances): a save carries state, and content is
  * reloaded from content.
@@ -101,7 +119,12 @@ export function serializeWorld(world: WorldState): Snapshot<SaveDataV1> {
     // last thing that happens to a record, so the table stays authoritative
     // whichever field it names.
     entities[id] = stripDerived(
-      { ...state, flags: [...state.flags].sort(), tags: canonicalTags(state.tags) },
+      {
+        ...state,
+        flags: [...state.flags].sort(),
+        tags: canonicalTags(state.tags),
+        cooldowns: canonicalCooldowns(state.cooldowns),
+      },
       DERIVED_ENTITY_KEYS,
     );
   }
@@ -131,17 +154,19 @@ export function restoreWorld(snapshot: Snapshot, options: RestoreOptions = {}): 
     // The record is the persisted half, taken as-is — the save is its truth,
     // and re-deriving it would be a second opinion nobody asked for. `id`
     // comes from the map key (the record's own copy was validated to agree
-    // with it). `tags` and `lastSeenTick` are the ONLY fields named here, and
-    // only because they were added after v1's first save: an older save omits
-    // them, and "omitted" means "empty" (ADR-0022), not "recompute will fill
-    // it in". Every slot that lands after the version it joins costs exactly
-    // one line — growing the tree is not free, but it costs no revalidation.
+    // with it). `tags`, `lastSeenTick` and `cooldowns` are the ONLY fields
+    // named here, and only because they were added after v1's first save: an
+    // older save omits them, and "omitted" means "empty" (ADR-0022), not
+    // "recompute will fill it in". Every slot that lands after the version it
+    // joins costs exactly one line — growing the tree is not free, but it
+    // costs no revalidation.
     const record = data.entities[id]!;
     const state: EntityState = {
       ...record,
       id,
       tags: record.tags ?? {},
       lastSeenTick: record.lastSeenTick ?? 0,
+      cooldowns: record.cooldowns ?? {},
     };
     recomputeDerived(state);
     entities[id] = state;
@@ -197,6 +222,20 @@ function readSaveData(data: unknown): SaveDataV1 {
       for (const [dimension, keys] of Object.entries(tags)) {
         if (!Array.isArray(keys) || keys.some((key) => typeof key !== "string")) {
           throw new Error(`snapshot: entity "${id}".tags["${dimension}"] is not a list of strings`);
+        }
+      }
+    }
+    // A cooldown is a tick, and a tick that is not a tick does not merely
+    // misjudge: `NaN >= dueTick` is false for EVERY dueTick, so a skill armed
+    // with it would never come back. Same class as malformed tags — written
+    // in, so it must be legal (spec/04 §1.4, ninth corruption class).
+    if (entry.cooldowns !== undefined) {
+      const cooldowns = asRecord(entry.cooldowns, `entity "${id}".cooldowns`);
+      for (const [key, dueTick] of Object.entries(cooldowns)) {
+        if (typeof dueTick !== "number" || !Number.isSafeInteger(dueTick) || dueTick < 0) {
+          throw new Error(
+            `snapshot: entity "${id}".cooldowns["${key}"] is not a non-negative safe integer`,
+          );
         }
       }
     }

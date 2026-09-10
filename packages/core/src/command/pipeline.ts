@@ -4,6 +4,7 @@ import { checkAccess, defaultPredicateRegistry } from "../conditions.js";
 import type { AccessGate, ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { parseArgForm } from "./parser.js";
 import type { ArgForm, VerbTable } from "./parser.js";
+import type { DueBucket, DueScheduler } from "../time/due.js";
 /**
  * The command pipeline (ADR-0023 §1a): four stages, run in order.
  *
@@ -69,6 +70,19 @@ export interface CommandContext<W = unknown> {
    */
   readonly predicates: PredicateRegistry;
   emit(recipientId: string, event: EventDraft): void;
+  /**
+   * The due bucket this command may ARM (spec/04 §4.5, §6 O8): one-shot
+   * effects scheduled for a later tick — a fuse lit now that goes off in
+   * fifty ticks.
+   *
+   * Host-injected, after the `subjectOf` precedent, and deliberately NARROW:
+   * a command may arm, but firing is the settle's job and reading the pending
+   * set is the host's. It is never the command's business to look inside a
+   * payload, which is why this is not a `ContentRegistry` — a command that
+   * read content directly would break both "deps are explicit" and "the
+   * engine reads no content".
+   */
+  readonly due: DueScheduler;
   /**
    * Vetoes the command from a pre-stage hook and returns `false` (so the
    * hook can return it directly). Records the refusal reason; the pipeline
@@ -141,6 +155,7 @@ function createCommandContext<W>(
     world: deps.world,
     clock: { nowTick: () => nowTick },
     rng: deps.rng,
+    due: deps.due ?? NO_DUE_BUCKET,
     predicates: deps.predicates ?? defaultPredicateRegistry,
     ...hooks,
   };
@@ -217,6 +232,19 @@ export interface CommandSpec<W = unknown> {
   at_post_cmd?(ctx: CommandContext<W>): void;
 }
 
+/**
+ * What a command gets when the driver handed in no bucket (§6 O8): a
+ * scheduler that refuses. Not a silent no-op — a command that arms a fuse and
+ * loses it is a wiring bug, and a bucket that swallowed it would surface three
+ * hours later as "the bomb never went off". Same standing as `deps.verbs`:
+ * required only when used, loud when missing.
+ */
+export const NO_DUE_BUCKET: DueScheduler = {
+  schedule() {
+    throw new Error("a command scheduled a due item but no due bucket was provided (deps.due)");
+  },
+};
+
 /** The four injected dependencies a command run needs. */
 export interface CommandDeps<W = unknown> {
   /**
@@ -244,6 +272,12 @@ export interface CommandDeps<W = unknown> {
   subjectOf?: (world: W, actorId: string) => ConditionSubject;
   /** Predicate registry for access gates; defaults to the engine's built-ins. */
   predicates?: PredicateRegistry;
+  /**
+   * The due bucket (spec/04 §4.5, §6 O8): host-injected, the ONE channel by
+   * which a command arms a delayed effect. Absent means the command must not
+   * need it — `ctx.due.schedule` then fails loudly (see {@link NO_DUE_BUCKET}).
+   */
+  due?: DueBucket;
 }
 
 /**

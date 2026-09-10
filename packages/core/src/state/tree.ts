@@ -9,7 +9,9 @@
  * (attrs, states, skills) grow into the tree as their consumers land; flags
  * are here from day one because gates — the engine's traversal adapter
  * checks them — are consumers already, and tags joined them with M3-T5
- * (hasTag, the engine's own condition facet, is their consumer).
+ * (hasTag, the engine's own condition facet, is their consumer). M4 then
+ * grew the two time slots: `lastSeenTick` with the two-layer advance (#22)
+ * and `cooldowns` (#23).
  */
 
 import type { TagMap } from "../content/entry.js";
@@ -56,6 +58,20 @@ export interface EntityState {
    * (spec/04 §1.5).
    */
   lastSeenTick: number;
+  /**
+   * Cooldowns (spec/04 §4.6): `key → the tick it is available again`. Mine is
+   * not yours, hence per entity; a number, so a long one survives a reload
+   * ("this door relocks in three days" must still be pending after a save).
+   *
+   * A READ-ONLY table from the engine's side: judgement is `nowTick >=
+   * dueTick` (time/cooldown.ts), a comparison — never a callback, never a
+   * timer. An absent key means "never armed", which is ready: there is no
+   * third state to confuse it with.
+   *
+   * Empty by default, seeded by `addEntity`; absent in an old save means
+   * empty (§1.4), never "recompute will fill it in".
+   */
+  cooldowns: Record<string, number>;
 }
 
 /**

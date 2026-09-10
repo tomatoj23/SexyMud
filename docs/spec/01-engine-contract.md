@@ -131,7 +131,8 @@ packages/core/          引擎（可独立发布的库，零题材词）
     state/              typed 状态、derived、快照 v1
     time/               游戏内时间求值（calendar.ts／tuning.ts，M4-T2）
                         ＋ 推进 settle.ts（两层推进，M4-T3 #22）
-                        —— 到期桶／冷却／stage 求值归 #23；tick 高水位另在 src/clock.ts（M4-T1）
+                        ＋ 到期桶 due.ts／冷却 cooldown.ts／纯 stage 求值 stage.ts（#23）
+                        —— tick 高水位另在 src/clock.ts（M4-T1）
     effects/            效果执行
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑

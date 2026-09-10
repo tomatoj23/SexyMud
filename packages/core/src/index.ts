@@ -75,6 +75,12 @@ export type {
 } from "./content/config.js";
 export { createGameTime, ringPeriod, segmentAt, segmentIndexAt } from "./time/calendar.js";
 export type { GameTime } from "./time/calendar.js";
+export { cooldownReady, cooldownRemaining } from "./time/cooldown.js";
+export type { CooldownTable } from "./time/cooldown.js";
+export { createDueBucket } from "./time/due.js";
+export type { DueBucket, DueEmitter, DueHandler, DueItem, DueScheduler } from "./time/due.js";
+export { stageAt } from "./time/stage.js";
+export type { Stage, StageReadout } from "./time/stage.js";
 export { createSettler } from "./time/settle.js";
 export type {
   EntitySettleHandler,
