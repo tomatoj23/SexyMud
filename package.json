@@ -7,7 +7,7 @@
     "content:check": "node scripts/check-content.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "check": "corepack pnpm run content:check && corepack pnpm run docs:check",
-    "test": "corepack pnpm --filter @sexymud/core test",
+    "test": "corepack pnpm --filter @sexymud/core --filter @sexymud/web test",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
     "dev:web": "corepack pnpm --filter @sexymud/web dev",
     "build:web": "corepack pnpm --filter @sexymud/web build",

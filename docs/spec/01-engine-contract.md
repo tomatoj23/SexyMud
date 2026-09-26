@@ -12,7 +12,7 @@
 | `Clock` | `nowTick(): number` — **引擎 tick 计数**，不是毫秒。⚠️ **语义已于 2026-09-08 翻转（ADR-0031）**：它是**引擎对外暴露的高水位读数**，不再是宿主注入的依赖 | 宿主不再实现它；宿主只负责**产生** tick，并放进每条 `Command`（见 §2） |
 | `Rng` | `next(): number` ／ `getState(): number` — **种子化且状态可导出**，状态进存档。⚠️ `getState()` 是**强制**的（ADR-0033 §1，#24 已落）：宿主不可提供一个不可序列化的随机源，否则「存档 → 重开 → 重放」得到不同的世界。mulberry32 的状态就是一个 uint32，恢复 O(1) | 确定性 PRNG（`createSeededRng(state)` **一身二用**：既是新建也是恢复） |
 | `SaveStore` | `load(): Promise<Snapshot \| null>`、`save(s): Promise<void>` | Web：`localStorage`；小程序：`wx.setStorage`；将来：云端 |
-| `Authority` | 见 §3 | `LocalAuthority`（现在）／`RemoteAuthority`（将来） |
+| `Authority` | 见 §3 | `LocalAuthority`（`apps/web`，#26 已落）／`RemoteAuthority`（将来） |
 
 ⚠️ **引擎内禁止出现**：`Date.now()`、`new Date()`、`Math.random()`、`setTimeout`、`setInterval`、`performance.*`。
 **由 `engine-purity` 测试强制**（已实现，覆盖 `packages/core/src/`）。
@@ -69,6 +69,8 @@ interface Authority {
 - **界面只认这个接口，永远不认实现。** `LocalAuthority` 直接包引擎本地实例；`RemoteAuthority` 命令上行、事件下行。将来换实现，**引擎一行不改**。
 - `meta` 含 **seq 范围**，让 UI 能做间隙检测与重放。
 依据：ADR-0017、ADR-0025 §一.4
+
+> **落地（M4-T7，#26）**：`LocalAuthority` 住在宿主（`apps/web/src/game/localAuthority.ts`）——包本地引擎实例，按 `spec/04` §4.1 的固定四步分发（预检 → 推进 → 分发 → `observeDispatch`），结算事件排在命令自身事件之前；`subscribe` **每个被消耗的 seq 发一个批次**（`meta` = 该次 seq；`invalid` 不消耗 seq、也不发批次，调用方可原 seq 重发——批次流因此是连续的 seq 台账，缺口 = 真丢了投递）；`snapshot()` = `serializeWorld(state, { nowTick, rngState, due })`（§1.5 约定 3）；心跳是接口之外的宿主方法 **`heartbeat(seq)`**——无命令的推进，**seq 由调用方显式给**、与命令 seq 同一单调空间，只跑世界层（ADR-0034 §5）。到期桶**必传**（布雷、触发、存档是同一个桶 —— 存档边界拿空 `due` 盖住活引信，正是 `spec/04` §4.5 要封死的那种丢失）；交互输入队列（`CommandDeps.inputs`）本票未接、`takeInput()` 恒空，随交互流那张票走。`RemoteAuthority` 仍是将来；事件的**收件人路由**走 `Message`（`spec/05` 输出管线，未实现），订阅流只带纯语义事件。
 
 ## 4. 三类失败（重试语义完全不同）
 
@@ -171,7 +173,7 @@ schemas/                内容 JSON Schema
 - [x] 每条命令带 `actorId` 与 `seq`（M1-T1：`Command` 接口；harness/测试全程断言）
 - [x] 每个 `GameEvent` 带 `seq` 与 `tick`，且**不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案；`tick` 由 #22 定死，规则见 §5.0）
 - [x] `dispatch` 的返回区分 `rejected` / `invalid` / `transport`（M1-T1；M2-T1 补执行段拒绝通道 `CommandRejection`——func 期拒绝同样消耗 seq）
-- [x] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围（类型契约已定义：`GameListener`/`EventMeta`；驱动它的 Authority 实归宿主票）
+- [x] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围（类型契约已定义：`GameListener`/`EventMeta`；驱动它的 Authority 实**已落**——#26：`apps/web` 的 `LocalAuthority`，每个被消耗的 seq 一个批次，`meta` = 该次 seq）
 - [x] `packages/core/tests` 可独立运行，不依赖 `apps/`
 - [x] `Clock` 是 **tick 计数**而非毫秒 —— ⚠️ 语义已翻转（ADR-0031）：它是**引擎高水位读数**，不再是宿主注入的时钟；`TestClock.advance()` 相应地改为「改下一条命令的默认 tick」
 - [ ] 效果／条件／事件／状态／命令／时间 **六条契约**已定义为类型与接口——条件（`conditions.ts`）、事件（`GameEvent`）、命令（`CommandSpec` + cmdset）、状态（`state/tree.ts` 种子，M2-T1）已定义；效果与调度原语随各自里程碑

@@ -116,7 +116,7 @@ Command { seq, actorId, tick, raw }
 - **附带**：`TestClock.advance()` 的语义从「推进引擎的现在」变为「改下一条命令的默认 tick」。
 - **实现落点（#20 已落）**：`packages/core/src/clock.ts` 导出 `createTickClock(startTick)`（`TickClock = Clock & { observe(tick) }`）与 `observeDispatch(clock, command, result)` —— 后者封装 §4.1 那张表（`ok`／`rejected` 抬高水位，`invalid` 不抬高），让这条规则只有一个副本。`runCommand` **自己不持有时钟**：它从 `deps.nowTick`（驱动侧在本条命令之前的水位）取，算 `now = max(deps.nowTick, command.tick)`，再把它包成 `ctx.clock` 交给命令。`deps.nowTick` 与 `command.tick` 任一不是非负安全整数时**大声失败** —— 那是接线错误，不是玩家输入（NaN 水位会让下游所有判定静默失真，必须挡在入口）。
 - **高水位住在「推进世界的那一侧」，不在 `runCommand` 里**：`runCommand` 是纯函数（它因此**不持有**任何时钟，这正是能删掉 `CommandDeps.clock` 的原因）。推进与高水位由**驱动世界的那一侧**持有 —— 生产上是 `WorldRuntime`／宿主 `Authority`，测试上是 `createCommandHarness`（#22：`WorldRuntime` 已真的持有 `clock`，`addEntity` 从它取当前 tick；推进函数 `settleTo` 收它作起点，见 §4.3）。纯对象模式（`liveWorld: false`）每次调用深拷贝一个全新夹具，本就不存在跨调用的时间，需要跨调用观察时间的用例改用 `liveWorld: true`（该开关已存在）。
-- ⚠️ **驱动侧必须把自己持有的水位喂进 `deps.nowTick`，不能图省事喂 `command.tick`**：后者会让「tick 倒退取高水位」这条规则整个失效（水位恒等于本条命令的 tick），而且**引擎侧无从检测** —— 传给 `runCommand` 的数与本条命令的 tick 恰好相等是完全合法的情形。这是驱动侧的纪律，不是引擎能守的约束（#26 的宿主实现要照做）。
+- ⚠️ **驱动侧必须把自己持有的水位喂进 `deps.nowTick`，不能图省事喂 `command.tick`**：后者会让「tick 倒退取高水位」这条规则整个失效（水位恒等于本条命令的 tick），而且**引擎侧无从检测** —— 传给 `runCommand` 的数与本条命令的 tick 恰好相等是完全合法的情形。这是驱动侧的纪律，不是引擎能守的约束（#26 的 `LocalAuthority` 已照做：水位喂 `deps.nowTick`、命令 tick 原样不动）。
 - ⚠️ **重放的限定**（ADR-0031 §1 那句「同一命令序列在不同 tick 重放」的准确含义）：重放**必须**从一个新的水位开始（或按不减的顺序喂入）。把一段旧序列喂进一个水位已经更高的时钟，每条命令看到的都是那个水位 —— 这是高水位语义的正确结果，不是 bug，但它意味着「乱序重放」不可表达，见 §2.5。
 
 ### 2.3 `Clock` 端口：方向翻转（ADR-0031）
@@ -130,6 +130,8 @@ Clock { nowTick(): number }   // = 引擎高水位，不是毫秒，不是宿主
 宿主仍然负责**产生** tick（把墙钟翻译成 tick 是宿主的事），但只在构造 `Command` 时给它，不再注入。由此引擎不存在第二个「现在」。
 
 > ⚠️ 这条**覆盖了 `spec/01` §端口表里 `Clock` 行的「宿主实现」一列**（原写「单机：由宿主按固定步长推进」）与该手册自检清单里以 `TestClock` 为证据的那一条 —— 那两处已在本次一并更正。
+
+> **落地（M4-T7，#26）**：宿主侧「墙钟 → tick」的翻译在 `apps/web/src/game/hostClock.ts`（`createHostClock({ tickSeconds, now? })`，绝对公式见 §6 O5），`Date.now` 只在那一处被读（`apps/web/tests/host-purity.test.ts` 机械钉死「游戏层不读墙钟、不掷随机」）。它与本节的端口**同形不同义**（一个是 tick 的产生器、一个是高水位的读数），因此不复用类型名。
 
 ### 2.4 `Rng` 端口：状态可导出（ADR-0033）
 
@@ -256,7 +258,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 
 「现在的算法」同样只有一个副本：`effectiveNowTick(水位, command)`（`command/pipeline.ts`）—— 预检、分发、驱动侧的推进目标都调它，两个 tick 的合法性也由它一起挡。
 
-⚠️ 今天只有**测试 harness** 全程跑这四步（`HarnessOptions.settle`）；`WorldRuntime` 持有高水位但**不分发**（分发是宿主 `Authority` 的事，见 O10 与 #26）。没有配推进钩子的 harness 不需要预检，也就不跑它。
+⚠️ 全程跑这四步的有两处：**测试 harness**（`HarnessOptions.settle`）与**宿主 `Authority`**（`apps/web` 的 `LocalAuthority`，#26）；`WorldRuntime` 持有高水位但**不分发**（分发是宿主 `Authority` 的事，见 O10）。没有配推进钩子的 harness 不需要预检，也就不跑它。
 
 ⚠️ 只有 1 能挡住「发一堆乱码快进世界」：若跳过预检直接按 `command.tick` 推进，一条 tick=1000000 的乱码照样把到期桶提前引爆 —— 水位虽不抬，**世界已经动了**。
 
@@ -375,7 +377,7 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] 结算事件的时间戳写 **`dueTick`**，不写补跑时刻（#22：`SettleDraft.tick` 必填，测试钉死「到期 300、补跑 1000 → 事件写 300」）
 - [x] `settleTo` 产生的事件与触发它的命令**同 seq，且排在命令自身事件之前**（#22）
 - [x] v2 迁移存在且为迁移链首条真实迁移；**无 v2 → v3 连迁**（#24：`SAVE_VERSION` 1 → 2，`migrations[1]` 补 `nowTick=0`／`rngState=0`／`due=[]`／`lastSeenTick`（**只补缺失的**）；v3 存档直接「unsupported save version」，链一次只走一步）
-- [x] 宿主心跳（无命令的推进）由调用方**显式给 seq**，与命令 seq 同一单调空间；不伪造 `actorId: ""` 的系统命令（#22：`settleTo` 不传 `actorId` 即心跳，只跑世界层）
+- [x] 宿主心跳（无命令的推进）由调用方**显式给 seq**，与命令 seq 同一单调空间；不伪造 `actorId: ""` 的系统命令（#22：`settleTo` 不传 `actorId` 即心跳，只跑世界层；**#26**：`apps/web` 的 `LocalAuthority.heartbeat(seq)`，命令与心跳同一 seq 单调空间由测试钉死）
 - [x] **`invalid` 不推进世界、其 tick 不抬高 `maxTick`**（`ok`／`rejected` 才推进）；有一条测试钉死「刷无效输入不加速世界」（#20，`tests/tick.test.ts`；#22 补上「连推进函数都不调用」这一半——驱动侧预检）
 - [x] 每个 `GameEvent` 带 **`tick`**：命令事件写它看到的「现在」，结算事件写 `dueTick`（**O1 已定案，#22**；规则见 `spec/01` §5.0）
 - [x] `addEntity` 为 `lastSeenTick`（= 当前 tick）与 `cooldowns`（= `{}`）种子，照 `tags` 的先例（#22 落前半；#23 落 `cooldowns`）
@@ -391,9 +393,9 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 | ~~O2~~ | ~~**`seq` 与 `tick` 不同序时谁定顺序**~~ | **✅ 已定案（#20）**：**seq 定投递顺序、tick 定世界时间**，二者独立、不互相校验。见 §2.5 |
 | ~~O3~~ | ~~**`settings.time` 缺**组内某个键**（如 `regenPerTick`）怎么算~~ | **✅ 已定案（#21）**：缺**组**失败（缺 `settings` 表或缺 `time` 组）、缺**键**由消费该键的系统自己大声失败，**引擎绝不替它猜默认值**。落点 `src/time/tuning.ts` 的 `createTimeTuning(settings).number(键)`，两条错误文案分别点名「组」与「键」 |
 | ~~O4~~ | ~~**到期桶的项没有锚点**~~ | **✅ 已定案（#23）**：桶**保持全局扁平**，「这个房间的炸弹」靠宿主把 `roomId` 塞进 opaque payload —— 已写进正文本节：**引擎不提供按房间／区域／实体索引到期项的能力**，并由一条测试把 `DueBucket` 的键列表钉死（`schedule`／`settle`／`snapshot`／`restore`，多一个键即红），避免将来误以为有 |
-| O5 | **`tickSeconds` 归谁** | ADR-0016 §4 提到「固定步长（`content/config/`：`tickSeconds`）」。它是**真实秒**，属于宿主把墙钟翻译成 tick 的参数，**引擎不读** ⇒ 不应进 `content/config/settings.json`（那是给引擎的 TUNING）。⚠️ 连带一条：若确认只有宿主用它，那它连 `content/config/` 都不该待 —— `content/` 是引擎读的东西，放进去会让人误以为引擎消费它。落点由宿主票定 |
+| O5 | ~~**`tickSeconds` 归谁**~~ | **✅ 已定案（#26）**：**宿主参数**——它是宿主把墙钟翻译成 tick 的那个钟的构造输入（`apps/web` 的 `createHostClock({ tickSeconds })`），**引擎不读**（引擎只认 tick），**不进 `content/`**（`content/` 是引擎读的东西，放进去会让人误以为引擎消费它），也不是 `settings.json` 的 TUNING（那是给引擎的）。连带定死：宿主的墙→tick 公式是**绝对的**（`tick = floor(wallMs / (tickSeconds*1000))`，Unix 纪元、不另存锚点）—— 锚在会话起点的计数器每次重载归零，高水位永远看不见离线跨度，「回来补算」会被静默杀死；绝对公式下「存档的 nowTick ↔ 现在的墙钟读数」之差**就是**离线跨度，零额外状态 |
 | O6 | **要不要时间谓词**（如"只在夜里能进"） | `spec/02` §5.3 谓词表里今天**零**时间相关谓词（全文 `tick` 零命中）。倾向：M4 **不**加，等第一个内容真的需要时按既有三处同步流程加（引擎／`condition.schema.json`／spec/02 §5.3） |
 | ~~O7~~ | ~~**创建 `calendar.json` 那张票的文档同步债**~~ | **✅ 已在 #21 一并改**：`docs/agents/content.md` 的 config 清单（四类 + 新增「日历集合」字段约定节）、`docs/spec/06` 状态行与 `spec/00` 的 schema 总数口径（19 → **20**、`config` 三类 → **四类**、14 → **15** 待重估）、`HANDBOOK` 三处数字与 `content/config/` 文件数。**编辑器表单那一处**待 `apps/editor` 脱离占位后随行 |
 | ~~O8~~ | ~~**★引擎侧要用到 calendar／到期桶处理器时，走什么通道**~~ | **✅ 已定案（#23）**：**新增 `CommandDeps.due?: DueBucket`**，照 `subjectOf` 的先例**由宿主注入**（不是让命令执行函数读内容注册表），命令侧经 `ctx.due.schedule(dueTick, payload)` 布雷；`ctx.due` 只暴露窄接口 `DueScheduler`（能布雷，不能触发、不能窥视），缺 `deps.due` 时布雷**大声失败**（`NO_DUE_BUCKET`，与 `deps.verbs` 缺失同律）。**触发**那一半的处理器（`fire`）在 `createDueBucket({ fire })` 构造时注入 —— 引擎全程不知道 payload 是什么。**calendar 那一半**走的是另一条既有通道：注册表 `calendar?` → `createGameTime`（#21） |
 | ~~O9~~ | ~~**★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`**~~ | **✅ 已定案（#24）：选 (b)** —— `serializeWorld(world, meta)`（`meta` **必填**）／`restoreWorld(snapshot) → { state, meta }`，`WorldMeta = { nowTick, rngState, due }`。理由与被否的两条见 §1.5 约定 3。`due` 是 #23 的交接（ADR-0033 §2 只列了三样），一并进了 v2 |
-| O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26**。⚠️ **#22 已落驱动侧那一半**：`WorldRuntime` 现在**持有 `clock`**、`addEntity` 从它取当前 tick 种子，测试 harness 的 `settle` 钩子按「预检 → 推进 → 分发 → `observeDispatch`」四步跑（§4.1）；**宿主 `Authority` 那一半仍归 #26**，它照同一四步做即可，**不要**指望 `runCommand` 回传水位 |
+| O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26**。⚠️ **#22 已落驱动侧那一半**：`WorldRuntime` 现在**持有 `clock`**、`addEntity` 从它取当前 tick 种子，测试 harness 的 `settle` 钩子按「预检 → 推进 → 分发 → `observeDispatch`」四步跑（§4.1）；**宿主 `Authority` 那一半已由 #26 落**（照同一四步做，**不**指望 `runCommand` 回传水位）。⚠️ **#26 落的形状**：`apps/web` 的 `LocalAuthority` 照同一四步跑（预检 → 推进 → 分发 → `observeDispatch`），并带 `heartbeat(seq)`（心跳＝无命令的推进，seq 由调用方显式给、与命令 seq 同一单调空间）与 `snapshot()`（`serializeWorld(state, { nowTick, rngState, due })`） |
