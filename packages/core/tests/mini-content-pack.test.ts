@@ -912,4 +912,13 @@ describe("two packs, one engine, no leakage (spec/00 acceptance criterion 2)", (
     expect(foundIn(miniSide, { words: [], ids: [], calendarIds: calendarIdsOf(WUXIA_PACK_DIR) })).toEqual([]);
     expect(foundIn(wuxiaSide, { words: [], ids: [], calendarIds: calendarIdsOf(MINI_PACK_DIR) })).toEqual([]);
   });
+
+  it("rejects an empty vocabulary entry loudly — it would match everything or hang the scan", () => {
+    // An empty word is a substring of every haystack (vacuous "leak"); an
+    // empty calendar id makes the whole-run walk loop forever. Either way
+    // the vocabulary is malformed — a typo, not a string to scan for.
+    expect(() => foundIn("anything", { words: [""], ids: [], calendarIds: [] })).toThrow(/empty string/);
+    expect(() => foundIn("anything", { words: [], ids: [""], calendarIds: [] })).toThrow(/empty string/);
+    expect(() => foundIn("anything", { words: [], ids: [], calendarIds: [""] })).toThrow(/empty string/);
+  });
 });

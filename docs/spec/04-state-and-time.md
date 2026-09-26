@@ -187,7 +187,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 - 房间描述与 NPC 在场判定做成 `(nowTick) => descKey` 的纯选择函数。
 
 > **落地（M4-T2，#21）**：`packages/core/src/time/calendar.ts` —— `ringPeriod(环)`（Σ 段 tick，周期只有一个来源）、`segmentIndexAt(环, tick)`（`tick % period` 一次取模 + 半开区间扫描，O(段数)）、`segmentAt`、`createGameTime(calendar?)`（按环 id 查；**缺日历时首次使用才抛**，不是构造时、更不是加载期）。武侠包 `content/config/calendar.json` = `day`（十二时辰，各 1200 tick，周期 14400）＋ `year`（四季，各 1296000 tick）；迷你包是另一套（`shift`／`orbit`）。
-> **落地（M4-T6，#25）**：迷你包异种日历**验收**——`tests/fixtures/mini-pack/config/calendar.json` = `shift`（`night-watch`／`day-watch` 各 900 tick）＋ `orbit`（`sunlit` 4200／`eclipse` 600），与武侠包**零重合**（环与段 id 一个不重），经**同一装配路径**（`packRegistry`，换目录即换历法）跑通，**引擎零改动**。迷你包侧算出的是**自己的**段名（逐段边界扫过，全部轮到自己的名字），武侠历法词汇（`WUXIA_CALENDAR_WORDS`：§3.1 三族——时辰十二名／刻／季节）在迷你包侧零命中；两包**词汇与 id 空间互不渗漏**——日历的环与段 id 已进 `packVocabulary` 的 id 空间（渲染器会印出段名，它就是包的词汇），`日历 id 在 `foundIn` 里按**整词**匹配、条目 id 仍按子串（M2-T6／M3-T6 两张既有网语义不变；连字符属 id 本身：`day` 不在 `day-watch` 里，见 `mini-content-pack.ts`）。
+> **落地（M4-T6，#25）**：迷你包异种日历**验收**——`tests/fixtures/mini-pack/config/calendar.json` = `shift`（`night-watch`／`day-watch` 各 900 tick）＋ `orbit`（`sunlit` 4200／`eclipse` 600），与武侠包**零重合**（环与段 id 一个不重），经**同一装配路径**（`packRegistry`，换目录即换历法）跑通，**引擎零改动**。迷你包侧算出的是**自己的**段名（逐段边界扫过，全部轮到自己的名字），武侠历法词汇（`WUXIA_CALENDAR_WORDS`：§3.1 三族——时辰十二名／刻／季节）在迷你包侧零命中；两包**词汇与 id 空间互不渗漏**——日历的环与段 id 已进 `packVocabulary` 的 `calendarIds` 桶（渲染器会印出段名，它就是包的词汇；与条目 id 同属一个 id 空间），日历 id 在 `foundIn` 里按**整词**匹配、条目 id 仍按子串（M2-T6／M3-T6 两张既有网语义不变；连字符属 id 本身：`day` 不在 `day-watch` 里，见 `mini-content-pack.ts`）。
 
 依据：ADR-0025 §四
 

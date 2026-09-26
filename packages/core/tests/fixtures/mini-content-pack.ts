@@ -52,16 +52,6 @@ function readCollection(rootDir: string, name: string): string[] {
 }
 
 /**
- * The pack's dimensions table (config/dimensions.json), when it declares one.
- *
- * It travels WITH the pack: which dimensions exist is the pack's business and
- * the engine never imports one (ADR-0029 §5, spec/03 §5.1), so the loader
- * that finds rooms/ finds config/ too and hands the table to the registry —
- * "swap the pack" swaps the vocabulary tags are closed against. A pack with
- * no such file loads with no table, and the closure is then skipped, exactly
- * as it is for a host that declines to pass one.
- */
-/**
  * Any config table a pack declares (`config/<name>.json`), by name. The
  * calendar travels with the pack for the same reason the dimensions table
  * does (ADR-0032 §3): it IS the pack's calendar, so "swap the directory"
@@ -77,7 +67,15 @@ function readConfig<T>(rootDir: string, name: string): T | undefined {
   return JSON.parse(readFileSync(file, "utf8")) as T;
 }
 
-/** The dimensions table, when the pack declares one (see readConfig). */
+/**
+ * The pack's dimensions table (config/dimensions.json), when it declares one.
+ * It travels WITH the pack (ADR-0029 §5, spec/03 §5.1): which dimensions
+ * exist is the pack's business and the engine never imports one, so the
+ * loader that finds rooms/ finds config/ too — "swap the pack" swaps the
+ * vocabulary tags are closed against. A pack with no such file loads with no
+ * table, and the closure is then skipped, exactly as for a host that
+ * declines to pass one.
+ */
 function readDimensions(rootDir: string): DimensionTable | undefined {
   return readConfig<DimensionTable>(rootDir, "dimensions");
 }
@@ -252,6 +250,16 @@ function occursAsWholeId(haystack: string, id: string): boolean {
 
 /** Every string of `vocabulary` that occurs in `haystack` — the leakage list. */
 export function foundIn(haystack: string, vocabulary: PackVocabulary): string[] {
+  // An empty entry is a malformed vocabulary, not a string to scan for: an
+  // empty word matches every haystack and an empty id makes the whole-run
+  // walk below spin forever (indexOf("") never returns -1). Fail loudly —
+  // silently matching (or hanging) would turn a typo in a word list into a
+  // green test that proves nothing.
+  for (const entry of [...vocabulary.words, ...vocabulary.ids, ...vocabulary.calendarIds]) {
+    if (entry === "") {
+      throw new Error("foundIn: vocabulary contains an empty string");
+    }
+  }
   return [
     ...vocabulary.words.filter((word) => haystack.includes(word)),
     ...vocabulary.ids.filter((id) => haystack.includes(id)),
