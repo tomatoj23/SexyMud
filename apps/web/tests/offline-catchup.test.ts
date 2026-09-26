@@ -7,7 +7,7 @@ import {
   createWorldRuntime,
   restoreWorld,
 } from "@sexymud/core";
-import type { DueBucket, Rng, SettleSpan, WorldRuntime } from "@sexymud/core";
+import type { DueBucket, DueItem, Rng, SaveDataV2, SettleSpan, WorldRuntime } from "@sexymud/core";
 import { createHostClock } from "../src/game/hostClock.js";
 import { LocalSaveStore } from "../src/game/localSaveStore.js";
 import { createLocalAuthority } from "../src/game/localAuthority.js";
@@ -58,7 +58,7 @@ describe("end-to-end: 上线 → 离线 → 回来补算", () => {
     // is visible as the third span of the same function.
     const worldSpans: SettleSpan[] = [];
     const entitySpans: { entityId: string; fromTick: number; toTick: number }[] = [];
-    const fired: unknown[] = [];
+    const fired: DueItem[] = [];
     const startSession = (runtime: WorldRuntime, rng: Rng, bucket: DueBucket) => {
       return createLocalAuthority({
         runtime,
@@ -152,6 +152,6 @@ describe("end-to-end: 上线 → 离线 → 回来补算", () => {
 
     // And the bomb is gone for good: a second save round-trips an empty bucket.
     const second = await authority2.snapshot();
-    expect((second.data as { due: unknown[] }).due).toEqual([]);
+    expect((second.data as SaveDataV2).due).toEqual([]);
   });
 });

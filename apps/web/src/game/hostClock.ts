@@ -22,7 +22,12 @@
  * engine TUNING.
  */
 export interface HostClockOptions {
-  /** Real seconds per tick; a positive finite number, or it fails loudly. */
+  /**
+   * Real seconds per tick. Must resolve to a whole number of milliseconds
+   * (the wall clock's own resolution) — `1`, `0.5`, `0.001` all pass, `1/3`
+   * fails loudly. See {@link createHostClock} for why a fractional
+   * millisecond width is refused instead of rounded.
+   */
   tickSeconds: number;
   /**
    * Wall milliseconds source, default `Date.now`. Injected so tests move the
@@ -40,7 +45,17 @@ export interface HostClock {
 
 /**
  * One tick is `tickSeconds` real seconds, counted from the Unix epoch —
- * `tick = floor(wallMs / (tickSeconds * 1000))`.
+ * `tick = floor(wallMs / tickMs)`.
+ *
+ * The width is snapped to WHOLE milliseconds and the snap is validated by an
+ * exact round trip (`tickMs / 1000 === tickSeconds`), for two reasons that
+ * are one reason: the width has to be exact at the boundaries. `16.1 * 1000`
+ * is `16100.000000000002`, and a division by that noise rolls the tick one
+ * millisecond late at EVERY boundary; a width like `1/3` second is not
+ * expressible in milliseconds at all, and quietly rounding it to 333 would
+ * make the host's number a lie. So: whole milliseconds or a loud failure —
+ * a wiring bug, not play. With an integer width the quotient at
+ * `wallMs = k * tickMs` is exactly `k`, so boundaries are exact.
  *
  * The epoch is ABSOLUTE and carries no anchor of its own, and that is the
  * whole point (spec/04 §4.2): the offline span between "went away" and "came
@@ -53,13 +68,14 @@ export interface HostClock {
  */
 export function createHostClock(options: HostClockOptions): HostClock {
   const { tickSeconds } = options;
-  if (!Number.isFinite(tickSeconds) || tickSeconds <= 0) {
-    // A wiring bug, not play: a zero or negative width would divide by zero
-    // into Infinity/NaN ticks and poison every time judgement downstream.
-    throw new Error(`host clock: tickSeconds must be a positive finite number, got ${String(tickSeconds)}`);
+  const tickMs = Math.round(tickSeconds * 1000);
+  if (!Number.isSafeInteger(tickMs) || tickMs <= 0 || tickMs / 1000 !== tickSeconds) {
+    // Zero, negative, NaN, Infinity and un-millisecond widths all land here.
+    throw new Error(
+      `host clock: tickSeconds must resolve to a positive whole number of milliseconds, got ${String(tickSeconds)}`,
+    );
   }
   const now = options.now ?? Date.now;
-  const tickMs = tickSeconds * 1000;
   return {
     nowTick: () => Math.floor(now() / tickMs),
   };

@@ -123,6 +123,12 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
    * which is exactly what makes the seq line contiguous for gap detection
    * (spec/01 §3): an empty batch means "seq N happened and said nothing", a
    * missing batch means "seq N never happened".
+   *
+   * ⚠️ Delivery runs AFTER the world has moved and the seq is spent: a
+   * listener that throws fails the dispatch promise, but the command HAS
+   * run. A caller must never answer a thrown dispatch by reissuing the seq —
+   * that would execute the command twice (a render bug is a wiring bug; fix
+   * the wiring, not the world).
    */
   const deliver = (events: GameEvent[], seq: number): void => {
     if (listeners.size === 0) return;

@@ -36,9 +36,35 @@ describe("the host's wall-to-tick clock (spec/04 §2.3, O5)", () => {
     nowSpy.mockRestore();
   });
 
+  it("a tick rolls exactly at its boundary — no float drift in the width", () => {
+    // `16.1 * 1000` is 16100.000000000002: dividing by that noise used to
+    // roll the tick one millisecond LATE at every boundary (the regression
+    // this pins). The width is whole milliseconds or the clock refuses.
+    let wallMs = 16_099;
+    const clock = createHostClock({ tickSeconds: 16.1, now: () => wallMs });
+    expect(clock.nowTick()).toBe(0);
+    wallMs = 16_100;
+    expect(clock.nowTick()).toBe(1);
+    wallMs = 32_200;
+    expect(clock.nowTick()).toBe(2);
+  });
+
   it("fails loudly on a width that cannot divide time (wiring, not play)", () => {
     for (const tickSeconds of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(() => createHostClock({ tickSeconds })).toThrow(/positive finite/);
+      expect(() => createHostClock({ tickSeconds })).toThrow(
+        /positive whole number of milliseconds/,
+      );
+    }
+  });
+
+  it("fails loudly on a width finer than a millisecond — the wall clock's resolution", () => {
+    // Not rounded to 333ms on purpose: the caller's number would become a
+    // lie. 1/3 second is not expressible in milliseconds, and 0.5ms is
+    // below the wall clock's own grain.
+    for (const tickSeconds of [1 / 3, 0.3333, 0.0015, 0.0005]) {
+      expect(() => createHostClock({ tickSeconds })).toThrow(
+        /positive whole number of milliseconds/,
+      );
     }
   });
 
