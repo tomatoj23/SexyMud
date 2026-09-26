@@ -11,6 +11,8 @@ import type { CommandResult } from "../src/types.js";
 import type { CommandSpec, Message } from "../src/command/pipeline.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
+import type { Calendar } from "../src/content/config.js";
+import { createGameTime } from "../src/time/calendar.js";
 import { createEntity } from "../src/world/entity.js";
 import { lookSpec } from "../src/world/look.js";
 import { saySpec } from "../src/world/say.js";
@@ -19,10 +21,12 @@ import { createWorldRuntime } from "../src/world/runtime.js";
 import type { WorldRuntime } from "../src/world/runtime.js";
 import {
   MINI_PACK_DIR,
+  calendarIds,
   foundIn,
   loadPack,
   packRegistry,
   packVocabulary,
+  segmentIds,
 } from "./fixtures/mini-content-pack.js";
 
 /**
@@ -38,8 +42,8 @@ import {
  * Nothing here re-implements a behaviour: the three adapters are the engine's
  * factory specs (`traversalSpec` / `lookSpec` / `saySpec`), bound by the host
  * to whatever command id the pack happens to use. Two packs, two id sets, one
- * engine — and the last two tests prove neither pack's vocabulary ever
- * appears in the other's session.
+ * engine — and the leakage tests prove neither pack's vocabulary (words, ids,
+ * or calendar) ever appears in the other's session.
  */
 
 const WUXIA_PACK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../content");
@@ -67,6 +71,41 @@ const WUXIA_THEME_WORDS: readonly string[] = [
   "掌门",
   "大侠",
   "少侠",
+];
+
+/**
+ * The wuxia pack's calendar vocabulary — the same second net, one domain
+ * over. `spec/04` §3.1 names the three families (「时辰／刻／季节这些词一个
+ * 都不能出现」) and the phrase this guards against: 「迷你包（近轨灯塔站）
+ * 不能被追着问『现在是子时三刻』」. The pinyin ids (`zi`/`chun`…) travel
+ * through `packVocabulary`; these are the CHINESE words a wuxia session
+ * would use about time. Compound words only — a bare 春 fires on 「青春」, a
+ * bare 刻 on 「立刻」/「刻度」, and both would prove nothing. Lives HERE,
+ * with the assertion that uses it (same reason as WUXIA_THEME_WORDS).
+ */
+const WUXIA_CALENDAR_WORDS: readonly string[] = [
+  "时辰",
+  "子时",
+  "丑时",
+  "寅时",
+  "卯时",
+  "辰时",
+  "巳时",
+  "午时",
+  "未时",
+  "申时",
+  "酉时",
+  "戌时",
+  "亥时",
+  "一刻",
+  "三刻",
+  "刻钟",
+  "季节",
+  "四季",
+  "春季",
+  "夏季",
+  "秋季",
+  "冬季",
 ];
 
 /**
@@ -165,6 +204,44 @@ function miniStage(): Session {
 /** One whole session's recorded output, flattened for the vocabulary scans. */
 function transcript(steps: readonly DispatchOutcome[]): string {
   return JSON.stringify(steps.map((step) => step.messages));
+}
+
+/** Both packs ship one; these tests are about calendars. */
+function packCalendar(rootDir: string): Calendar {
+  const calendar = loadPack(rootDir).calendar;
+  if (calendar === undefined) {
+    throw new Error(`pack "${rootDir}" ships no config/calendar.json — this file is about calendars`);
+  }
+  return calendar;
+}
+
+/** The rings and segments a pack's calendar declares — its words of time. */
+function calendarIdsOf(rootDir: string): string[] {
+  return calendarIds(packCalendar(rootDir));
+}
+
+/** What `createGameTime` can answer with: the segment ids, no ring ids. */
+function segmentIdsOf(rootDir: string): string[] {
+  return segmentIds(packCalendar(rootDir));
+}
+
+/**
+ * Every segment name the pack's calendar can answer with, computed through
+ * the registry it assembled into — swept at every segment boundary, where a
+ * half-open interval could have gone wrong.
+ */
+function computedNamesOf(rootDir: string): string[] {
+  const time = createGameTime(packRegistry(rootDir).calendar);
+  const names: string[] = [];
+  for (const ring of packCalendar(rootDir).rings) {
+    let start = 0;
+    for (const segment of ring.segments) {
+      names.push(time.segmentOf(ring.id, start).id);
+      names.push(time.segmentOf(ring.id, start + segment.ticks - 1).id);
+      start += segment.ticks;
+    }
+  }
+  return names;
 }
 
 describe("the mini pack assembles through the same host path (issue #12)", () => {
@@ -686,6 +763,74 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
   });
 });
 
+/**
+ * Game-in-time in the second pack (issue #25, spec/04 §3, ADR-0032): the
+ * calendar IS the pack's file — rings, segment names, segment lengths — so
+ * "swap the pack" swaps the calendar too. The lighthouse station runs a
+ * watch rotation (`shift`: night-watch/day-watch) and an orbit (`orbit`:
+ * sunlit/eclipse); the wuxia pack's shichen and seasons are nowhere in it.
+ * The dimensions table walked this road first (ADR-0029 §5, above); this is
+ * acceptance criterion 2 extended into time.
+ */
+describe("the calendar travels with the pack (ADR-0032) — M4-T6", () => {
+  it("ships its own calendar: no ring id and no segment id is the wuxia pack's", () => {
+    expect(loadPack(MINI_PACK_DIR).calendar).toBeDefined();
+    expect(loadPack(WUXIA_PACK_DIR).calendar).toBeDefined();
+    // 「日历随包」的内容侧证据：两包的日历 id 一个都不重（环与段都在内）。
+    const wuxiaIds = new Set(calendarIdsOf(WUXIA_PACK_DIR));
+    expect(calendarIdsOf(MINI_PACK_DIR).filter((id) => wuxiaIds.has(id))).toEqual([]);
+    // Its own names and its own numbers — both are content (硬标准 1).
+    expect(calendarIdsOf(MINI_PACK_DIR)).toEqual([
+      "shift",
+      "night-watch",
+      "day-watch",
+      "orbit",
+      "sunlit",
+      "eclipse",
+    ]);
+    expect(packCalendar(MINI_PACK_DIR).rings[0]!.segments.map((segment) => segment.ticks)).toEqual([
+      900, 900,
+    ]);
+  });
+
+  it("runs both packs through the same loading function: swap the directory, swap the calendar", () => {
+    // One loader, one registry call — the engine does not know a swap happened.
+    const mini = packRegistry(MINI_PACK_DIR);
+    const wuxia = packRegistry(WUXIA_PACK_DIR);
+    expect(mini.calendar).toEqual(loadPack(MINI_PACK_DIR).calendar);
+    expect(wuxia.calendar).toEqual(loadPack(WUXIA_PACK_DIR).calendar);
+    // The read side answers each pack's OWN first segment off the same code.
+    expect(createGameTime(mini.calendar).segmentOf("shift", 0).id).toBe("night-watch");
+    expect(createGameTime(wuxia.calendar).segmentOf("day", 0).id).toBe("zi");
+  });
+
+  it("answers with ITS OWN segment names — never a wuxia calendar word (spec/04 §3.1)", () => {
+    const time = createGameTime(packRegistry(MINI_PACK_DIR).calendar);
+    // Concrete answers at the fixture's boundaries: the numbers are content.
+    expect(time.segmentOf("shift", 0).id).toBe("night-watch");
+    expect(time.segmentOf("shift", 899).id).toBe("night-watch");
+    expect(time.segmentOf("shift", 900).id).toBe("day-watch");
+    expect(time.segmentOf("shift", 1799).id).toBe("day-watch");
+    expect(time.segmentOf("orbit", 0).id).toBe("sunlit");
+    expect(time.segmentOf("orbit", 4199).id).toBe("sunlit");
+    expect(time.segmentOf("orbit", 4200).id).toBe("eclipse");
+    expect(time.segmentOf("orbit", 4799).id).toBe("eclipse");
+
+    // Sweep every segment boundary of every ring: whatever the tick, the
+    // mini side answers with one of the mini pack's OWN names — and every
+    // name it owns really gets computed.
+    const computed = computedNamesOf(MINI_PACK_DIR);
+    expect([...new Set(computed)].sort()).toEqual([...new Set(segmentIdsOf(MINI_PACK_DIR))].sort());
+    // Not one wuxia calendar id among what it computed (id space, exact).
+    const wuxiaCalendarIds = new Set(calendarIdsOf(WUXIA_PACK_DIR));
+    expect([...new Set(computed)].filter((id) => wuxiaCalendarIds.has(id))).toEqual([]);
+    // And no wuxia calendar WORD anywhere on the mini side — its computed
+    // names and its files both count (the second net, as for theme words).
+    const haystack = JSON.stringify(computed) + loadPack(MINI_PACK_DIR).text;
+    expect(WUXIA_CALENDAR_WORDS.filter((word) => haystack.includes(word))).toEqual([]);
+  });
+});
+
 describe("two packs, one engine, no leakage (spec/00 acceptance criterion 2)", () => {
   it("emits nothing the wuxia pack owns: every direction, id and word is the mini pack's", () => {
     const { dispatch } = miniStage();
@@ -716,8 +861,11 @@ describe("two packs, one engine, no leakage (spec/00 acceptance criterion 2)", (
 
     // Disjoint id spaces: no id can mean one thing in one pack and another in
     // the other, which is what lets both fixtures coexist in one test file.
-    const wuxiaIds = new Set(wuxiaVocabulary.ids);
-    expect(miniVocabulary.ids.filter((id) => wuxiaIds.has(id))).toEqual([]);
+    // Entry ids and the calendar's rings/segments share the one id space.
+    const wuxiaIds = new Set([...wuxiaVocabulary.ids, ...wuxiaVocabulary.calendarIds]);
+    expect(
+      [...miniVocabulary.ids, ...miniVocabulary.calendarIds].filter((id) => wuxiaIds.has(id)),
+    ).toEqual([]);
 
     const wuxia = makeSession(WUXIA_PACK_DIR, WUXIA_BINDINGS, {
       "actor-1": "room-lq-001",
@@ -745,5 +893,23 @@ describe("two packs, one engine, no leakage (spec/00 acceptance criterion 2)", (
     expect(foundIn(wuxiaSession, wuxiaVocabulary)).toEqual(
       expect.arrayContaining(["北", "room-lq-001", "npc-lq-001"]),
     );
+  });
+
+  it("keeps the calendars apart too: each pack's words of time stay on its own side (M4-T6)", () => {
+    const wuxiaVocabulary = packVocabulary(packRegistry(WUXIA_PACK_DIR));
+    const miniVocabulary = packVocabulary(packRegistry(MINI_PACK_DIR));
+    // Non-vacuous: the vocabulary's calendar bucket really covers the rings
+    // and segments — the scans below are not reading an empty list.
+    expect(miniVocabulary.calendarIds).toEqual(expect.arrayContaining(calendarIdsOf(MINI_PACK_DIR)));
+    expect(wuxiaVocabulary.calendarIds).toEqual(expect.arrayContaining(calendarIdsOf(WUXIA_PACK_DIR)));
+
+    // Neither side shows the other's calendar: computed segment names and
+    // the pack's own files, scanned in both directions. (The reverse scan is
+    // calendar ids only — the mini pack's direction words 前/内 are substring
+    // matches in any wuxia prose, which says nothing about calendars.)
+    const miniSide = JSON.stringify(computedNamesOf(MINI_PACK_DIR)) + loadPack(MINI_PACK_DIR).text;
+    const wuxiaSide = JSON.stringify(computedNamesOf(WUXIA_PACK_DIR)) + loadPack(WUXIA_PACK_DIR).text;
+    expect(foundIn(miniSide, { words: [], ids: [], calendarIds: calendarIdsOf(WUXIA_PACK_DIR) })).toEqual([]);
+    expect(foundIn(wuxiaSide, { words: [], ids: [], calendarIds: calendarIdsOf(MINI_PACK_DIR) })).toEqual([]);
   });
 });

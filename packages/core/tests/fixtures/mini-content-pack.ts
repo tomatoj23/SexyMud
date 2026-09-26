@@ -157,8 +157,35 @@ export function packRegistry(rootDir: string): ContentRegistry {
 export interface PackVocabulary {
   /** Theme-bearing strings the CJK test kept: verbs, directions, names. */
   readonly words: readonly string[];
-  /** Entry ids: commands, rooms, exits, npcs, monsters. */
+  /**
+   * Entry ids: commands, rooms, exits, npcs, monsters. Scanned as
+   * SUBSTRINGS — a flat id glued into anything is a leak (`x-room-lq-001b`
+   * must fire), and that is exactly how the M2-T6/M3-T6 nets landed.
+   */
   readonly ids: readonly string[];
+  /**
+   * The calendar's rings and segments (M4-T6): the pack's words of time —
+   * a renderer prints them ("现在是 night-watch"). Scanned as WHOLE runs of
+   * id characters, because segment names COMPOSE: `day` (the wuxia ring) is
+   * not inside `day-watch` (the mini pack's shift) — hyphens join an id —
+   * and a scan that cried leak there would prove nothing. The config file's
+   * `id` stamp is in no bucket: every pack's table is called "calendar",
+   * just as every dimensions table is called "dimensions".
+   */
+  readonly calendarIds: readonly string[];
+}
+
+/** Every id a calendar owns: its rings and their segments. */
+export function calendarIds(calendar: Calendar | undefined): string[] {
+  return (calendar?.rings ?? []).flatMap((ring) => [
+    ring.id,
+    ...ring.segments.map((segment) => segment.id),
+  ]);
+}
+
+/** The segment ids only — what `createGameTime` can answer with. */
+export function segmentIds(calendar: Calendar | undefined): string[] {
+  return (calendar?.rings ?? []).flatMap((ring) => ring.segments.map((segment) => segment.id));
 }
 
 const CJK = /[\u4e00-\u9fff]/;
@@ -193,10 +220,41 @@ export function packVocabulary(registry: ContentRegistry): PackVocabulary {
     ids.add(monster.id);
   }
 
-  return { words: [...words].sort(), ids: [...ids].sort() };
+  return {
+    words: [...words].sort(),
+    ids: [...ids].sort(),
+    calendarIds: [...new Set(calendarIds(registry.calendar))].sort(),
+  };
+}
+
+/**
+ * Id characters: letters, digits, `_` and `-`. A CALENDAR id counts only as
+ * a whole run of them — `day` (the wuxia ring) is not inside `day-watch`
+ * (the mini pack's shift), because hyphens join an id rather than delimit
+ * one. A scan that reported that pair as leakage would prove nothing (same
+ * reason single letters are kept out of the vocabulary above). Entry ids and
+ * theme words keep the plain substring rule: a flat id glued into anything
+ * IS a leak (`x-room-lq-001b` must fire), and 「子时」 inside 「子时三刻」 is
+ * exactly the leak to catch.
+ */
+const ID_CHAR = /[\w-]/;
+
+function occursAsWholeId(haystack: string, id: string): boolean {
+  for (let at = haystack.indexOf(id); at !== -1; at = haystack.indexOf(id, at + 1)) {
+    const before = at === 0 ? "" : (haystack[at - 1] ?? "");
+    const after = haystack[at + id.length] ?? "";
+    if (!ID_CHAR.test(before) && !ID_CHAR.test(after)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Every string of `vocabulary` that occurs in `haystack` — the leakage list. */
 export function foundIn(haystack: string, vocabulary: PackVocabulary): string[] {
-  return [...vocabulary.words, ...vocabulary.ids].filter((word) => haystack.includes(word));
+  return [
+    ...vocabulary.words.filter((word) => haystack.includes(word)),
+    ...vocabulary.ids.filter((id) => haystack.includes(id)),
+    ...vocabulary.calendarIds.filter((id) => occursAsWholeId(haystack, id)),
+  ];
 }

@@ -187,6 +187,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 - 房间描述与 NPC 在场判定做成 `(nowTick) => descKey` 的纯选择函数。
 
 > **落地（M4-T2，#21）**：`packages/core/src/time/calendar.ts` —— `ringPeriod(环)`（Σ 段 tick，周期只有一个来源）、`segmentIndexAt(环, tick)`（`tick % period` 一次取模 + 半开区间扫描，O(段数)）、`segmentAt`、`createGameTime(calendar?)`（按环 id 查；**缺日历时首次使用才抛**，不是构造时、更不是加载期）。武侠包 `content/config/calendar.json` = `day`（十二时辰，各 1200 tick，周期 14400）＋ `year`（四季，各 1296000 tick）；迷你包是另一套（`shift`／`orbit`）。
+> **落地（M4-T6，#25）**：迷你包异种日历**验收**——`tests/fixtures/mini-pack/config/calendar.json` = `shift`（`night-watch`／`day-watch` 各 900 tick）＋ `orbit`（`sunlit` 4200／`eclipse` 600），与武侠包**零重合**（环与段 id 一个不重），经**同一装配路径**（`packRegistry`，换目录即换历法）跑通，**引擎零改动**。迷你包侧算出的是**自己的**段名（逐段边界扫过，全部轮到自己的名字），武侠历法词汇（`WUXIA_CALENDAR_WORDS`：§3.1 三族——时辰十二名／刻／季节）在迷你包侧零命中；两包**词汇与 id 空间互不渗漏**——日历的环与段 id 已进 `packVocabulary` 的 id 空间（渲染器会印出段名，它就是包的词汇），`日历 id 在 `foundIn` 里按**整词**匹配、条目 id 仍按子串（M2-T6／M3-T6 两张既有网语义不变；连字符属 id 本身：`day` 不在 `day-watch` 里，见 `mini-content-pack.ts`）。
 
 依据：ADR-0025 §四
 
@@ -358,7 +359,7 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 - [x] `Clock` 是 **tick 计数**不是毫秒 —— ⚠️ 语义已翻转：它是**引擎高水位读数**，不再是宿主注入的时钟（ADR-0031）
 - [x] `Command` 自带 `tick`；引擎维护高水位；`CommandDeps.clock` 已删除（ADR-0031，#20：`src/clock.ts` 的 `TickClock`／`observeDispatch`，`deps.nowTick`）
 - [x] `Rng.getState()` 存在且强制；状态进 v2 存档（ADR-0033）（#24：`Rng` 端口加 `getState(): number`，`createSeededRng(state)` **一身二用**——既是新建也是恢复，不另开 `restoreRng`，因为两者收的是同一个 uint32）
-- [x] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储；**日历在内容里**（ADR-0032，#21：`content/config/calendar.json` + `createGameTime`）
+- [x] 游戏内时间（时辰/刻/季节）是 **tick 的纯函数**，不存储；**日历在内容里**（ADR-0032，#21：`content/config/calendar.json` + `createGameTime`）；**M4-T6（#25）已验收「日历随包」**：迷你包异种日历（`shift`／`orbit`，与武侠包零重合）经同一装配路径跑通、换目录即换历法，迷你包算出的是自己的段名，两包词汇与 id 空间互不渗漏
 - [x] 日历是**一组独立的环**，不是一张扁平分段表（第 19 条）（#21：`rings[]`，多环各自取模）
 - [x] `settings` / `calendar` 走与 `dimensions` 同构的通道；缺失时**引擎侧大声失败**，无默认公历兜底（#21：`createContentRegistry(content, { settings?, calendar? })` ＋ `createGameTime`／`createTimeTuning` 的惰性抛错）
 - [x] 时间参数零写死：`TICKS_PER_*` 一类换算数字不在引擎源码里（硬标准 1）（#21：换算数字全部住在 `calendar.json`）
