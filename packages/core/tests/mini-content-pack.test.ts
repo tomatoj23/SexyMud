@@ -344,9 +344,11 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     );
     expect(validateDimensions(mini)).toBe(true);
     expect(validateDimensions(wuxia)).toBe(true);
-    // The gate the name list used to be, in pack-neutral form (option (c) of
-    // #27): an empty table is not a table.
+    // The gate the name list used to be, in pack-neutral form (#27 chose (c),
+    // absorbing (a)): an empty table is not a table — neither an empty map nor
+    // a dimension with no keys.
     expect(validateDimensions({})).toBe(false);
+    expect(validateDimensions({ section: [] })).toBe(false);
   });
 });
 
@@ -769,9 +771,9 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     // dimension its content uses, each fail where the vocabulary is in hand.
     const pack = loadPack(WUXIA_PACK_DIR);
     const sample = pack.rooms.find((room) => room.id === "room-lq-001")!;
-    const wuxiaContent = (rogue: (typeof pack.rooms)[number]) => ({
+    const contentWithRoom = (room: (typeof pack.rooms)[number]) => ({
       commands: pack.commands,
-      rooms: pack.rooms.map((room) => (room.id === rogue.id ? rogue : room)),
+      rooms: pack.rooms.map((other) => (other.id === room.id ? room : other)),
       npcs: pack.npcs,
       monsters: pack.monsters,
     });
@@ -779,21 +781,22 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     // `elements` for `element`: no schema can see this — entry schemas do not
     // know the table — so the closure is the gate that catches it.
     const typo = { ...sample, tags: { elements: ["fire"] } };
-    expect(() => createContentRegistry(wuxiaContent(typo), { dimensions: pack.dimensions })).toThrow(
+    expect(() => createContentRegistry(contentWithRoom(typo), { dimensions: pack.dimensions })).toThrow(
       /tags unknown dimension "elements"/,
     );
 
     // …and the table forgetting `quality` while content tags with it: the
-    // pack must declare the dimensions it needs (option (a) of #27).
+    // pack must declare the dimensions it needs (the load-time half of #27's
+    // decision — (c) absorbing (a)).
     const usesQuality = { ...sample, tags: { quality: ["high"] } };
     const { quality: _dropped, ...incomplete } = pack.dimensions!;
     expect(() =>
-      createContentRegistry(wuxiaContent(usesQuality), { dimensions: incomplete }),
+      createContentRegistry(contentWithRoom(usesQuality), { dimensions: incomplete }),
     ).toThrow(/tags unknown dimension "quality"/);
     // Same content against the whole table passes — the two failures above
     // are the closure working, not the entry being malformed.
     expect(() =>
-      createContentRegistry(wuxiaContent(usesQuality), { dimensions: pack.dimensions }),
+      createContentRegistry(contentWithRoom(usesQuality), { dimensions: pack.dimensions }),
     ).not.toThrow();
   });
 });
@@ -822,8 +825,9 @@ describe("the display-tiers schema is pack-neutral: a second pack may have none 
     );
   });
 
-  it("keeps the gates the name list used to guard: an empty table and a shapeless tier are both red", () => {
+  it("keeps the gates the name list used to guard: an empty map, an empty tier list, and a shapeless tier are all red", () => {
     expect(validateDisplayTiers({})).toBe(false);
+    expect(validateDisplayTiers({ stationTiers: [] })).toBe(false);
     expect(validateDisplayTiers({ stationTiers: [{ min: 0, max: 9 }] })).toBe(false);
   });
 

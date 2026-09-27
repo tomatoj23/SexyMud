@@ -18,6 +18,7 @@
 4. **显示档位是内容包的能力、不是引擎的需求**（#27 AC4 二选一取 (ii)）：包可以**不落** `display-tiers.json`（迷你包就没有）；落了文件则至少一张表、每表至少一档。档位词纪律归内容包文档（`content/style-guide.md`）。
 5. **包词汇契约归包文档**：10 个维度的语义 → `docs/agents/content.md`「维度键」（schema 三处同步的第三处）；「档位名不得杜撰」已在 style-guide 与 CONTEXT.md。
 6. **id 印记不取**：维度表／显示档位表保持纯映射形态 `{ <维度>: [<键>…] }`，不照 calendar/settings 加 `{"id": …}` 戳。
+7. **#27 两条 AC 措辞的落实读法**（留档）：「两个文件在**不删 required** 的前提下通过 `content:check`」「迷你包用**完整 schema（含 required）**校验通过」——落实为**「不删表项、不删闸门、零剥离」**：schema 的约束存活（非空闸门 + 形状，只是不再点名包词汇），测试用**整份**出厂 schema、无剥离。按字面要求 `required` 关键字原样存活与票面 (c) 的定义（「`required` 换成与包无关的约束」）及「迷你包过完整 schema」互相矛盾；唯一能让关键字存活的 id 印记路线已否决（见上）。内容侧的实际改动只有一处：`display-tiers.json` 移除零长度占位 `"professionTiers": []`（空数组不是内容，见 Consequences）；`dimensions.json` 一字不动。
 
 ## Considered Options
 
