@@ -552,6 +552,44 @@ describe("createContentRegistry: byTag (issue #15)", () => {
     ).toThrow(/entity "exit-x-001-north" tags key "nowhere" outside dimension "zone"/);
   });
 
+  it("门禁的 has_tag 实参也进封闭 —— 拼错维度在加载期失败，不是求值时静默判假（#27 复查）", () => {
+    // A valid pair loads…
+    const gate = { default: false, traverse: { has_tag: ["zone", "town"] } };
+    expect(() =>
+      createContentRegistry(
+        { rooms: [roomEntry({ exits: [exitEntry({ preconditions: gate })] })] },
+        { dimensions },
+      ),
+    ).not.toThrow();
+    // …a typo'd dimension does not — without this walk the gate would load
+    // green and deny everyone forever (hasTag answers false for the unknown).
+    const typo = { default: false, traverse: { has_tag: ["znou", "town"] } };
+    expect(() =>
+      createContentRegistry(
+        { rooms: [roomEntry({ exits: [exitEntry({ preconditions: typo })] })] },
+        { dimensions },
+      ),
+    ).toThrow(/entity "exit-x-001-north" has_tag references unknown dimension "znou"/);
+    // …and the key is closed just like a tag's.
+    const outside = { default: false, traverse: { has_tag: ["zone", "nowhere"] } };
+    expect(() =>
+      createContentRegistry(
+        { rooms: [roomEntry({ exits: [exitEntry({ preconditions: outside })] })] },
+        { dimensions },
+      ),
+    ).toThrow(/entity "exit-x-001-north" has_tag key "nowhere" outside dimension "zone"/);
+  });
+
+  it("嵌套组合子下的 has_tag 一样被抓到；没传维度表则跳过（封闭是可选的）", () => {
+    const nested = { default: { all: [{ any: [{ has_tag: ["znou", "x"] }] }] } };
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry({ preconditions: nested })] }, { dimensions }),
+    ).toThrow(/unknown dimension "znou"/);
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry({ preconditions: nested })] }),
+    ).not.toThrow();
+  });
+
   it("没传维度表 → 不校验取值，但 byTag 照常工作（ADR-0029 §5）", () => {
     const registry = createContentRegistry({
       rooms: [roomEntry({ tags: { whatever: ["anything"] } })],

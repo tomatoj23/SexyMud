@@ -180,7 +180,7 @@ source    = 招式声明（内功/外功）
 ### 维度键
 
 - 条目 `tags` **只有一种形态**（对象形态）：`{ "moveTag": ["sword"], "elementTag": ["fire"] }`。维度名 lowerCamelCase；键列表非空、去重（`equipment` 词缀曾有的裸 `string[]` 已改齐——扁平列表无法反查维度）
-- `condition.dimension` 的取值来自 `content/config/dimensions.json`（维度表）；引擎只做**键取值 + 集合求交**，永不 parse 字符串
+- `condition.dimension` 的取值来自 `content/config/dimensions.json`（维度表）；引擎只做**键取值 + 集合求交**，永不 parse 字符串。`has_tag` 实参与条目 `tags` 一样在**加载期被封闭校验**（传了维度表才校验；#27 复查补上实参这一半——拼错维度原本只在求值时静默判假）
 - 加维度 / 加取值 = 加 config 表项，不动引擎
 - **本包声明的 10 个维度**（`content/config/dimensions.json`，#27 起 schema 不点名任何维度——包词汇住这里）：`damageBand` 伤害档（轻/中/重/濒死）与 `lifeBand` 剩余生命档（满/多/半/少/危）——战斗文本后果词库分池的两条轴；`source` 作用方式（外功/内功）与 `element` 系别（金木水火土风雷 + 无属性）——2×8 正交；`motion` 动作画面（刺/扫/劈/拿）——**动词的属性，不是招式的属性**；`moveTag` 招式标签、`elementTag` 系别标签——条目 tags 对象形态的键；`quality` 品阶（下乘/中乘/上乘/绝学）、`slot` 装备槽（7 槽）、`style` 语义样式名（供输出层消费，**不是 ANSI/HTML**）
 - `element`（字段取值池，含 `none`）与 `elementTag`（标签维度）**不合并**：合并会让「无属性」变成一个可挂的标签（ADR-0029 §5）

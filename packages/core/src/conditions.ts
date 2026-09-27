@@ -241,6 +241,49 @@ export function evaluateCondition(
 }
 
 /**
+ * Every `(dimension, key)` pair a condition tree references through `has_tag`,
+ * depth-first over the combinators (issue #27 follow-up). This is the
+ * CONDITION half of the tag-vocabulary closure: a gate names tag pairs, and a
+ * typo'd dimension there would otherwise evaluate `false` SILENTLY — the gate
+ * denies everyone and nothing says why. The registry walks it at load against
+ * the pack's dimensions table.
+ *
+ * Shape is deliberately NOT checked here: a malformed `has_tag` arg is not a
+ * vocabulary reference, and its failure belongs to the schema (content:check)
+ * and the evaluator (host-assembled data). Such nodes are skipped, so this
+ * walk is total on any JSON.
+ */
+export function forEachHasTag(
+  expr: ConditionExpr | undefined,
+  visit: (dimension: string, key: string) => void,
+): void {
+  if (typeof expr !== "object" || expr === null || Array.isArray(expr)) {
+    return;
+  }
+  for (const [key, arg] of Object.entries(expr)) {
+    if (COMBINATORS.has(key)) {
+      if (Array.isArray(arg)) {
+        for (const child of arg) {
+          forEachHasTag(child as ConditionExpr, visit);
+        }
+      }
+    } else if (key === "has_tag" && Array.isArray(arg) && arg.length === 2) {
+      // Exactly the shape the evaluator accepts (see `hasTag` above): anything
+      // else is malformed content, not a vocabulary reference.
+      const [dimension, name] = arg as readonly unknown[];
+      if (
+        typeof dimension === "string" &&
+        dimension !== "" &&
+        typeof name === "string" &&
+        name !== ""
+      ) {
+        visit(dimension, name);
+      }
+    }
+  }
+}
+
+/**
  * The outer gate map (spec/02 §5.2): accessType → expression, plus `default`
  * evaluated for accessTypes with no expression — the lockstring's
  * `edit:...; use:...` segmentation as data.

@@ -64,7 +64,7 @@
     },
     "tagPredicateNode": {
       "type": "object",
-      "description": "标签谓词 has_tag：实参是 **[维度, 键] 二元组**（ADR-0029 §1 —— 标签是「维度 + 键」，不是裸字符串；`hasTag(维度, 键)` facet 与引擎 `conditions.ts` 同形，三处同步 spec/06 §4）。维度名与键的取值由 content/config/dimensions.json 封闭，但**封闭由注册表执行**，schema 只管形状（非空字符串）。",
+      "description": "标签谓词 has_tag：实参是 **[维度, 键] 二元组**（ADR-0029 §1 —— 标签是「维度 + 键」，不是裸字符串；`hasTag(维度, 键)` facet 与引擎 `conditions.ts` 同形，三处同步 spec/06 §4）。维度名与键的取值由 content/config/dimensions.json 封闭，**封闭由注册表在加载期执行**（覆盖条目 `tags` 与本实参两处引用点；传了维度表才校验、没传跳过——本实参这一半是 #27 复查补上的，此前拼错维度只在求值时静默判假），schema 只管形状（恰好二元的非空字符串组）。",
       "required": ["has_tag"],
       "properties": {
         "has_tag": {

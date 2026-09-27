@@ -11,6 +11,7 @@ import type { CommandResult } from "../src/types.js";
 import type { CommandSpec, Message } from "../src/command/pipeline.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
+import type { AccessRules } from "../src/conditions.js";
 import type { Calendar } from "../src/content/config.js";
 import { createGameTime } from "../src/time/calendar.js";
 import { createEntity } from "../src/world/entity.js";
@@ -311,6 +312,9 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     const validateNpcs = compile(
       JSON.parse(readFileSync(resolve(schemasDir, "npcs.schema.json"), "utf8")),
     );
+    const validateCalendar = compile(
+      JSON.parse(readFileSync(resolve(schemasDir, "config.calendar.schema.json"), "utf8")),
+    );
 
     const pack = loadPack(MINI_PACK_DIR);
     expect(pack.commands.length + pack.rooms.length + pack.npcs.length).toBe(9);
@@ -323,6 +327,11 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     for (const npc of pack.npcs) {
       expect(validateNpcs(npc), npc.id).toBe(true);
     }
+    // The pack's config tables clear the same gate WHOLE — nothing stripped
+    // (#27): its calendar (id stamp included) rides the same schemas/ as the
+    // wuxia pack's. The dimensions table is the adjacent test's.
+    expect(pack.calendar).toBeDefined();
+    expect(validateCalendar(pack.calendar!)).toBe(true);
   });
 
   it("ships its own dimensions table, whose dimension names are none of the wuxia pack's", () => {
@@ -349,6 +358,11 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     // a dimension with no keys.
     expect(validateDimensions({})).toBe(false);
     expect(validateDimensions({ section: [] })).toBe(false);
+    // …and the shape rules the schema CLAIMS are each actually enforced:
+    // dimension names lowerCamelCase, keys lowercase-ASCII ids.
+    expect(validateDimensions({ "bad-name": ["x"] })).toBe(false);
+    expect(validateDimensions({ section: ["外部"] })).toBe(false);
+    expect(validateDimensions({ section: ["near-death"] })).toBe(false);
   });
 });
 
@@ -798,6 +812,34 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     expect(() =>
       createContentRegistry(contentWithRoom(usesQuality), { dimensions: pack.dimensions }),
     ).not.toThrow();
+  });
+
+  it("closes a gate's has_tag pair too — a typo'd gate dimension fails at load, not silently at evaluation (#27 复查)", () => {
+    const pack = loadPack(MINI_PACK_DIR);
+    const room = pack.rooms.find((candidate) => candidate.id === "room-orb-001")!;
+    const airlock = room.exits.find((exit) => exit.id === "exit-orb-001-outboard")!;
+    // The real airlock gate, one character off. Without the condition half of
+    // the closure this loads GREEN and then denies everyone forever —
+    // hasTag answers false for anything unknown.
+    const typoPreconditions: AccessRules = {
+      default: airlock.preconditions?.default ?? false,
+      traverse: { has_tag: ["clearence", "eva"] },
+    };
+    const typoGate = { ...airlock, preconditions: typoPreconditions };
+    const rooms = pack.rooms.map((candidate) =>
+      candidate.id === room.id
+        ? {
+            ...candidate,
+            exits: candidate.exits.map((exit) => (exit.id === airlock.id ? typoGate : exit)),
+          }
+        : candidate,
+    );
+    expect(() =>
+      createContentRegistry(
+        { commands: pack.commands, rooms, npcs: pack.npcs, monsters: pack.monsters },
+        { dimensions: pack.dimensions },
+      ),
+    ).toThrow(/has_tag references unknown dimension "clearence"/);
   });
 });
 

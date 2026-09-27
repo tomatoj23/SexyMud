@@ -1,4 +1,6 @@
 import type { CommandEntry } from "../command/entry.js";
+import { forEachHasTag } from "../conditions.js";
+import type { AccessRules } from "../conditions.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
 import { assertCalendar, assertSettingsTable } from "./config.js";
 import type { Calendar, SettingsTable } from "./config.js";
@@ -31,8 +33,9 @@ import type { FlattenableEntry } from "./prototype.js";
  *
  * On top of the collections the registry builds the (dimension, key) inverted
  * index (`byTag`, ADR-0029 §2) and, when the host hands it a dimensions
- * table, closes the tag vocabulary against it (ADR-0029 §5) — see the
- * comments on buildTagIndex.
+ * table, closes the tag vocabulary against it (ADR-0029 §5) — entry `tags`
+ * AND `has_tag` gate arguments, the two ways content names a tag pair (#27).
+ * See the comments on buildTagIndex and closeGateTags.
  *
  * The three config tables ride the same channel: `dimensions`, `settings`
  * and `calendar` are all handed over by the host (which read config/ itself)
@@ -340,6 +343,40 @@ function buildTagIndex(
 }
 
 /**
+ * The CONDITION half of the tag-vocabulary closure (issue #27 follow-up):
+ * every `has_tag` gate names a `(dimension, key)` pair, and a typo'd dimension
+ * there would otherwise evaluate `false` SILENTLY — the gate denies everyone
+ * and nothing says why. Same contract as the tags closure above: only when
+ * the host handed over a table (ADR-0029 §5), and over the flattened set, so
+ * an inherited gate is checked like a declared one.
+ */
+function closeGateTags(
+  entities: Iterable<{ id: string; preconditions?: AccessRules }>,
+  dimensions: DimensionTable | undefined,
+): void {
+  if (dimensions === undefined) {
+    return;
+  }
+  for (const entity of entities) {
+    for (const rule of Object.values(entity.preconditions ?? {})) {
+      forEachHasTag(rule, (dimension, key) => {
+        const allowed = dimensions[dimension];
+        if (allowed === undefined) {
+          throw new Error(
+            `content registry: entity "${entity.id}" has_tag references unknown dimension "${dimension}"`,
+          );
+        }
+        if (!allowed.includes(key)) {
+          throw new Error(
+            `content registry: entity "${entity.id}" has_tag key "${key}" outside dimension "${dimension}"`,
+          );
+        }
+      });
+    }
+  }
+}
+
+/**
  * Builds a registry from loaded entries. Duplicate ids throw in every
  * collection: two files claiming one id disagree about what that thing IS,
  * and every save and cmdset referencing the id depends on it being one
@@ -473,21 +510,25 @@ export function createContentRegistry(
     }
   }
 
-  // Tag indexing comes LAST: it must see the finished, validated entity set,
-  // exits included, and it must come AFTER prototype flattening — a tag can be
-  // INHERITED, and an inherited tag has to be as queryable as a declared one,
-  // or "put the tag in a prototype" would be a back door around the index.
+  // Tag indexing and the vocabulary closures come LAST: they must see the
+  // finished, validated entity set, exits included, and they must come AFTER
+  // prototype flattening — a tag (or a gate) can be INHERITED, and an
+  // inherited one has to be as valid and as queryable as a declared one, or
+  // "put it in a prototype" would be a back door around every check here.
   // Exits stay as loaded: flattening runs per collection (spec/03 §6).
-  const { byPair, byEntity } = buildTagIndex(
-    [
-      ...commandsById.values(),
-      ...roomsById.values(),
-      ...npcsById.values(),
-      ...monstersById.values(),
-      ...exitsById.values(),
-    ],
-    options.dimensions,
-  );
+  // ONE entity set feeds both closures — entries and exits alike (exits are
+  // entities, see addUnique).
+  const entities = [
+    ...commandsById.values(),
+    ...roomsById.values(),
+    ...npcsById.values(),
+    ...monstersById.values(),
+    ...exitsById.values(),
+  ];
+  const { byPair, byEntity } = buildTagIndex(entities, options.dimensions);
+  // The condition half closes after the tags half, so a stray tag is reported
+  // before a stray gate (the tags message is the more common authoring slip).
+  closeGateTags(entities, options.dimensions);
 
   const commands = sortedValues(commandsById);
   const rooms = sortedValues(roomsById);

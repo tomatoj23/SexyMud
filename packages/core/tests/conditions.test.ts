@@ -4,6 +4,7 @@ import {
   createPredicateRegistry,
   defaultPredicateEntries,
   evaluateCondition,
+  forEachHasTag,
 } from "../src/conditions.js";
 import type {
   AccessRules,
@@ -412,5 +413,44 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
     const out = booted.call(spec, "delve");
     expect(out.result.ok).toBe(true);
     expectMessageSequence(out.messages, [{ to: "actor-1", event: { type: "delved" } }]);
+  });
+});
+
+/**
+ * The condition half of the tag-vocabulary closure (issue #27 follow-up):
+ * what a gate REferences is a (dimension, key) pair, and the registry walks
+ * those against the pack's table at load. This walker is the grammar's single
+ * reader outside the evaluator.
+ */
+describe("forEachHasTag: every tag pair a condition tree references", () => {
+  const collect = (expr: ConditionExpr | undefined): [string, string][] => {
+    const seen: [string, string][] = [];
+    forEachHasTag(expr, (dimension, key) => seen.push([dimension, key]));
+    return seen;
+  };
+
+  it("visits every has_tag pair through the combinators, depth-first", () => {
+    expect(
+      collect({
+        all: [
+          { any: [{ has_tag: ["zone", "inner"] }, { has_flag: "lit" }] },
+          { not: [{ has_tag: ["layer", "outer"] }] },
+        ],
+      }),
+    ).toEqual([
+      ["zone", "inner"],
+      ["layer", "outer"],
+    ]);
+  });
+
+  it("skips whatever is not a well-formed pair — shape belongs to the schema and the evaluator", () => {
+    expect(collect({ has_tag: ["zone"] })).toEqual([]);
+    expect(collect({ has_tag: ["zone", "inner", "extra"] })).toEqual([]);
+    expect(collect({ has_tag: "zone" })).toEqual([]);
+    expect(collect({ has_tag: [1, 2] })).toEqual([]);
+    expect(collect({ all: "not-an-array" })).toEqual([]);
+    expect(collect({})).toEqual([]);
+    expect(collect(true)).toEqual([]);
+    expect(collect(undefined)).toEqual([]);
   });
 });

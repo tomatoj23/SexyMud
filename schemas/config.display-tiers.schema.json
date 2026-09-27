@@ -11,7 +11,7 @@
   "additionalProperties": {
     "type": "array",
     "minItems": 1,
-    "description": "一张档位表，按 min 升序、区间互不重叠（跨条目一致性不在 schema——draft-07 管不了跨条目）",
+    "description": "一张档位表，按 min 升序、区间互不重叠、min ≤ max——三者都超出 draft-07 的表达力（没有数值比较、没有跨条目断言），不在 schema",
     "items": { "$ref": "#/definitions/tier" }
   },
   "definitions": {
