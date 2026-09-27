@@ -86,12 +86,22 @@ describe("commandSetSources (spec/02 §3: merge rules belong to the set)", () =>
   });
 
   it("treats an explicit Union and an omitted mergetype as agreeing", () => {
-    expect(() =>
-      commandSetSources([
-        entry({ id: "cmd-a", mergetype: "Union" }),
-        entry({ id: "cmd-b" /* omitted → Union */ }),
-      ]),
-    ).not.toThrow();
+    const sources = commandSetSources([
+      entry({ id: "cmd-a", mergetype: "Union", verbs: ["a"] }),
+      entry({ id: "cmd-b", verbs: ["b"] /* omitted → Union */ }),
+    ]);
+    // The agreement is observable output, not mere survival: one source, and
+    // the mergetype both spellings mean is the value on it.
+    expect(sources).toEqual([
+      {
+        priority: 0,
+        mergetype: "Union",
+        commands: [
+          { key: "cmd-a", verbs: ["a"] },
+          { key: "cmd-b", verbs: ["b"] },
+        ],
+      },
+    ]);
   });
 
   it("throws when entries of one cmdset declare conflicting priorities", () => {
@@ -285,20 +295,25 @@ describe("createContentRegistry: world collections (issue #6)", () => {
   });
 
   it("validates placement lists against the loaded collections (rooms are content containers)", () => {
-    // npc and monster placements both resolve.
-    expect(() =>
-      createContentRegistry({
-        rooms: [roomEntry({ objects: [{ id: "npc-x-001", count: 1 }] })],
-        npcs: [npcEntry()],
-        monsters: [{ id: "mon-x-001" }],
-      }),
-    ).not.toThrow();
-    expect(() =>
-      createContentRegistry({
-        rooms: [roomEntry({ objects: [{ id: "mon-x-001", count: 3 }] })],
-        monsters: [{ id: "mon-x-001" }],
-      }),
-    ).not.toThrow();
+    // npc and monster placements both resolve — observed, not merely survived
+    // (spec/03 §2: the placement list stays on the room and there is no
+    // separate placementsOf query, so "resolved" reads as "the list rode onto
+    // the loaded room AND every placed id walks to its entry").
+    const npcPlaced = createContentRegistry({
+      rooms: [roomEntry({ objects: [{ id: "npc-x-001", count: 1 }] })],
+      npcs: [npcEntry()],
+      monsters: [{ id: "mon-x-001" }],
+    });
+    expect(npcPlaced.room("room-x-001").objects).toEqual([{ id: "npc-x-001", count: 1 }]);
+    expect(npcPlaced.npc(npcPlaced.room("room-x-001").objects![0]!.id).name).toBe("灰袍老者");
+    const monsterPlaced = createContentRegistry({
+      rooms: [roomEntry({ objects: [{ id: "mon-x-001", count: 3 }] })],
+      monsters: [{ id: "mon-x-001" }],
+    });
+    expect(monsterPlaced.room("room-x-001").objects).toEqual([{ id: "mon-x-001", count: 3 }]);
+    expect(monsterPlaced.monster(monsterPlaced.room("room-x-001").objects![0]!.id).id).toBe(
+      "mon-x-001",
+    );
 
     // Unknown entity: a dangling placement fails at load, not mid-play.
     expect(() =>
@@ -331,12 +346,14 @@ describe("createContentRegistry: world collections (issue #6)", () => {
   });
 
   it("validates npc → monster references (combat numbers are referenced, never copied)", () => {
-    expect(() =>
-      createContentRegistry({
-        npcs: [npcEntry({ monsterId: "mon-x-001" })],
-        monsters: [{ id: "mon-x-001" }],
-      }),
-    ).not.toThrow();
+    // The reference resolves — observed by walking it: the npc carries the id
+    // and the monster answers by it.
+    const wired = createContentRegistry({
+      npcs: [npcEntry({ monsterId: "mon-x-001" })],
+      monsters: [{ id: "mon-x-001" }],
+    });
+    expect(wired.npc("npc-x-001").monsterId).toBe("mon-x-001");
+    expect(wired.monster(wired.npc("npc-x-001").monsterId!).id).toBe("mon-x-001");
 
     expect(() =>
       createContentRegistry({
@@ -349,7 +366,9 @@ describe("createContentRegistry: world collections (issue #6)", () => {
       /references unknown monster "mon-x-001"/,
     );
     // Non-combat npcs carry no monsterId and need no monsters.
-    expect(() => createContentRegistry({ npcs: [npcEntry()] })).not.toThrow();
+    const civilian = createContentRegistry({ npcs: [npcEntry()] });
+    expect(civilian.npc("npc-x-001").monsterId).toBeUndefined();
+    expect(civilian.monsters).toEqual([]);
   });
 });
 

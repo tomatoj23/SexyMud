@@ -3,6 +3,7 @@ import {
   checkAccess,
   createPredicateRegistry,
   defaultPredicateEntries,
+  defaultPredicateRegistry,
   evaluateCondition,
   forEachHasTag,
 } from "../src/conditions.js";
@@ -197,6 +198,50 @@ describe("built-in predicates (spec/02 §5.3)", () => {
     expect(() => evaluateCondition({ attr_gte: ["strength", 10] }, broken)).toThrow(
       /must return a finite number or undefined/,
     );
+  });
+});
+
+/**
+ * The `defaultPredicateRegistry` EXPORT exercised directly: elsewhere it is
+ * only the evaluateCondition default parameter (behavior) or an identity
+ * fact (command-harness). These cases pin the object itself — its keys and
+ * that IT is the registry evaluating — so a rebuilt or truncated export
+ * cannot hide behind the default parameter.
+ */
+describe("defaultPredicateRegistry: the export itself, through evaluateCondition", () => {
+  it("is the six built-ins keyed by their schema names — the entries, not a copy", () => {
+    expect([...defaultPredicateRegistry.keys()]).toEqual([
+      "attr_gte",
+      "has_tag",
+      "has_flag",
+      "has_state",
+      "in_location",
+      "has_martial",
+    ]);
+    for (const [name, predicate] of defaultPredicateEntries) {
+      expect(defaultPredicateRegistry.get(name)).toBe(predicate);
+    }
+  });
+
+  it("evaluates every built-in when it IS the registry under evaluateCondition", () => {
+    const subject = subjectWith({ flags: ["member"], states: ["wounded"], skills: ["mrt-basic"] });
+    const registry = defaultPredicateRegistry;
+
+    expect(evaluateCondition({ attr_gte: ["strength", 50] }, subject, registry)).toBe(true);
+    expect(evaluateCondition({ has_tag: ["zone", "outdoors"] }, subject, registry)).toBe(true);
+    expect(evaluateCondition({ has_flag: "member" }, subject, registry)).toBe(true);
+    expect(evaluateCondition({ has_state: "wounded" }, subject, registry)).toBe(true);
+    expect(evaluateCondition({ in_location: "room-hall" }, subject, registry)).toBe(true);
+    expect(evaluateCondition({ has_martial: "mrt-basic" }, subject, registry)).toBe(true);
+
+    // …and denies what it should: the registry evaluates, it does not
+    // rubber-stamp. Each denial is one predicate's own answer.
+    expect(evaluateCondition({ attr_gte: ["strength", 51] }, subject, registry)).toBe(false);
+    expect(evaluateCondition({ has_tag: ["zone", "indoors"] }, subject, registry)).toBe(false);
+    expect(evaluateCondition({ has_flag: "banned" }, subject, registry)).toBe(false);
+    expect(evaluateCondition({ has_state: "blind" }, subject, registry)).toBe(false);
+    expect(evaluateCondition({ in_location: "room-cave" }, subject, registry)).toBe(false);
+    expect(evaluateCondition({ has_martial: "mrt-advanced" }, subject, registry)).toBe(false);
   });
 });
 

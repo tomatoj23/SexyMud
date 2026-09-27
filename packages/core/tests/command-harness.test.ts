@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CommandSpec } from "../src/command/pipeline.js";
-import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
+import {
+  createCommandHarness,
+  createTestClock,
+  expectMessageSequence,
+} from "../src/command/testing.js";
 import { createPredicateRegistry, defaultPredicateRegistry } from "../src/conditions.js";
 
 /**
@@ -346,5 +350,46 @@ describe("command test harness (ADR-0023 §1)", () => {
     // The SHARED object mutated — a live world runtime evolves across a
     // session instead of being re-cloned per command.
     expect(world.rooms["room-1"]).toEqual({ title: "changed" });
+  });
+});
+
+/**
+ * The test clock itself (ADR-0031): `TestClock` is a public export for hosts
+ * and tests that drive commands WITHOUT the harness, so its three methods get
+ * their own cases here — including the claim its comment makes ("an
+ * explicitly backwards tick does not drag the following ones back").
+ */
+describe("createTestClock: the tick the next call carries (ADR-0031)", () => {
+  it("nextTick is the default tick and advance moves it — both ways, without moving the mark", () => {
+    const clock = createTestClock(100);
+    expect(clock.nextTick()).toBe(100);
+    clock.advance(7);
+    expect(clock.nextTick()).toBe(107);
+    // advance moves the DEFAULT only: nothing was observed, so the engine's
+    // now — the high-water mark — has not moved.
+    expect(clock.nowTick()).toBe(100);
+    clock.advance(-3);
+    expect(clock.nextTick()).toBe(104);
+  });
+
+  it("observe returns the never-decreasing high-water mark", () => {
+    const clock = createTestClock(100);
+    expect(clock.observe(150)).toBe(150);
+    expect(clock.nowTick()).toBe(150);
+    // A backwards tick is accepted and changes nothing.
+    expect(clock.observe(90)).toBe(150);
+    expect(clock.nowTick()).toBe(150);
+  });
+
+  it("an explicitly backwards tick does not drag the following defaults back", () => {
+    const clock = createTestClock(100);
+    clock.observe(150);
+    clock.observe(90); // a command explicitly carrying an earlier tick
+    // Later default calls continue from the high-water mark, not from that
+    // tick — the claim on the observe() implementation.
+    expect(clock.nextTick()).toBe(150);
+    clock.advance(5);
+    expect(clock.nextTick()).toBe(155);
+    expect(clock.nowTick()).toBe(150); // still: advance never observes
   });
 });

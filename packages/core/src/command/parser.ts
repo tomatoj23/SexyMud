@@ -251,12 +251,12 @@ const CN_DIGIT: Readonly<Record<string, number>> = {
 
 /**
  * Parses a numeral as written by a player: ASCII digits, full-width digits
- * (IME output), or Chinese numerals 一 through 九十九 (两 = 2). Returns null
- * for anything else — callers decide whether that is an error.
+ * (IME output), or Chinese numerals (两 = 2). Returns null for anything else
+ * — callers decide whether that is an error.
  *
- * Range note: a hundred and above are rejected; picking the 100th of
- * anything by hand is not a supported interaction, and a bounded grammar is
- * a testable one.
+ * Range note: the grammar is bounded at 九十九 IN EVERY NOTATION — a hundred
+ * and above are rejected; picking the 100th of anything by hand is not a
+ * supported interaction, and a bounded grammar is a testable one.
  */
 export function parseNumeral(text: string): number | null {
   const normalized = normalizeFullWidthDigits(text.trim());
@@ -265,8 +265,12 @@ export function parseNumeral(text: string): number | null {
   }
 
   if (/^[0-9]+$/.test(normalized)) {
+    // The grammar is bounded (Range note) in EVERY notation: 0–99, the same
+    // ceiling the Chinese forms have (spec/02 §1.3 rejects ordinals of zero
+    // and above one hundred whatever the notation). Above the bound is not a
+    // numeral we know, so no safe-integer question arises.
     const value = Number.parseInt(normalized, 10);
-    return Number.isSafeInteger(value) ? value : null;
+    return value <= 99 ? value : null;
   }
 
   // Chinese numerals: [X]十[Y] with either part optional, or a single digit.

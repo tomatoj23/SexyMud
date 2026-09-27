@@ -10,37 +10,62 @@
 //
 // Scope is deliberately the LIVING docs only:
 //   docs/spec/**  docs/HANDBOOK.md  AGENTS.md  CONTEXT.md
+//   docs/agents/content.md  docs/chinese-mud-concerns.md
 // docs/adr/** is NOT scanned — an ADR is a decision LOG. It records what was
 // decided on a date, superseded wording included; rewriting it would destroy
 // the very history these rules protect. Supersession is recorded by the newer
 // ADR and corrected in place in the spec, never by editing the old ADR.
+// The two non-spec files joined the scan on #28: content.md is the content
+// pipeline's authority (and quotes collection counts), chinese-mud-concerns.md
+// IS the 43-item list its counts refer to — both were the SOURCE of number
+// drift this gate could not see.
 //
-// Three checks, all hard failures:
+// Growing the scan EXPOSES existing violations, so the growth process is:
+// add the files, run once with DOCS_CHECK_REPORT_ONLY=1 (violations print as
+// warnings and the run exits 0), judge the scale, fix, then commit them as
+// hard targets. The flag is that process, not an escape hatch — `pnpm check`
+// never sets it.
+//
+// Four checks, all hard failures:
 //   1. superseded wording (and the Clock × host-injection pairing),
-//   2. "count" numbers that must have exactly one home,
-//   3. ADR references that point at a file which does not exist.
+//   2. "count" numbers with exactly one home, and totals that must match
+//      reality (schema / collection / content / dimensions / concerns / tests),
+//   3. ADR references that point at a file which does not exist, and ADR
+//      totals that do not match the directory,
+//   4. (implicit in 2–3) the docs agree with the directories they describe.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-function listMarkdown(dir) {
+/** Every file under `dir` whose name ends with `suffix`, recursively. */
+function walkFiles(dir, suffix) {
   const out = [];
   for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules") continue;
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...listMarkdown(full));
-    else if (entry.endsWith(".md")) out.push(full);
+    if (statSync(full).isDirectory()) out.push(...walkFiles(full, suffix));
+    else if (entry.endsWith(suffix)) out.push(full);
   }
   return out;
 }
 
 const targets = [
-  ...listMarkdown(join(root, "docs", "spec")),
+  ...walkFiles(join(root, "docs", "spec"), ".md"),
   join(root, "docs", "HANDBOOK.md"),
   join(root, "AGENTS.md"),
   join(root, "CONTEXT.md"),
+  join(root, "docs", "agents", "content.md"),
+  join(root, "docs", "chinese-mud-concerns.md"),
 ].sort();
+
+/**
+ * Report-only mode: violations print as warnings and the run exits 0. Used
+ * when ADDING files to the scan above — see the header. Never set by
+ * `pnpm check`.
+ */
+const reportOnly = process.env["DOCS_CHECK_REPORT_ONLY"] === "1";
 
 /**
  * 1. Wording a later decision retired. Each entry names the current wording so
@@ -50,10 +75,17 @@ const targets = [
  * "已被 ADR-0032 覆盖：…不共用代码路径" is a correct sentence, not a
  * regression. A blacklist that flags its own correction notes gets muted on
  * sight, so the guard is part of the rule.
+ *
+ * The whitelist is DELIBERATELY narrow (#28): only explicit retirement
+ * markers pass. It used to contain bare 旧／删／更宽／比「／同义, and one such
+ * word anywhere on a line passed the WHOLE line — a fresh use of retired
+ * wording riding next to a correction note went unseen (AGENTS.md's synonym
+ * example was exactly that). A rule whose correction note needs a word the
+ * whitelist lacks gets it in its OWN `unless`, never here.
  */
-/** A line that merely NAMES retired wording ("已被 ADR-0032 覆盖：…") is correct prose. */
+/** A line that NAMES retired wording in order to retire it is correct prose. */
 const MENTIONS_LEGITIMATELY =
-  /覆盖|已被|原写|旧|不再|删|改为|更宽|比「|同义|废弃|superseded|retired|removed/;
+  /覆盖|已被|原写|不再|改为|废弃|superseded|retired|removed/;
 
 const SUPERSEDED = [
   {
@@ -72,6 +104,17 @@ const SUPERSEDED = [
     term: "CommandDeps.clock",
     unless: /删|改为|不再/,
     reason: "已删除（ADR-0031，#20）；命令依赖里现在是 `deps.nowTick`",
+  },
+  {
+    // The Evennia attribute namespace (`db.*` / `ndb.*`). Matched by pattern,
+    // not by one substring: `db.` alone would fire inside `ndb.` and inside
+    // any lowercase `…db.` word; `n?db` catches both spellings and only them
+    // (never the nonexistent `nb.`), the lookbehind keeps `…leveldb.` out.
+    term: "`db.*`／`ndb.*`",
+    pattern: /(?<![A-Za-z])n?db\.[*a-zA-Z]/,
+    unless: /不采用|勿用|勿再称|已废|废弃|丢弃|覆盖|已被|不再/,
+    reason:
+      "Evennia 的属性命名空间，本作不采用（CONTEXT.md「状态持久化」）：typed 状态对象 + `derived` 标记，没有 `db`／`ndb` 命名空间",
   },
 ];
 
@@ -100,7 +143,12 @@ const PAIRINGS = [
 const COUNTS = [
   {
     name: "测试规模（文件／用例）",
-    match: (line) => /\d+\s*(?:个)?(?:测试)?文件\s*[／/|]\s*\d+\s*用例/.test(line),
+    // The combined form AND either half alone: "509 用例" with no file count
+    // beside it used to slip past, which made the one-home rule rewordable.
+    match: (line) =>
+      /\d+\s*(?:个)?(?:测试)?文件\s*[／/|]\s*\d+\s*用例/.test(line) ||
+      /\d+\s*用例/.test(line) ||
+      /\d+\s*个测试文件/.test(line),
     onlyIn: "docs/HANDBOOK.md",
     reason: "只在 HANDBOOK「当前事实」维护；别处写「见 HANDBOOK 当前事实」",
   },
@@ -110,25 +158,102 @@ const SCHEMA_DIR = join(root, "schemas");
 const schemaCount = readdirSync(SCHEMA_DIR).filter((name) => name.endsWith(".schema.json")).length;
 
 /**
- * 2b. Totals that must match reality. Only phrases that can only mean the
- * TOTAL are matched — "14 个条目集合 $ref 引用它" is a scoped fact and is
+ * 2b. Every number a reader quotes about the repo's current state, checked
+ * against the directory or file it describes (#28 — the schema total used to
+ * be the only one; collection / content / dimensions / concerns / test-file
+ * counts drifted unchecked, and two of them drifted FROM files this gate did
+ * not even scan). Only phrases that can only mean the TOTAL are matched — a
+ * scoped fact ("余 5 条待评估", "config/`（4 个 JSON") names a subset and is
  * left alone, otherwise the rule would train everyone to ignore it.
  */
-const TOTAL_PATTERNS = [
-  /(\d+)\s*个\s*schema/i,
-  /schema[s]?\s*\**(\d+)\s*个/i,
-  /schema[^。\n]{0,14}共\s*\**(\d+)/i,
-  /共\s*\**(\d+)[^。\n]{0,14}schema/i,
+/** 条目集合 = the entry schemas that all `$ref` common.schema.json. */
+const entryCollectionCount = readdirSync(SCHEMA_DIR)
+  .filter((name) => name.endsWith(".schema.json") && name !== "common.schema.json")
+  .filter((name) => readFileSync(join(SCHEMA_DIR, name), "utf8").includes("common.schema.json"))
+  .length;
+const contentJsonCount = walkFiles(join(root, "content"), ".json").length;
+const dimensionCount = Object.keys(
+  JSON.parse(readFileSync(join(root, "content", "config", "dimensions.json"), "utf8")),
+).length;
+/** chinese-mud-concerns.md rows: `| A1 |` … `| **G8** |`. */
+const concernsCount = readFileSync(join(root, "docs", "chinese-mud-concerns.md"), "utf8")
+  .split(/\r?\n/)
+  .filter((line) => /^\| {0,2}\*{0,2}[A-G]\d+/.test(line)).length;
+const testFileCount = [
+  ...walkFiles(join(root, "packages"), ".test.ts"),
+  ...walkFiles(join(root, "apps"), ".test.ts"),
+].length;
+
+const REALITIES = [
+  {
+    name: "schema 总数",
+    unit: "个 schema",
+    actual: schemaCount,
+    patterns: [
+      /(\d+)\s*个\s*schema/gi,
+      /schema[s]?\s*\**(\d+)\s*个/gi,
+      /schema[^。\n]{0,14}共\s*\**(\d+)/gi,
+      /共\s*\**(\d+)[^。\n]{0,14}schema/gi,
+    ],
+  },
+  {
+    name: "条目集合数",
+    unit: "个条目集合",
+    actual: entryCollectionCount,
+    patterns: [/(\d+)\s*个条目集合/g, /(\d+)\s*个集合(?=[^。\n]{0,14}\$?ref)/g],
+  },
+  {
+    name: "内容 JSON 数",
+    unit: "个 JSON",
+    actual: contentJsonCount,
+    patterns: [/(\d+)\s*个\s*\*{0,2}JSON/gi],
+    // "`config/`（4 个 JSON" scopes to the config/ SUBDIRECTORY — only an
+    // unscoped "N 个 JSON" means the whole content set.
+    scoped: (line, match) => /config[^\n]{0,8}$/.test(line.slice(0, match.index)),
+  },
+  {
+    name: "维度数",
+    unit: "个维度",
+    actual: dimensionCount,
+    // (?!表): "三个维度表" counts TABLES — a different fact entirely.
+    patterns: [/(\d+)\s*个?维度(?!表)/g],
+  },
+  {
+    name: "中文清单条数",
+    unit: "条",
+    actual: concernsCount,
+    // 全景 / 问题清单 / 中文清单 are THE list; "自检清单 19 条" names another
+    // list entirely and must not be compared against it.
+    patterns: [
+      /(?:全景|(?:问题|中文)清单)\s*[（(]?\s*(?:共\s*|总计\s*)?(\d+)\s*条/g,
+      /(\d+)\s*条[^0-9\n]{0,3}(?:问题|中文)?清单/g,
+    ],
+  },
+  {
+    name: "测试文件数",
+    unit: "个测试文件",
+    actual: testFileCount,
+    patterns: [/(\d+)\s*个测试文件/g],
+  },
 ];
 
-function checkTotals(line) {
-  const claimed = [];
-  for (const pattern of TOTAL_PATTERNS) {
-    for (const match of line.matchAll(new RegExp(pattern.source, "gi"))) {
-      claimed.push(Number(match[1]));
+function checkRealities(line) {
+  const hits = [];
+  for (const reality of REALITIES) {
+    for (const pattern of reality.patterns) {
+      for (const match of line.matchAll(pattern)) {
+        if (reality.scoped?.(line, match)) continue;
+        const claimed = Number(match[1]);
+        if (claimed !== reality.actual) {
+          hits.push({
+            text: `${claimed} ${reality.unit}`,
+            reason: `${reality.name}与实际不符（现有 ${reality.actual} ${reality.unit}）；若指的不是总数，改写措辞`,
+          });
+        }
+      }
     }
   }
-  return claimed.filter((value) => value !== schemaCount);
+  return hits;
 }
 
 /** 3. A reference to an ADR that does not exist: drift, or a typo'd number. */
@@ -139,6 +264,24 @@ const adrNumbers = new Set(
     .map((name) => name.slice(0, 4)),
 );
 const adrCount = adrNumbers.size;
+
+/**
+ * "docs/adr/（35 篇决策历史）"、"35 个架构决策"、"35 个 ADR" — the total is
+ * asserted in several spellings, and the count regex used to only catch the
+ * one with 篇 right after the number (#28). Scoped counts name a subset —
+ * "那 4 篇 ADR"、"散落在 8 个 ADR 的 …" — and are left alone: the two forms
+ * where the number LEADS get a prefix-window scope check, the two where the
+ * noun leads have no scoped spelling to confuse them with.
+ */
+const ADR_COUNT_PATTERNS = [
+  /(?:共|总计)?\s*\*{0,2}(\d+)\*{0,2}\s*篇决策历史/g,
+  /adr[^\n]{0,16}?\*{0,2}(\d+)\*{0,2}\s*篇/gi,
+];
+const ADR_COUNT_PATTERNS_LEADING = [
+  /\*{0,2}(\d+)\*{0,2}\s*个架构决策/g,
+  /\*{0,2}(\d+)\*{0,2}\s*个\s*\*{0,2}ADR/gi,
+];
+const ADR_SCOPE_MARKER = /那|散落|其中|其余|另有|几篇|数篇|上述/;
 
 function checkAdrReferences(lines, relative) {
   const hits = [];
@@ -152,15 +295,25 @@ function checkAdrReferences(lines, relative) {
         });
       }
     }
-    // "docs/adr/（34 篇决策历史）" — the total, asserted in several files.
-    for (const match of line.matchAll(/(?:共|总计)?\s*\*{0,2}(\d+)\*{0,2}\s*篇决策历史|adr[^\n]{0,16}?\*{0,2}(\d+)\*{0,2}\s*篇/g)) {
-      const claimed = Number(match[1] ?? match[2]);
+    const claimTotal = (match) => {
+      const claimed = Number(match[1]);
       if (claimed !== adrCount) {
         hits.push({
           line: index + 1,
-          text: `${claimed} 篇`,
+          text: `${claimed} 篇/个`,
           reason: `ADR 篇数与实际不符（docs/adr/ 现有 ${adrCount} 篇）`,
         });
+      }
+    };
+    for (const pattern of ADR_COUNT_PATTERNS) {
+      for (const match of line.matchAll(pattern)) claimTotal(match);
+    }
+    for (const pattern of ADR_COUNT_PATTERNS_LEADING) {
+      for (const match of line.matchAll(pattern)) {
+        // A subset marker right before the number means a scoped count.
+        const before = line.slice(Math.max(0, match.index - 8), match.index);
+        if (ADR_SCOPE_MARKER.test(before)) continue;
+        claimTotal(match);
       }
     }
   });
@@ -169,6 +322,10 @@ function checkAdrReferences(lines, relative) {
 
 let violations = 0;
 const report = (relative, line, text, reason) => {
+  if (reportOnly) {
+    console.warn(`DOCS ?  ${relative}:${line} 「${text}」— ${reason}`);
+    return;
+  }
   violations += 1;
   console.error(`DOCS    ${relative}:${line} 「${text}」— ${reason}`);
 };
@@ -179,7 +336,8 @@ for (const file of targets) {
 
   lines.forEach((line, index) => {
     for (const rule of SUPERSEDED) {
-      if (!line.includes(rule.term)) continue;
+      const hit = rule.pattern ? rule.pattern.test(line) : line.includes(rule.term);
+      if (!hit) continue;
       const unless = [MENTIONS_LEGITIMATELY, rule.unless]
         .map((pattern) => pattern?.source)
         .filter(Boolean)
@@ -187,13 +345,8 @@ for (const file of targets) {
       if (new RegExp(unless).test(line)) continue;
       report(relative, index + 1, rule.term, rule.reason);
     }
-    for (const wrong of checkTotals(line)) {
-      report(
-        relative,
-        index + 1,
-        `schema 总数 ${wrong}`,
-        `与 schemas/ 不符（现有 ${schemaCount} 个 schema）；若指的不是总数，改写措辞`,
-      );
+    for (const hit of checkRealities(line)) {
+      report(relative, index + 1, hit.text, hit.reason);
     }
     for (const rule of PAIRINGS) {
       if (!rule.all.every((pattern) => pattern.test(line))) continue;
@@ -211,6 +364,12 @@ for (const file of targets) {
   }
 }
 
+if (reportOnly) {
+  console.log(
+    `WARN    docs: ${targets.length} file(s) scanned in REPORT-ONLY mode — violations above are warnings, none failed the run`,
+  );
+  process.exit(0);
+}
 if (violations > 0) {
   console.error(`\ndocs:check FAILED — ${violations} violation(s) across ${targets.length} file(s)`);
   process.exit(1);

@@ -133,9 +133,15 @@ describe("createContentRegistry (the config channel)", () => {
   });
 
   it("allows the same segment id in DIFFERENT rings (rings are independent)", () => {
-    expect(() =>
-      createContentRegistry({}, { calendar: calendar(ring("day", [["a", 10]]), ring("year", [["a", 10]])) }),
-    ).not.toThrow();
+    // Same id, different ticks: each segment's own tick count survives in its
+    // own ring — the two "a"s never touch each other.
+    const registry = createContentRegistry(
+      {},
+      { calendar: calendar(ring("day", [["a", 10]]), ring("year", [["a", 20]])) },
+    );
+    const [day, year] = registry.calendar!.rings;
+    expect(day!.segments).toEqual([{ id: "a", ticks: 10 }]);
+    expect(year!.segments).toEqual([{ id: "a", ticks: 20 }]);
   });
 
   it("throws on a tick count that is zero, negative or fractional", () => {

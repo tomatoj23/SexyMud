@@ -59,15 +59,25 @@ if (files.length === 0) {
   process.exit(1);
 }
 
+/**
+ * What is being compiled RIGHT NOW. Ajv's strict-mode logger fires during a
+ * compile with no context of its own, so the wrapper tags every finding with
+ * this — without it a strictTypes WARN cannot be attributed to a schema, let
+ * alone to the content file that pulled it in (#28).
+ */
+let compiling = "schemas (registration)";
+
 const ajv = new Ajv({
   allErrors: true,
   // Route Ajv's own strict-mode LOG-level findings (e.g. strictTypes union
   // types, which log rather than throw) through the same WARN channel the
-  // sweep below uses, so nothing surfaces as an anonymous stderr line.
+  // sweep below uses, tagged with the schema/file being compiled — the level
+  // stays WARN (they are diagnostics, not gate failures), the attribution is
+  // what was missing.
   logger: {
-    log: (message) => console.log(message),
-    warn: (message) => console.warn(`WARN    ${message}`),
-    error: (message) => console.warn(`WARN    ${message}`),
+    log: (message) => console.log(`WARN    ${compiling}: ${message}`),
+    warn: (message) => console.warn(`WARN    ${compiling}: ${message}`),
+    error: (message) => console.warn(`WARN    ${compiling}: ${message}`),
   },
 });
 
@@ -87,6 +97,7 @@ for (const name of readdirSync(join(root, "schemas")).sort()) {
     console.error(`INVALID schemas/${name} (not valid JSON: ${error.message})`);
     process.exit(1);
   }
+  compiling = `schemas/${name}`;
   ajv.addSchema(schema);
   schemasByPath.set(`schemas/${name}`, schema);
 }
@@ -223,6 +234,7 @@ for (const file of files.sort()) {
     // Compiles through the pre-registered $id space, so cross-file $refs
     // resolve; the SAME parsed object is passed so Ajv's per-object cache
     // sees one schema per $id.
+    compiling = `${relative} (schema ${schemaRel.replace(/\\/g, "/")})`;
     validate = ajv.compile(schema);
   } catch (error) {
     // A mapped schema that cannot even compile is a broken gate, not a
@@ -300,6 +312,7 @@ if (unusedSchemas.length > 0) {
 // already failed the gate above if they could not compile.
 for (const schemaRel of unusedSchemas) {
   const schema = schemasByPath.get(schemaRel);
+  compiling = schemaRel;
   try {
     ajv.compile(schema);
   } catch (error) {

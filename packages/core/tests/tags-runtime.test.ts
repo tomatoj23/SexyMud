@@ -299,7 +299,17 @@ describe("the gate, end to end through call() (spec/02 §5.4)", () => {
     // load path (the registry). A shape the engine accepts but the schema
     // rejects would be content nobody could author.
     expect(validateAgainst("rooms.schema.json")(GATED_ROOM)).toBe(true);
-    expect(() => makeRegistry()).not.toThrow();
+    // …and the same JSON survives the host's load path with its two content
+    // halves intact: the tuple gate and the refusal copy are still there to
+    // read (a load that dropped either would pass schema and break dispatch).
+    const registry = makeRegistry();
+    expect(registry.exit("exit-tag-001-north").preconditions).toEqual({
+      default: false,
+      traverse: { has_tag: ["zone", "inner"] },
+    });
+    expect(registry.exit("exit-tag-001-north").err_traverse).toBe(
+      "守卫横刀拦下：内城重地，闲人免进。",
+    );
   });
 
   it("refuses a player with no tags: rejected + a semantic event, copy still in the JSON", () => {

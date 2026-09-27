@@ -752,11 +752,17 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
 
     // One content set, three tables: the pack's own passes, no table skips the
     // closure entirely (spec/03 §5.1: 「没传就跳过」), and the OTHER pack's
-    // table rejects it out of hand — that is 「维度表随包」mechanically.
-    expect(() =>
-      createContentRegistry(miniContent(), { dimensions: pack.dimensions }),
-    ).not.toThrow();
-    expect(() => createContentRegistry(miniContent())).not.toThrow();
+    // table rejects it out of hand — that is 「维度表随包」mechanically. The
+    // two positive states assert the PRODUCED index, not mere survival —
+    // which pair distinguishes "closure skipped" from "closure passed" is
+    // pinned by the reverse case below.
+    const withOwn = createContentRegistry(miniContent(), { dimensions: pack.dimensions });
+    expect(withOwn.byTag("clearance", "eva")).toEqual(["exit-orb-001-outboard", "room-orb-004"]);
+    const withoutTable = createContentRegistry(miniContent());
+    expect(withoutTable.byTag("clearance", "eva")).toEqual([
+      "exit-orb-001-outboard",
+      "room-orb-004",
+    ]);
     expect(() =>
       createContentRegistry(miniContent(), {
         dimensions: loadPack(WUXIA_PACK_DIR).dimensions,
@@ -773,9 +779,11 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     expect(() =>
       createContentRegistry({ ...miniContent(), rooms }, { dimensions: pack.dimensions }),
     ).toThrow(/tags unknown dimension "moveTag"/);
-    // Without a table the very same entry loads: the closure is opt-in, and
-    // an unknown dimension is only an error where a vocabulary was declared.
-    expect(() => createContentRegistry({ ...miniContent(), rooms })).not.toThrow();
+    // Without a table the very same entry loads AND its out-of-vocabulary tag
+    // indexes — the closure is opt-in, and an unknown dimension is only an
+    // error where a vocabulary was declared (spec/03 §5.1).
+    const open = createContentRegistry({ ...miniContent(), rooms });
+    expect(open.byTag("moveTag", "sword")).toEqual(["room-orb-004"]);
   });
 
   it("catches the wuxia pack's own slips too — the gate the schema's name list used to be (#27)", () => {
@@ -807,11 +815,13 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     expect(() =>
       createContentRegistry(contentWithRoom(usesQuality), { dimensions: incomplete }),
     ).toThrow(/tags unknown dimension "quality"/);
-    // Same content against the whole table passes — the two failures above
-    // are the closure working, not the entry being malformed.
-    expect(() =>
-      createContentRegistry(contentWithRoom(usesQuality), { dimensions: pack.dimensions }),
-    ).not.toThrow();
+    // Same content against the whole table passes and the tag indexes — the
+    // two failures above are the closure working, not the entry being
+    // malformed.
+    const whole = createContentRegistry(contentWithRoom(usesQuality), {
+      dimensions: pack.dimensions,
+    });
+    expect(whole.byTag("quality", "high")).toEqual(["room-lq-001"]);
   });
 
   it("closes a gate's has_tag pair too — a typo'd gate dimension fails at load, not silently at evaluation (#27 复查)", () => {

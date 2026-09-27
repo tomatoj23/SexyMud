@@ -3,7 +3,7 @@ import type { CommandSpec } from "../src/command/pipeline.js";
 import { runCommand } from "../src/command/pipeline.js";
 import { createCommandHarness } from "../src/command/testing.js";
 import { createSeededRng } from "../src/rng.js";
-import { createVerbTable, parseArgForm } from "../src/command/parser.js";
+import { createVerbTable, parseArgForm, parseNumeral } from "../src/command/parser.js";
 
 /**
  * The Chinese-first parser (spec/02 §1, ADR-0024 §1): longest verb match with
@@ -107,13 +107,19 @@ describe("verb table: longest verb match (spec/02 §1.2)", () => {
       ]),
     ).toThrow(/cmd-attack.*cmd-beat/);
 
-    // Same verb, same key is an idempotent registration, not a conflict.
-    expect(() =>
-      createVerbTable([
-        { verb: "打", commandKey: "cmd-attack" },
-        { verb: "打", commandKey: "cmd-attack" },
-      ]),
-    ).not.toThrow();
+    // Same verb, same key is an idempotent registration, not a conflict —
+    // the table ends up with ONE entry, and it answers as that one.
+    const table = createVerbTable([
+      { verb: "打", commandKey: "cmd-attack" },
+      { verb: "打", commandKey: "cmd-attack" },
+    ]);
+    expect(table.verbs).toEqual(["打"]);
+    expect(table.match("打强盗")).toEqual({
+      ok: true,
+      verb: "打",
+      commandKey: "cmd-attack",
+      rawArgs: "强盗",
+    });
   });
 
   it("rejects empty verbs and empty command keys at build time", () => {
@@ -232,6 +238,63 @@ describe("arg forms: declarative, per command entry (spec/02 §1.2–§1.3)", ()
     expect(parseArgForm("target-index", "强盗·十十")).toEqual({ ok: false, reason: "badOrdinal" });
     expect(parseArgForm("target-index", "强盗·二十十")).toEqual({ ok: false, reason: "badOrdinal" });
     expect(parseArgForm("target-index", "强盗·2三")).toEqual({ ok: false, reason: "badOrdinal" });
+    // The bound is notation-independent (spec/02 §1.3「零与百以上拒绝」):
+    // Arabic digits above 九十九 are as much "beyond" as 百 is.
+    expect(parseArgForm("target-index", "强盗·100")).toEqual({ ok: false, reason: "badOrdinal" });
+    expect(parseArgForm("target-ordinal", "第100个强盗")).toEqual({
+      ok: false,
+      reason: "badOrdinal",
+    });
+  });
+});
+
+/**
+ * `parseNumeral` directly (spec/02 §1.3) — the numeral grammar as its own
+ * export, not only through the ordinal forms. The range is part of the
+ * contract: a bounded grammar is a testable one, and the bound holds in every
+ * notation.
+ */
+describe("parseNumeral: the numeral grammar itself (spec/02 §1.3)", () => {
+  it("parses the 「十」/「十X」/「X十Y」 tens forms and the bare digits", () => {
+    expect(parseNumeral("一")).toBe(1);
+    expect(parseNumeral("两")).toBe(2);
+    expect(parseNumeral("十")).toBe(10);
+    expect(parseNumeral("十五")).toBe(15);
+    expect(parseNumeral("二十")).toBe(20);
+    expect(parseNumeral("二十三")).toBe(23);
+    expect(parseNumeral("九十九")).toBe(99);
+  });
+
+  it("returns null for what is no numeral in any notation", () => {
+    expect(parseNumeral("")).toBeNull();
+    expect(parseNumeral("   ")).toBeNull();
+    expect(parseNumeral("百")).toBeNull();
+    expect(parseNumeral("十十")).toBeNull();
+    expect(parseNumeral("二十十")).toBeNull();
+    expect(parseNumeral("2三")).toBeNull();
+    expect(parseNumeral("三x")).toBeNull();
+  });
+
+  it("is bounded at 九十九 in EVERY notation — 百以上 is not a numeral we know", () => {
+    expect(parseNumeral("99")).toBe(99);
+    expect(parseNumeral("100")).toBeNull();
+    expect(parseNumeral("１００")).toBeNull();
+    // …including past the safe-integer boundary, where digits stop meaning
+    // anything at all.
+    expect(parseNumeral("9007199254740992")).toBeNull();
+    expect(parseNumeral("99999999999999999999999")).toBeNull();
+  });
+
+  it("collapses leading zeros: the numeral is its value, not its spelling", () => {
+    expect(parseNumeral("007")).toBe(7);
+    // Zero IS a numeral — the ordinal path is what rejects it (badOrdinal).
+    expect(parseNumeral("0")).toBe(0);
+  });
+
+  it("normalizes full-width digits (IME output) before reading them", () => {
+    expect(parseNumeral("１２")).toBe(12);
+    expect(parseNumeral("９９")).toBe(99);
+    expect(parseNumeral("１０")).toBe(10);
   });
 });
 
