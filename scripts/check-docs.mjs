@@ -165,12 +165,18 @@ const schemaCount = readdirSync(SCHEMA_DIR).filter((name) => name.endsWith(".sch
  * not even scan). Only phrases that can only mean the TOTAL are matched — a
  * scoped fact ("余 5 条待评估", "config/`（4 个 JSON") names a subset and is
  * left alone, otherwise the rule would train everyone to ignore it.
+ *
+ * Per-file case counts ("tests/x.test.ts` N 例") are deliberately NOT checked:
+ * vitest counts loop-generated cases (13 `it(` lines can run 77), so no
+ * mechanical check here would be honest. Their guard is the 关票 grep
+ * checklist plus hand verification on 复查 rounds.
  */
-/** 条目集合 = the entry schemas that all `$ref` common.schema.json. */
+/** 条目集合 = the entry schemas that all `$ref` common.schema.json (a prose mention in a schema's description does not count). */
 const entryCollectionCount = readdirSync(SCHEMA_DIR)
   .filter((name) => name.endsWith(".schema.json") && name !== "common.schema.json")
-  .filter((name) => readFileSync(join(SCHEMA_DIR, name), "utf8").includes("common.schema.json"))
-  .length;
+  .filter((name) =>
+    /"\$ref"\s*:\s*"[^"]*common\.schema\.json/.test(readFileSync(join(SCHEMA_DIR, name), "utf8")),
+  ).length;
 const contentJsonCount = walkFiles(join(root, "content"), ".json").length;
 const dimensionCount = Object.keys(
   JSON.parse(readFileSync(join(root, "content", "config", "dimensions.json"), "utf8")),
@@ -223,10 +229,12 @@ const REALITIES = [
     unit: "条",
     actual: concernsCount,
     // 全景 / 问题清单 / 中文清单 are THE list; "自检清单 19 条" names another
-    // list entirely and must not be compared against it.
+    // list entirely and must not be compared against it. The number-first
+    // form allows only whitespace/emphasis between 条 and 清单 — "3 条内容清单"
+    // names a different list and must not slip in through the gap.
     patterns: [
       /(?:全景|(?:问题|中文)清单)\s*[（(]?\s*(?:共\s*|总计\s*)?(\d+)\s*条/g,
-      /(\d+)\s*条[^0-9\n]{0,3}(?:问题|中文)?清单/g,
+      /(\d+)\s*条[\s*]{0,4}(?:问题|中文)?[\s*]{0,2}清单/g,
     ],
   },
   {
@@ -338,11 +346,8 @@ for (const file of targets) {
     for (const rule of SUPERSEDED) {
       const hit = rule.pattern ? rule.pattern.test(line) : line.includes(rule.term);
       if (!hit) continue;
-      const unless = [MENTIONS_LEGITIMATELY, rule.unless]
-        .map((pattern) => pattern?.source)
-        .filter(Boolean)
-        .join("|");
-      if (new RegExp(unless).test(line)) continue;
+      // Each pattern keeps its own shape and flags — no source-splicing.
+      if (MENTIONS_LEGITIMATELY.test(line) || rule.unless?.test(line)) continue;
       report(relative, index + 1, rule.term, rule.reason);
     }
     for (const hit of checkRealities(line)) {
