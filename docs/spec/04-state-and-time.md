@@ -1,6 +1,6 @@
 # 04 · 状态、存档、时间与调度
 
-> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 ＝ M2-T5 已落、M4-T5 升到 v2**：`state/snapshot.ts`（`serializeWorld(world, meta)`／`restoreWorld(snapshot) → { state, meta }` ＋ v2 形状，v1 仍可读并经首条真实迁移升级）＋ `state/derived.ts`（`derived` 契约）＋ `save/migrations.ts`（`SAVE_VERSION` = 2，`migrations[1]` 是链的首条真实迁移）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4／§1.5）＋ **云存档 `CloudSaveStore`（#29，`apps/web`，`SaveStore` 的远端实现，见 §1.6）**。
+> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 ＝ M2-T5 已落、M4-T5 升到 v2**：`state/snapshot.ts`（`serializeWorld(world, meta)`／`restoreWorld(snapshot) → { state, meta }` ＋ v2 形状，v1 仍可读并经首条真实迁移升级）＋ `state/derived.ts`（`derived` 契约）＋ `save/migrations.ts`（`SAVE_VERSION` = 2，`migrations[1]` 是链的首条真实迁移）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4／§1.5）＋ **云存档 `CloudSaveStore`（#29，`apps/web`，`SaveStore` 的远端实现，见 §1.6）＋ 云存档身份与登录（#30，账密会话＋CloudBase 传输适配器＋同步与裁决，见 §1.7）**。
 > **§2–§4（时间、游戏内时间、调度）＝ M4，设计已定案**：2026-09-08 的 `grill-with-docs` 访谈共 **19 条**（四轮 18 问 + 复核硬标准时补的第 19 条），本章正文即这 19 条，依据 **ADR-0031／0032／0033／0034**。
 > ⚠️ 其中 **2 条覆盖了既有决策**：**ADR-0031** 覆盖 `spec/01` 端口表里 `Clock` 的「宿主实现」一列与该手册自检清单里以 `TestClock` 为证据的那一条；**ADR-0032** 覆盖 **ADR-0016 §4「双时钟……不共用代码路径」**。照本仓惯例，ADR 是不回改的决策日志，但 **spec 是活规格，被覆盖的段落在正文中就地更正**，覆盖关系由新 ADR 记录。
 > **其余依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
@@ -101,11 +101,26 @@ v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§
 1. **（定案点 1）身份随会话，不随存档**：跨设备续档要的是**跨设备的账号标识**——匿名设备 ID 不够（它只覆盖单机云备份）。`CloudSaveStore` 只认注入的传输端口 `CloudSaveTransport`，端口在构造时绑定**一个已认证会话**：身份是传输层的属性，不是存档的属性。登录超出 `SaveStore`（ADR-0018 的端清单不含 Auth），进 Auth 票（**#30**，阻塞边已挂）。快照**不写**账号标识：可导出 JSON 不泄露身份，格式不因云而变。
 2. **（定案点 2）写冲突 = 乐观并发 CAS，绝不 last-write-wins**（端口不扩版本语义——core 零改动）：远端记录带**不透明** `revision`；`save()` 永远是对**本实例最后观测版本**的 CAS（`load()` 的返回即观测；**从未 `load()` = 观测「空」⇒ 只允许新建**——新游戏首存的通道，也是「新设备不许盲覆盖旧进度」的闸门）。冲突 ⇒ `CloudSaveError("conflict")`：写不落、观测保持陈旧，宿主重新 `load()` 才能再写；裁决权（继续本地玩／重拉／另存）交宿主。⚠️ **同一实例的读写排队串行**（#29 复查收口）：重叠的自动存档不会互相误报冲突——`conflict` 从此只属于「**另一会话**写了」，同实例排队后按序 CAS 全部落地。随行实现细节：**revision 在读取成功即武装**（哪怕文本损坏）——否则损坏的云存档永远无法经 `save()` 修复／重置（「load 抛 corrupt 后 save 覆盖」是刻意保留的修复路径）。
 3. **（定案点 3）跨版本：云端不迁移，迁移只有一条链**：`load()` 原样返回、绝不改写；低版本照旧由 `restoreWorld` 升级、**降级照旧大声失败**（云端版本 > `SAVE_VERSION` ⇒ 既有「unsupported save version」；v2 标量在 v1 无处安放，静默丢弃比失败更糟）。两级损坏分级不混：传输层损坏（记录形状不对／非 JSON／非 `{version, data}` 信封）= `CloudSaveError("corrupt")` 在 `load()` 就抛，载荷级损坏仍归引擎九类（`restoreWorld`）。
-4. **（定案点 4）云存档的后端仍是 CloudBase**（ADR-0002 §2 的适配层路线在「只做云存档」范围内仍有效；ADR-0017 翻掉的是全量后端），但**适配器与 `@cloudbase/js-sdk` 随 Auth 票（#30）落地**——依赖只在能被行使时才引（ADR-0007）。适配器义务是 `CloudSaveTransport` 契约：`write` **原子 CAS**（revision 不符 ⇒ 冲突拒绝、写不落）、revision 不透明、错误分类（未知后端错误归 `"network"`）。
+4. **（定案点 4）云存档的后端仍是 CloudBase**（ADR-0002 §2 的适配层路线在「只做云存档」范围内仍有效；ADR-0017 翻掉的是全量后端）——**适配器与 `@cloudbase/js-sdk` 已随 #30 落地**（见 §1.7；依赖只在能被行使时才引，ADR-0007）。适配器义务是 `CloudSaveTransport` 契约：`write` **原子 CAS**（revision 不符 ⇒ 冲突拒绝、写不落）、revision 不透明、错误分类（未知后端错误归 `"network"`）。
 5. **（定案点 5）失败抛错，不静默降级**：远端空 = `null`（**缺席不是失败**）；断网／鉴权失效 = 拒绝且**可分辨**（`"network"` 重试／`"auth"` 重新登录）；`load()` **绝不返回旧快照冒充成功**，`save()` **绝不静默降级到本地**——「玩家以为存了、其实没同步」只能靠大声拒绝堵住，宿主的本地镜像／同步指示必须是**显式**策略。
 6. **（定案点 6）G6 同趟补上**：宿主侧存档编码往返与云存档是同一条缝（JSON 文本进、JSON 出——localStorage 字符串、云存档文本同律）；`local-save-store.test.ts` 补 localStorage 字符串缝的往返（中文／surrogate pair／emoji／孤 surrogate）、损坏大声、缺席为 null，`cloud-save-store.test.ts` 补同型往返 —— `spec/07` 的 **G6 转已覆盖**。⚠️ 真 WebView 存储层的弄坏风险属环境，不属代码缝。
 
 > **落地（#29）**：`apps/web/src/game/cloudSaveStore.ts`（`CloudSaveStore` ＋ `CloudSaveTransport` ＋ `CloudSaveError`）；测试 `apps/web/tests/cloud-save-store.test.ts`（往返与格式同一性、本地↔云端互换、CAS、失败语义、迁移透传与降级大声、Unicode）＋ `local-save-store.test.ts`（G6）。`localSaveStore.ts` 注释的票号已回填并改指已落地的云实现。
+
+### 1.7 云存档身份与登录：会话、CloudBase 适配器、同步与裁决（#30；ADR-0037）
+
+#29 的传输端口绑定「一个已认证会话」，本节答会话从哪来、适配器怎么兑现 CAS 义务、宿主接线怎么不撒谎。**八条定案（编号与 ADR-0037 的 D1–D8 同号；票面三定案点 = D1–D3，D4–D8 是实现义务的落地口径）**：
+
+1. **（定案点 1）登录方式 = 用户名＋密码（账密）**：CloudBase 内置身份（`signUp({username, password})`／`signInWithPassword({username, password})`），零外部资质（微信要开放平台企业认证、手机号要短信签名与模板审核、自定义登录要自建账号服务）。手机号／微信／自定义登录是后续可加的**身份源**——「身份随会话」（§1.6 定案点 1）天然支持换源，本侧代码不动。
+2. **（定案点 2）匿名登录不提供**：云存档显式要求登录，未登录 = 纯本地（`LocalSaveStore` 照旧）。匿名身份是设备级的，「匿名云备份」的承诺与「跨设备续档」混淆——换机即丢档是「以为存了」洞的变体。云存档永远意味着「换机能续」。
+3. **（定案点 3）登录与本地存档不自动上传、不合并；同步是显式动作**（上传／下载／裁决）。登录后只**探测展示**两边档（存在／版本／进度 tick）；两边**逐字节相同 = 无分歧**。合并 = 发明 UX（快照是整体 JSON，无字段级合并语义）；自动上传违背显式策略（§1.6 定案点 5）。
+4. **适配器 CAS 形态 = 混合两路**：**更新走条件更新**（`where({_id, revision}).update(…)` 看 `updated` 计数；`updated ≠ 1` ⇒ `conflict`、写不落）；**新建走事务**（`get` ⇒ 占用即 `conflict`；`create` insert-only ⇒ `commit`）——「仅当不存在才插入」没有查询形态，正是「做不到原子就上事务」的那半边。**revision = 每次写入新铸的不透明 token**（注入 minter，永不解析、**永不读回**——读回有竞态，会把别人的 revision 认领成自己的观测）；**文档 `_id` = `${uid}/${key}`**（身份落存储层的账号命名空间；快照仍不写账号标识）；集合名可配（默认 `save_slots`）。
+5. **错误分类 = 最小信号表，不猜错误字符串**：UNAUTHENTICATED 信号（`errorCode === 16`（`AuthErrorCode.UNAUTHENTICATED`）／`code ∈ {"unauthenticated", "UNAUTHENTICATED", "login_required"}`（`ErrorType` 枚举词）／HTTP 401（`statusCode`/`status`，数字或字符串））⇒ `"auth"`；CAS 落空 ⇒ `"conflict"`（出自逻辑判断；**唯一例外**：新建竞速的 `already_exists`——后端在命名 CAS 条件，也是「不许静默覆盖」的闸门）；**其余（含未知后端错误）⇒ `"network"`**（未知按可重试读）。登录表单的失败分类同律（**枚举词不是猜测**）：`AuthErrorCategory`（`INVALID_CREDENTIALS`／`USER_NOT_FOUND`／`AUTH_METHOD_MISMATCH`）与 `ErrorType`（`invalid_password`／`invalid_credentials`／`invalid_grant`／`already_exists`）⇒ 表单提示分类（`invalid-credentials`／`already-exists`），其余归 `"network"`。
+6. **会话管理三态 `signed-out`／`signed-in`／`expired`——`expired` ≠ `signed-out`**：`CloudSaveError("auth")` ⇒ 标过期＋**重登引导，绝不自动重试**；过期后同步器实例即死（动作拒绝、不再打后端），**重登 = 重建传输端口＋同步器**（换账号 = 换命名空间）。账密错误是**登录失败**（改输入），不是过期。
+7. **冲突裁决 UX = 三选项＋明示代价**：「以本地为准（覆盖云端）」二次确认明示「另一台设备的进度将被丢弃」、「以云端为准（下载载入）」、「继续本地玩（暂不同步）」。**「另存」被否**——存档槽管理是另一个功能（§1.6 被否路线同律）；保命通道是**导出 JSON**（ADR-0002 §21）。CAS 冲突与登录后两边分歧共用同一裁决面（`cause: save | compare`）。
+8. **上传语义 = load-then-save（观测后写）**：新建与刻意替换同一通道（§1.6 的「`load` → `save` 覆盖」）；**云端档损坏时** `load` 抛 `corrupt` 但 revision 已武装 ⇒ 上传照走 `save` = §1.6 刻意保留的修复／重置路径；任何失败大声（状态明示没存上、两端原样未动），绝不静默降级本地。
+
+> **落地（#30）**：`apps/web/src/game/`（`cloudAuth.ts` 三态会话机＋`cloudbaseTransport.ts` CloudBase 适配器＋`cloudbaseSdk.ts` SDK 绑定＋`cloudSync.ts` 同步状态机与裁决）、`cloudSetup.ts`（每会话重建传输与同步器）、`ui/AuthPanel.tsx`／`ui/CloudSavePanel.tsx`。测试 `cloud-auth.test.ts`／`cloudbase-transport.test.ts`／`cloud-sync.test.ts`（语义全由假会话／假后端钉住）＋ `cloudbase-e2e.test.ts`（**env-gated 真后端冒烟**，无环境变量即 skip）。⚠️ **真后端冒烟未跑**（需要 CloudBase 环境）：错误分类信号表与条件更新／事务真语义是最可能被打脸的两处，校准点与部署清单（集合＋安全规则＋账密开关）见该测试头注释。
 
 ## 2. 时间：tick 计数（ADR-0031）
 
