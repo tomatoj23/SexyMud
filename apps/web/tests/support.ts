@@ -1,17 +1,46 @@
+import { serializeWorld } from "@sexymud/core";
 import type {
   CmdSetSource,
   CommandSpec,
   DueBucket,
+  EntityState,
   SettleSpan,
+  Snapshot,
+  WorldMeta,
   WorldRuntime,
+  WorldState,
 } from "@sexymud/core";
 
 /**
  * Shared rig pieces for the host tests: the synthetic commands, their verb
- * sources, and the two wrappers every rig here wants (a recordable due
- * bucket, a RAM `localStorage`). Synthetic after the settle.test.ts
- * precedent — M4 lands the mechanism, not the real consumers.
+ * sources, and the wrappers every rig here wants (a recordable due bucket, a
+ * RAM `localStorage`, a snapshot through the real serializer). Synthetic
+ * after the settle.test.ts precedent — M4 lands the mechanism, not the real
+ * consumers.
  */
+
+/**
+ * A v2 snapshot through the REAL serializer — the exact bytes every save
+ * store must round-trip and interchange (spec/04 §1.6). Options pick the two
+ * knobs a store test wants to vary: the world's tick, or the entity's flags.
+ */
+export function snapshotFixture(options: { nowTick?: number; flags?: string[] } = {}): Snapshot {
+  const jia: EntityState = {
+    id: "jia",
+    locationId: "room-a",
+    flags: options.flags ?? ["seen"],
+    tags: { realm: ["jianghu"] },
+    lastSeenTick: 20,
+    cooldowns: { "skill-x": 70 },
+  };
+  const world: WorldState = { entities: { jia } };
+  const meta: WorldMeta = {
+    nowTick: options.nowTick ?? 20,
+    rngState: 12345,
+    due: [{ dueTick: 70, payload: { kind: "fuse" } }],
+  };
+  return serializeWorld(world, meta);
+}
 
 export const greet: CommandSpec<WorldRuntime> = {
   key: "greet",

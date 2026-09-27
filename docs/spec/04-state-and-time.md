@@ -1,6 +1,6 @@
 # 04 · 状态、存档、时间与调度
 
-> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 ＝ M2-T5 已落、M4-T5 升到 v2**：`state/snapshot.ts`（`serializeWorld(world, meta)`／`restoreWorld(snapshot) → { state, meta }` ＋ v2 形状，v1 仍可读并经首条真实迁移升级）＋ `state/derived.ts`（`derived` 契约）＋ `save/migrations.ts`（`SAVE_VERSION` = 2，`migrations[1]` 是链的首条真实迁移）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4／§1.5）。
+> **状态**：迁移链骨架**已实现**；**§1 已实现**（状态树种子 M2-T1：`EntityState {id, locationId, flags}` ＋ `WorldState`（`packages/core/src/state/tree.ts`），动态占用进「同一棵树」，`WorldRuntime` 持有并就地变更；flags 槽位随门禁消费者落地；**`tags` 槽已落（M3-T5／#17，形状 = `TagMap`，与内容侧同一模型，见 spec/03 §5.1）**；attrs/states/skills 随各自系统进树。**序列化与快照 ＝ M2-T5 已落、M4-T5 升到 v2**：`state/snapshot.ts`（`serializeWorld(world, meta)`／`restoreWorld(snapshot) → { state, meta }` ＋ v2 形状，v1 仍可读并经首条真实迁移升级）＋ `state/derived.ts`（`derived` 契约）＋ `save/migrations.ts`（`SAVE_VERSION` = 2，`migrations[1]` 是链的首条真实迁移）＋ `WorldRuntime.attachEntity`（恢复＝重放树＋重挂实例），见 §1.4／§1.5）＋ **云存档 `CloudSaveStore`（#29，`apps/web`，`SaveStore` 的远端实现，见 §1.6）**。
 > **§2–§4（时间、游戏内时间、调度）＝ M4，设计已定案**：2026-09-08 的 `grill-with-docs` 访谈共 **19 条**（四轮 18 问 + 复核硬标准时补的第 19 条），本章正文即这 19 条，依据 **ADR-0031／0032／0033／0034**。
 > ⚠️ 其中 **2 条覆盖了既有决策**：**ADR-0031** 覆盖 `spec/01` 端口表里 `Clock` 的「宿主实现」一列与该手册自检清单里以 `TestClock` 为证据的那一条；**ADR-0032** 覆盖 **ADR-0016 §4「双时钟……不共用代码路径」**。照本仓惯例，ADR 是不回改的决策日志，但 **spec 是活规格，被覆盖的段落在正文中就地更正**，覆盖关系由新 ADR 记录。
 > **其余依据**：ADR-0002、ADR-0017、ADR-0022 §1/§5、ADR-0023 §5/§1d、ADR-0025 §二/§三/§四、ADR-0028。
@@ -91,6 +91,21 @@ v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§
 4. **不做 v2 → v3 连迁**：v2 的形状这一次要想全。这也是这条迁移链**第一次被真实迁移检验**（`SAVE_VERSION` 从 1 升到 2，链机制此前为空，不造假迁移）。
 
 **nicks（玩家层别名，`spec/02` §8 至今未勾）不同趟** —— 它是**玩家层**不是实体层；把两层的东西塞进同一次迁移，正是走向「v2 → v3 连迁」的最快方式。等别名票自带那趟。
+
+### 1.6 云存档：`SaveStore` 的远端实现（#29；ADR-0036）
+
+`CloudSaveStore`（`apps/web/src/game/cloudSaveStore.ts`）只是端口的**另一个实现**（ADR-0017 §5）：**同一份快照文本**——存的就是 `JSON.stringify(serializeWorld(...))`，本地与云端存档**互换可读**，导出／导入路径不变（ADR-0002 §11／§21 的退出路径）；**同一条迁移链**——`load()` 原样返回、**绝不迁移**，低版本照旧由 `restoreWorld` 升级、高版本照旧大声失败（云端让「旧客户端读到新版本存档」成为日常，答案仍是失败：v2 的世界标量在 v1 无处安放，静默丢弃比失败更糟，ADR-0003）。`packages/core` 零改动。
+
+**六条定案（#29 开票时明示「不预设结论」，由实现会话定案；编号与票面六定案点、ADR-0036 的 D1–D6 同号）**：
+
+1. **（定案点 1）身份随会话，不随存档**：跨设备续档要的是**跨设备的账号标识**——匿名设备 ID 不够（它只覆盖单机云备份）。`CloudSaveStore` 只认注入的传输端口 `CloudSaveTransport`，端口在构造时绑定**一个已认证会话**：身份是传输层的属性，不是存档的属性。登录超出 `SaveStore`（ADR-0018 的端清单不含 Auth），进 Auth 票（**#30**，阻塞边已挂）。快照**不写**账号标识：可导出 JSON 不泄露身份，格式不因云而变。
+2. **（定案点 2）写冲突 = 乐观并发 CAS，绝不 last-write-wins**（端口不扩版本语义——core 零改动）：远端记录带**不透明** `revision`；`save()` 永远是对**本实例最后观测版本**的 CAS（`load()` 的返回即观测；**从未 `load()` = 观测「空」⇒ 只允许新建**——新游戏首存的通道，也是「新设备不许盲覆盖旧进度」的闸门）。冲突 ⇒ `CloudSaveError("conflict")`：写不落、观测保持陈旧，宿主重新 `load()` 才能再写；裁决权（继续本地玩／重拉／另存）交宿主。随行实现细节：**revision 在读取成功即武装**（哪怕文本损坏）——否则损坏的云存档永远无法经 `save()` 修复／重置（「load 抛 corrupt 后 save 覆盖」是刻意保留的修复路径）。
+3. **（定案点 3）跨版本：云端不迁移，迁移只有一条链**：`load()` 原样返回、绝不改写；低版本照旧由 `restoreWorld` 升级、**降级照旧大声失败**（云端版本 > `SAVE_VERSION` ⇒ 既有「unsupported save version」；v2 标量在 v1 无处安放，静默丢弃比失败更糟）。两级损坏分级不混：传输层损坏（非 JSON／非 `{version, data}` 信封）= `CloudSaveError("corrupt")` 在 `load()` 就抛，载荷级损坏仍归引擎九类（`restoreWorld`）。
+4. **（定案点 4）云存档的后端仍是 CloudBase**（ADR-0002 §2 的适配层路线在「只做云存档」范围内仍有效；ADR-0017 翻掉的是全量后端），但**适配器与 `@cloudbase/js-sdk` 随 Auth 票（#30）落地**——依赖只在能被行使时才引（ADR-0007）。适配器义务是 `CloudSaveTransport` 契约：`write` **原子 CAS**（revision 不符 ⇒ 冲突拒绝、写不落）、revision 不透明、错误分类（未知后端错误归 `"network"`）。
+5. **（定案点 5）失败抛错，不静默降级**：远端空 = `null`（**缺席不是失败**）；断网／鉴权失效 = 拒绝且**可分辨**（`"network"` 重试／`"auth"` 重新登录）；`load()` **绝不返回旧快照冒充成功**，`save()` **绝不静默降级到本地**——「玩家以为存了、其实没同步」只能靠大声拒绝堵住，宿主的本地镜像／同步指示必须是**显式**策略。
+6. **（定案点 6）G6 同趟补上**：宿主侧存档编码往返与云存档是同一条缝（JSON 文本进、JSON 出——localStorage 字符串、云存档文本同律）；`local-save-store.test.ts` 补 localStorage 字符串缝的往返（中文／surrogate pair／emoji／孤 surrogate）、损坏大声、缺席为 null，`cloud-save-store.test.ts` 补同型往返 —— `spec/07` 的 **G6 转已覆盖**。⚠️ 真 WebView 存储层的弄坏风险属环境，不属代码缝。
+
+> **落地（#29）**：`apps/web/src/game/cloudSaveStore.ts`（`CloudSaveStore` ＋ `CloudSaveTransport` ＋ `CloudSaveError`）；测试 `apps/web/tests/cloud-save-store.test.ts`（往返与格式同一性、本地↔云端互换、CAS、失败语义、迁移透传与降级大声、Unicode）＋ `local-save-store.test.ts`（G6）。`localSaveStore.ts` 注释的票号已回填并改指已落地的云实现。
 
 ## 2. 时间：tick 计数（ADR-0031）
 

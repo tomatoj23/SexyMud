@@ -11,7 +11,7 @@
 |---|---|---|
 | `Clock` | `nowTick(): number` — **引擎 tick 计数**，不是毫秒。⚠️ **语义已于 2026-09-08 翻转（ADR-0031）**：它是**引擎对外暴露的高水位读数**，不再是宿主注入的依赖 | 宿主不再实现它；宿主只负责**产生** tick，并放进每条 `Command`（见 §2） |
 | `Rng` | `next(): number` ／ `getState(): number` — **种子化且状态可导出**，状态进存档。⚠️ `getState()` 是**强制**的（ADR-0033 §1，#24 已落）：宿主不可提供一个不可序列化的随机源，否则「存档 → 重开 → 重放」得到不同的世界。mulberry32 的状态就是一个 uint32，恢复 O(1) | 确定性 PRNG（`createSeededRng(state)` **一身二用**：既是新建也是恢复） |
-| `SaveStore` | `load(): Promise<Snapshot \| null>`、`save(s): Promise<void>` | Web：`localStorage`；小程序：`wx.setStorage`；将来：云端 |
+| `SaveStore` | `load(): Promise<Snapshot \| null>`、`save(s): Promise<void>` | Web：`localStorage`（`LocalSaveStore`）；小程序：`wx.setStorage`；**云端：`CloudSaveStore`（#29 已落）**——同接口、可换插；身份随会话（登录见 #30）／CAS 写冲突／失败大声／版本透传，六条定案见 `04` §1.6（ADR-0036） |
 | `Authority` | 见 §3 | `LocalAuthority`（`apps/web`，#26 已落）／`RemoteAuthority`（将来） |
 
 ⚠️ **引擎内禁止出现**：`Date.now()`、`new Date()`、`Math.random()`、`setTimeout`、`setInterval`、`performance.*`。
