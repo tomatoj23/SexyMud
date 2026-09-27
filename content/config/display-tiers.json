@@ -50,6 +50,5 @@
     { "min": 1850, "max": 1949, "label": "深藏不露" },
     { "min": 1950, "max": 2049, "label": "深不可测" },
     { "min": 2050, "max": 2149, "label": "返璞归真" }
-  ],
-  "professionTiers": []
+  ]
 }

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -334,19 +334,19 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     const wuxiaDimensions = new Set(Object.keys(wuxia!));
     expect(Object.keys(mini!).filter((dimension) => wuxiaDimensions.has(dimension))).toEqual([]);
 
-    // The shipped schema's `required` list names the WUXIA pack's own
-    // dimensions — it is that pack's config contract, and content:check
-    // enforces it on content/. A second pack's table is therefore held to the
-    // pack-neutral half of the very same schema (its SHAPE) here, and to the
-    // registry's load-time closure below, which is where "which dimensions
-    // exist" actually lives (ADR-0029 §5: the engine never imports one).
-    const { required, ...shapeOnly } = JSON.parse(
-      readFileSync(resolve(schemasDir, "config.dimensions.schema.json"), "utf8"),
+    // The shipped schema is pack-neutral (issue #27): it names no pack's
+    // dimensions, so both tables clear the WHOLE of it — nothing is stripped
+    // out before compiling. "Which dimensions exist" lives in each pack's own
+    // table; closure against it is the registry's load-time job (ADR-0029 §5:
+    // the engine never imports one).
+    const validateDimensions = new Ajv({ allErrors: true }).compile(
+      JSON.parse(readFileSync(resolve(schemasDir, "config.dimensions.schema.json"), "utf8")),
     );
-    expect(required.length).toBeGreaterThan(0);
-    const validateDimensions = new Ajv({ allErrors: true }).compile(shapeOnly);
     expect(validateDimensions(mini)).toBe(true);
     expect(validateDimensions(wuxia)).toBe(true);
+    // The gate the name list used to be, in pack-neutral form (option (c) of
+    // #27): an empty table is not a table.
+    expect(validateDimensions({})).toBe(false);
   });
 });
 
@@ -760,6 +760,84 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     // Without a table the very same entry loads: the closure is opt-in, and
     // an unknown dimension is only an error where a vocabulary was declared.
     expect(() => createContentRegistry({ ...miniContent(), rooms })).not.toThrow();
+  });
+
+  it("catches the wuxia pack's own slips too — the gate the schema's name list used to be (#27)", () => {
+    // #27 removed the schema's `required` list (it named the wuxia pack's ten
+    // dimensions). The promised equivalent is the load-time closure, on BOTH
+    // packs: a typo'd dimension in content, and a table that forgot a
+    // dimension its content uses, each fail where the vocabulary is in hand.
+    const pack = loadPack(WUXIA_PACK_DIR);
+    const sample = pack.rooms.find((room) => room.id === "room-lq-001")!;
+    const wuxiaContent = (rogue: (typeof pack.rooms)[number]) => ({
+      commands: pack.commands,
+      rooms: pack.rooms.map((room) => (room.id === rogue.id ? rogue : room)),
+      npcs: pack.npcs,
+      monsters: pack.monsters,
+    });
+
+    // `elements` for `element`: no schema can see this — entry schemas do not
+    // know the table — so the closure is the gate that catches it.
+    const typo = { ...sample, tags: { elements: ["fire"] } };
+    expect(() => createContentRegistry(wuxiaContent(typo), { dimensions: pack.dimensions })).toThrow(
+      /tags unknown dimension "elements"/,
+    );
+
+    // …and the table forgetting `quality` while content tags with it: the
+    // pack must declare the dimensions it needs (option (a) of #27).
+    const usesQuality = { ...sample, tags: { quality: ["high"] } };
+    const { quality: _dropped, ...incomplete } = pack.dimensions!;
+    expect(() =>
+      createContentRegistry(wuxiaContent(usesQuality), { dimensions: incomplete }),
+    ).toThrow(/tags unknown dimension "quality"/);
+    // Same content against the whole table passes — the two failures above
+    // are the closure working, not the entry being malformed.
+    expect(() =>
+      createContentRegistry(wuxiaContent(usesQuality), { dimensions: pack.dimensions }),
+    ).not.toThrow();
+  });
+});
+
+/**
+ * Display tiers under the same law (issue #27, AC4 — option (ii) won): a pack
+ * may have NO display tier table at all. Tiers are a pack capability, not an
+ * engine requirement (the same law the dimensions table travels under,
+ * ADR-0029 §5), and the mini pack has no numeric → tier-word axis to map. So
+ * the schema names no table (`martialTiers` is the WUXIA pack's own), keeps
+ * the tier item shape, and keeps the "an empty table is not a table" gate.
+ */
+describe("the display-tiers schema is pack-neutral: a second pack may have none (#27)", () => {
+  const validateDisplayTiers = new Ajv({ allErrors: true }).compile(
+    JSON.parse(readFileSync(resolve(schemasDir, "config.display-tiers.schema.json"), "utf8")),
+  );
+
+  it("takes a tier table of the pack's own naming — martialTiers is nobody's requirement", () => {
+    expect(validateDisplayTiers({ stationTiers: [{ min: 0, max: 9, label: "见习值守" }] })).toBe(
+      true,
+    );
+    // A pack with tiers but no 造诣 axis: only the wuxia pack's SECOND table,
+    // first one absent. The schema takes it whole.
+    expect(validateDisplayTiers({ professionTiers: [{ min: 0, max: 9, label: "新学乍用" }] })).toBe(
+      true,
+    );
+  });
+
+  it("keeps the gates the name list used to guard: an empty table and a shapeless tier are both red", () => {
+    expect(validateDisplayTiers({})).toBe(false);
+    expect(validateDisplayTiers({ stationTiers: [{ min: 0, max: 9 }] })).toBe(false);
+  });
+
+  it("still takes the wuxia pack's own table whole", () => {
+    const wuxia = JSON.parse(
+      readFileSync(resolve(WUXIA_PACK_DIR, "config", "display-tiers.json"), "utf8"),
+    );
+    expect(validateDisplayTiers(wuxia)).toBe(true);
+  });
+
+  it("and the mini pack ships no display-tiers file at all — absence is the legal shape", () => {
+    // Option (ii), pinned: 「第二套包可以没有显示档位表」. Adding a file here
+    // would break this test on purpose — that is a decision, not an oversight.
+    expect(existsSync(resolve(MINI_PACK_DIR, "config", "display-tiers.json"))).toBe(false);
   });
 });
 

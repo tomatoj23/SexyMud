@@ -122,6 +122,7 @@ assets/               # 美术资产（MVP 允许为空）
 - 武功**品阶**：下乘 / 中乘 / 上乘 / 绝学
 - 装备**稀有度**：寻常 / 精良 / 罕见 / 绝世
 - **造诣 / 显示档位**（数值→造诣描述，由 config `displayTiers` 区间表推导，不写死在条目里）：**50 档**（完整列表见 `docs/research/xkx100-kungfu-combat.md` §5.1）；代表性档位：不堪一击 / 初窥门径 / 驾轻就熟 / 炉火纯青 / 出神入化 / 返璞归真。**造诣是纯显示层，不产生任何门槛**（ADR-0019）
+- **显示档位表（`content/config/display-tiers.json`）**：本包两套表——`martialTiers`（造诣 50 档）与 `professionTiers`（生产称谓 16 档，🚧 **待补**：xkx100 原表在调研记录中被省略，仅存首尾「新学乍用 → … → 空前绝后」，**中间项不得杜撰**）。表名与档位词是**包自己的词汇**，schema 一个都不点名（#27 定案）。**包可以没有这张表**（显示档位是内容包的能力、不是引擎的需求）；落了文件则至少一张表、每表至少一档（「空表不算一张表」）
 
 ## 日历集合（content/config/calendar.json，M4-T2 已落）
 
@@ -181,6 +182,7 @@ source    = 招式声明（内功/外功）
 - 条目 `tags` **只有一种形态**（对象形态）：`{ "moveTag": ["sword"], "elementTag": ["fire"] }`。维度名 lowerCamelCase；键列表非空、去重（`equipment` 词缀曾有的裸 `string[]` 已改齐——扁平列表无法反查维度）
 - `condition.dimension` 的取值来自 `content/config/dimensions.json`（维度表）；引擎只做**键取值 + 集合求交**，永不 parse 字符串
 - 加维度 / 加取值 = 加 config 表项，不动引擎
+- **本包声明的 10 个维度**（`content/config/dimensions.json`，#27 起 schema 不点名任何维度——包词汇住这里）：`damageBand` 伤害档（轻/中/重/濒死）与 `lifeBand` 剩余生命档（满/多/半/少/危）——战斗文本后果词库分池的两条轴；`source` 作用方式（外功/内功）与 `element` 系别（金木水火土风雷 + 无属性）——2×8 正交；`motion` 动作画面（刺/扫/劈/拿）——**动词的属性，不是招式的属性**；`moveTag` 招式标签、`elementTag` 系别标签——条目 tags 对象形态的键；`quality` 品阶（下乘/中乘/上乘/绝学）、`slot` 装备槽（7 槽）、`style` 语义样式名（供输出层消费，**不是 ANSI/HTML**）
 - `element`（字段取值池，含 `none`）与 `elementTag`（标签维度）**不合并**：合并会让「无属性」变成一个可挂的标签（ADR-0029 §5）
 
 ### 效果定义（`content/effects/`）
