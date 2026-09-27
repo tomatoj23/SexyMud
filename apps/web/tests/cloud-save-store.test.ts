@@ -75,6 +75,21 @@ function seed(transport: FakeTransport, text: string): void {
   transport.slots.set("save-slot-1", { text, revision: 1 });
 }
 
+/**
+ * Asserts a call failed the way the contract says it must: a `CloudSaveError`
+ * carrying the expected KIND — the host reacts differently to each kind, so a
+ * bare "it threw" (or a kind-only match) would survive a taxonomy collapse
+ * into plain objects.
+ */
+async function expectFailure(promise: Promise<unknown>, kind: CloudSaveFailureKind): Promise<void> {
+  const error: unknown = await promise.then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+  expect(error, `expected the call to reject with "${kind}"`).toBeInstanceOf(CloudSaveError);
+  expect((error as CloudSaveError).kind).toBe(kind);
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -127,7 +142,7 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
     await deviceB.load();
 
     await deviceA.save(fixture(20));
-    await expect(deviceB.save(fixture(30))).rejects.toMatchObject({ kind: "conflict" });
+    await expectFailure(deviceB.save(fixture(30)), "conflict");
 
     // The remote still holds exactly what device A wrote.
     expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(20)));
@@ -138,7 +153,7 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
     seed(transport, JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
-    await expect(store.save(fixture(30))).rejects.toMatchObject({ kind: "conflict" });
+    await expectFailure(store.save(fixture(30)), "conflict");
     expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(20)));
   });
 
@@ -159,6 +174,26 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
     await expect(store.load()).resolves.toEqual(fixture(40));
   });
 
+  it("overlapping saves from one session queue and all land — 'conflict' is ANOTHER session's doing, never your own autosave", async () => {
+    const transport = new FakeTransport();
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    const first = store.save(fixture(20));
+    const second = store.save(fixture(30));
+    await first;
+    await second;
+
+    expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(30)));
+  });
+
+  it("a load queued behind an in-flight save observes that save — one instance, one order", async () => {
+    const store = new CloudSaveStore(new FakeTransport(), "save-slot-1");
+
+    const saved = store.save(fixture(20));
+    await expect(store.load()).resolves.toEqual(fixture(20));
+    await saved;
+  });
+
   it("load → save overwrites: reading first is how a session deliberately replaces the remote save", async () => {
     const transport = new FakeTransport();
     seed(transport, JSON.stringify(fixture(20)));
@@ -177,8 +212,8 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
     await deviceB.load();
     await deviceA.save(fixture(20));
 
-    await expect(deviceB.save(fixture(30))).rejects.toMatchObject({ kind: "conflict" });
-    await expect(deviceB.save(fixture(30))).rejects.toMatchObject({ kind: "conflict" });
+    await expectFailure(deviceB.save(fixture(30)), "conflict");
+    await expectFailure(deviceB.save(fixture(30)), "conflict");
 
     await deviceB.load(); // re-observe the world as it now stands…
     await deviceB.save(fixture(30)); // …and the write lands
@@ -193,7 +228,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
     transport.failing = "network";
     const store = new CloudSaveStore(transport, "save-slot-1");
 
-    await expect(store.load()).rejects.toMatchObject({ kind: "network" });
+    await expectFailure(store.load(), "network");
   });
 
   it("offline: save rejects 'network' and the remote record is untouched — no silent local fallback", async () => {
@@ -201,7 +236,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
     transport.failing = "network";
     const store = new CloudSaveStore(transport, "save-slot-1");
 
-    await expect(store.save(fixture(20))).rejects.toMatchObject({ kind: "network" });
+    await expectFailure(store.save(fixture(20)), "network");
     expect(transport.slots.has("save-slot-1")).toBe(false);
   });
 
@@ -210,8 +245,8 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
     transport.failing = "auth";
     const store = new CloudSaveStore(transport, "save-slot-1");
 
-    await expect(store.load()).rejects.toMatchObject({ kind: "auth" });
-    await expect(store.save(fixture(20))).rejects.toMatchObject({ kind: "auth" });
+    await expectFailure(store.load(), "auth");
+    await expectFailure(store.save(fixture(20)), "auth");
   });
 
   it("a corrupt remote record is a loud 'corrupt' — not an empty slot to quietly start over in", async () => {
@@ -219,7 +254,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
     seed(transport, "{not json");
     const store = new CloudSaveStore(transport, "save-slot-1");
 
-    await expect(store.load()).rejects.toMatchObject({ kind: "corrupt" });
+    await expectFailure(store.load(), "corrupt");
   });
 
   it("JSON that is not a snapshot envelope is 'corrupt' too", async () => {
@@ -227,7 +262,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
       const transport = new FakeTransport();
       seed(transport, text);
       const store = new CloudSaveStore(transport, "save-slot-1");
-      await expect(store.load()).rejects.toMatchObject({ kind: "corrupt" });
+      await expectFailure(store.load(), "corrupt");
     }
   });
 
@@ -235,10 +270,38 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
     const transport = new FakeTransport();
     seed(transport, "{not json");
     const store = new CloudSaveStore(transport, "save-slot-1");
-    await expect(store.load()).rejects.toMatchObject({ kind: "corrupt" });
+    await expectFailure(store.load(), "corrupt");
 
     await store.save(fixture(20));
     expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(20)));
+  });
+
+  it("a half-typed record is 'corrupt': an unusable revision is never armed, a usable one still arms for repair", async () => {
+    const armed: (string | null)[] = [];
+    const write = async (_key: string, _text: string, expectedRevision: string | null) => {
+      armed.push(expectedRevision);
+      return "next";
+    };
+
+    // A revision that is not a string cannot anchor a CAS — nothing is armed.
+    const noRevision: CloudSaveTransport = {
+      read: async () => ({ text: JSON.stringify(fixture(20)), revision: 17 as unknown as string }),
+      write,
+    };
+    const storeA = new CloudSaveStore(noRevision, "save-slot-1");
+    await expectFailure(storeA.load(), "corrupt");
+    await storeA.save(fixture(30));
+    expect(armed).toEqual([null]);
+
+    // A string revision with garbage text still arms — the reset save lands.
+    const noText: CloudSaveTransport = {
+      read: async () => ({ text: 123 as unknown as string, revision: "7" }),
+      write,
+    };
+    const storeB = new CloudSaveStore(noText, "save-slot-1");
+    await expectFailure(storeB.load(), "corrupt");
+    await storeB.save(fixture(30));
+    expect(armed).toEqual([null, "7"]);
   });
 });
 

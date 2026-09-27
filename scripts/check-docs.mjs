@@ -280,6 +280,15 @@ const adrCount = adrNumbers.size;
  * "那 4 篇 ADR"、"散落在 8 个 ADR 的 …" — and are left alone: the two forms
  * where the number LEADS get a prefix-window scope check, the two where the
  * noun leads have no scoped spelling to confuse them with.
+ *
+ * ORDINALS are a third spelling this table must not read as a total:
+ * "ADR-0035（第 35 篇）" names ONE ADR by its position, yet its number sits
+ * before 篇 exactly like a total claim. Left unchecked, every "第 N 篇" is a
+ * landmine that detonates the moment the NEXT ADR lands (#29 复查: it already
+ * forced two historical rewordings to survive 0036). The 第 marker
+ * disambiguates — a real total is written 「N 篇决策历史」/「共 N 篇」 and never
+ * carries 第 — so `claimTotal` skips ordinals via the digits' own position
+ * (match.index may point at "adr" or "共", not at the number).
  */
 const ADR_COUNT_PATTERNS = [
   /(?:共|总计)?\s*\*{0,2}(\d+)\*{0,2}\s*篇决策历史/g,
@@ -313,8 +322,16 @@ function checkAdrReferences(lines, relative) {
         });
       }
     };
+    /** "第 N 篇" is an ordinal naming one ADR, never a claim about the total. */
+    const isOrdinal = (match) => {
+      const digitsAt = match.index + match[0].lastIndexOf(match[1]);
+      return /第\s*$/.test(line.slice(Math.max(0, digitsAt - 4), digitsAt));
+    };
     for (const pattern of ADR_COUNT_PATTERNS) {
-      for (const match of line.matchAll(pattern)) claimTotal(match);
+      for (const match of line.matchAll(pattern)) {
+        if (isOrdinal(match)) continue;
+        claimTotal(match);
+      }
     }
     for (const pattern of ADR_COUNT_PATTERNS_LEADING) {
       for (const match of line.matchAll(pattern)) {

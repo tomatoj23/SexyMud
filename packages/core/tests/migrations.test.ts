@@ -35,6 +35,15 @@ describe("migrateSnapshot (save migration seam)", () => {
     expect(() => migrateSnapshot(malformed)).toThrow(/unsupported save version/);
   });
 
+  it("rejects NaN and fractional versions — numbers that mean nothing to the chain", () => {
+    // `typeof NaN === "number"` used to slip past the guard and the walk loop
+    // never runs for NaN — the save was silently restored AS CURRENT. A
+    // fractional version half-slipped too, out the "missing migration" door.
+    for (const version of [NaN, 1.5, 2.5]) {
+      expect(() => migrateSnapshot({ version, data: {} })).toThrow(/unsupported save version/);
+    }
+  });
+
   it("survives a full serialization roundtrip losslessly, including CJK", () => {
     const snapshot: Snapshot<ExampleState> = { version: SAVE_VERSION, data: currentData };
     const revived = migrateSnapshot<ExampleState>(JSON.parse(JSON.stringify(snapshot)) as Snapshot);

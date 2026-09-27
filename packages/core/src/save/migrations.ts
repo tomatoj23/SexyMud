@@ -58,7 +58,12 @@ const migrations: Record<number, (data: Record<string, unknown>) => Record<strin
 export function migrateSnapshot<T>(snapshot: Snapshot): T {
   let version = snapshot.version;
   let data = snapshot.data as Record<string, unknown>;
-  if (typeof version !== "number" || version < 1 || version > SAVE_VERSION) {
+  // Number.isInteger, not `typeof`: NaN and fractional versions ARE numbers
+  // that mean nothing to this chain. `typeof NaN === "number"` used to let a
+  // NaN version past this guard, and `while (NaN < SAVE_VERSION)` never runs —
+  // the save was silently restored AS CURRENT (#29 review: spec/04 §1.4 says
+  // the version class fails loudly, so nothing here may pass quietly).
+  if (!Number.isInteger(version) || version < 1 || version > SAVE_VERSION) {
     throw new Error(`unsupported save version: ${version}`);
   }
   while (version < SAVE_VERSION) {

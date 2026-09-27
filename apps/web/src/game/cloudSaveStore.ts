@@ -102,41 +102,72 @@ export class CloudSaveStore implements SaveStore {
    */
   private revision: string | null = null;
 
+  /**
+   * This instance's operations run ONE AT A TIME (#29 复查). Two overlapping
+   * saves from the same session — an autosave firing while the previous write
+   * is still in the air — used to race on the same observed revision, and the
+   * loser was told "conflict" about ITS OWN session's write. Queued, the
+   * second save CASes against the first one's result and both land, so
+   * `conflict` now means exactly one thing: ANOTHER session wrote.
+   */
+  private queue: Promise<unknown> = Promise.resolve();
+
   constructor(
     private readonly transport: CloudSaveTransport,
     private readonly key: string,
   ) {}
 
-  async load(): Promise<Snapshot | null> {
-    const record = await this.transport.read(this.key);
-    if (record === null) {
-      this.revision = null;
-      return null;
-    }
-    // Armed BEFORE parsing, and kept even when the text is unusable: a
-    // corrupt cloud save must still be repairable by the next `save` (the
-    // reset path), and a CAS against "absent" would refuse exactly that.
-    this.revision = record.revision;
-    // The same envelope check the local store runs (parseSnapshotText) — one
-    // verdict for "corrupt" whichever store is plugged in. What it rejects is
-    // TRANSPORT damage; the payload inside `data` stays the engine's nine
-    // corruption classes (decision D3).
-    try {
-      return parseSnapshotText(record.text);
-    } catch (cause) {
-      throw new CloudSaveError(
-        "corrupt",
-        cause instanceof Error ? cause.message : "cloud save: unreadable record",
-      );
-    }
+  /** Runs `operation` after every operation already queued on this instance. */
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(operation);
+    this.queue = result.catch(() => undefined);
+    return result;
   }
 
-  async save(snapshot: Snapshot): Promise<void> {
-    const revision = await this.transport.write(
-      this.key,
-      JSON.stringify(snapshot),
-      this.revision,
-    );
-    this.revision = revision;
+  load(): Promise<Snapshot | null> {
+    return this.enqueue(async () => {
+      const record = await this.transport.read(this.key);
+      if (record === null) {
+        this.revision = null;
+        return null;
+      }
+      // The record is a claim about the backend row, checked like one: a
+      // revision that is not a string cannot anchor a CAS, so NOTHING is
+      // armed and the read fails loudly instead of half-trusting the row.
+      if (typeof record.revision !== "string") {
+        throw new CloudSaveError("corrupt", "cloud save: stored record has no usable revision");
+      }
+      // A usable revision is armed BEFORE parsing, and kept even when the
+      // text is unusable: a corrupt cloud save must still be repairable by
+      // the next `save` (the reset path), and a CAS against "absent" would
+      // refuse exactly that.
+      this.revision = record.revision;
+      if (typeof record.text !== "string") {
+        throw new CloudSaveError("corrupt", "cloud save: stored record text is not a string");
+      }
+      // The same envelope check the local store runs (parseSnapshotText) — one
+      // verdict for "corrupt" whichever store is plugged in. What it rejects is
+      // TRANSPORT damage; the payload inside `data` stays the engine's nine
+      // corruption classes (decision D3).
+      try {
+        return parseSnapshotText(record.text);
+      } catch (cause) {
+        throw new CloudSaveError(
+          "corrupt",
+          cause instanceof Error ? cause.message : "cloud save: unreadable record",
+        );
+      }
+    });
+  }
+
+  save(snapshot: Snapshot): Promise<void> {
+    return this.enqueue(async () => {
+      const revision = await this.transport.write(
+        this.key,
+        JSON.stringify(snapshot),
+        this.revision,
+      );
+      this.revision = revision;
+    });
   }
 }

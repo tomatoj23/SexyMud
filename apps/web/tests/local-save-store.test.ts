@@ -49,10 +49,12 @@ describe("LocalSaveStore — the localStorage string seam (G6)", () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const store = new LocalSaveStore("save-slot-1");
 
-    for (const damage of ["{oops", JSON.stringify({ hello: "world" })]) {
-      localStorage.setItem("save-slot-1", damage);
-      await expect(store.load()).rejects.toThrow();
-    }
+    // Each damage class names its own door (saveText.ts) — an "it threw"
+    // assertion would pass through either class silently disappearing.
+    localStorage.setItem("save-slot-1", "{oops");
+    await expect(store.load()).rejects.toThrow("save: stored text is not JSON");
+    localStorage.setItem("save-slot-1", JSON.stringify({ hello: "world" }));
+    await expect(store.load()).rejects.toThrow("save: stored text is not a snapshot envelope");
   });
 
   it("a second save replaces the first — the local slot is last-write-wins (one machine, one writer)", async () => {
