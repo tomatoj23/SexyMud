@@ -104,6 +104,9 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   function uploadWarning(): string | null {
     if (sync.remoteView.kind === "save") return "云端存档将被覆盖——另一台设备的进度将被丢弃（可先导出本地存档保底）。";
     if (sync.remoteView.kind === "corrupt") return "云端存档已损坏——上传将以本地存档修复它。";
+    // An UNKNOWN cloud is destructive too: the last probe never saw what is
+    // up there, so an overwrite must still say its cost out loud (decision D7).
+    if (sync.remoteView.kind === "unknown") return "云端状态未知（尚未检查成功）——若云端已有存档，上传将覆盖它。";
     return null;
   }
 
@@ -126,7 +129,10 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
           {state.action === "download" && "没下载到本地："}
           {state.action === "probe" && "检查失败："}
           {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
-          {state.failure === "corrupt" && "云端存档损坏，无法下载——可上传本地存档修复它。"}
+          {state.failure === "corrupt" &&
+            (state.action === "upload"
+              ? "云端存档损坏且无法经保存修复（记录锚已损坏）——本地存档无恙，可导出保底。"
+              : "云端存档损坏，无法下载——若损坏仅在内容，上传本地存档可修复它。")}
           {state.failure === "local" && "本地写入失败（可能空间不足）。"}
         </p>
       )}

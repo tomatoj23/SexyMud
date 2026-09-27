@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Snapshot } from "@sexymud/core";
+import type { SaveStore, Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
 import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore } from "../src/game/localSaveStore.js";
@@ -35,6 +35,8 @@ class FakeTransport implements CloudSaveTransport {
   failWrite: Error | null = null;
   /** Fires once right after a read — "another device wrote just now". */
   onceAfterRead: (() => void) | null = null;
+  /** When set, reads hand this out as the revision — a damaged record anchor. */
+  revisionDamage: unknown = null;
   /** Call accounting — "no retries, no store pokes" must be provable. */
   reads = 0;
   writes = 0;
@@ -43,7 +45,12 @@ class FakeTransport implements CloudSaveTransport {
     this.reads += 1;
     if (this.failing) throw this.failing;
     const slot = this.slots.get(key);
-    const record = slot ? { text: slot.text, revision: String(slot.revision) } : null;
+    const record = slot
+      ? {
+          text: slot.text,
+          revision: (this.revisionDamage ?? String(slot.revision)) as string,
+        }
+      : null;
     const hook = this.onceAfterRead;
     if (hook) {
       this.onceAfterRead = null;
@@ -159,10 +166,21 @@ describe("CloudSync — probe shows both sides; sync is never automatic (decisio
     expect(sync.remoteView).toEqual({ kind: "corrupt" });
   });
 
+  it("a corrupt LOCAL slot is visible damage in the probe, not a probe failure", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+    localStorage.setItem(KEY, "{not json"); // the local half is damaged too
+
+    await sync.probe();
+
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.localView).toEqual({ kind: "corrupt" });
+  });
+
   it("an offline probe fails loudly as 'network' — never an empty cloud to quietly assume", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, sync } = rig();
-    transport.failing = new TypeError("Failed to fetch");
+    transport.failing = new CloudSaveError("network", "offline");
 
     await sync.probe();
 
@@ -224,12 +242,37 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
   it("offline: upload fails 'network' and BOTH stores are untouched — 'not saved' never pretends 'saved' (decision D8)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, sync } = rig();
-    transport.failing = new TypeError("Failed to fetch");
+    transport.failing = new CloudSaveError("network", "offline");
 
     await sync.upload(snapshotFixture({ nowTick: 20 }));
 
     expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "upload" });
     expect(transport.slots.has(KEY)).toBe(false); // remote untouched
+  });
+
+  it("an UNREPAIRABLE corrupt record reports 'corrupt', not a phantom 'another device' conflict (decision D8)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, sync } = rig();
+    const theirs = snapshotFixture({ nowTick: 99 });
+    transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 1 });
+    // The damage is in the revision ANCHOR: the store cannot arm it (#29), so
+    // no write can CAS against this row — the upload must say THAT.
+    transport.revisionDamage = 17;
+
+    await sync.upload(snapshotFixture({ nowTick: 20 }));
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "corrupt", action: "upload" });
+    expect(remoteText(transport)).toBe(JSON.stringify(theirs)); // nothing overwrote the damage
+  });
+
+  it("an unclassified rejection is 'network' — the host's defensive reading of the unknown", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, sync } = rig();
+    transport.failing = new TypeError("Failed to fetch"); // outside the contract's error shape
+
+    await sync.upload(snapshotFixture({ nowTick: 20 }));
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "upload" });
   });
 });
 
@@ -269,6 +312,22 @@ describe("CloudSync — download: cloud into the local slot", () => {
 
     expect(sync.state).toEqual({ phase: "failed", failure: "corrupt", action: "download" });
     await expect(local.load()).resolves.toEqual(mine);
+  });
+
+  it("a LOCAL write that refuses (quota) reports 'local' — never 'downloaded' over a failed write", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, cloud } = rig();
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    const refusingLocal: SaveStore = {
+      load: () => Promise.resolve(null),
+      save: () => Promise.reject(new Error("quota exceeded")),
+    };
+    const sync = new CloudSync(cloud, refusingLocal, { markExpired: () => undefined });
+
+    await sync.download();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local", action: "download" });
+    expect(sync.last).not.toBe("downloaded"); // the verdict never claims a write that did not land
   });
 });
 
@@ -358,6 +417,15 @@ describe("CloudSync — busy is a refusal, not a queue", () => {
     const first = sync.upload(snapshotFixture({ nowTick: 20 }));
     await expect(sync.upload(snapshotFixture({ nowTick: 30 }))).rejects.toThrow(/in flight/i);
     await first;
+  });
+
+  it("dismiss outside a conflict is a refusal — there is nothing to walk away from", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+
+    expect(() => sync.dismiss()).toThrow(/nothing to dismiss/i);
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.last).toBe("none");
   });
 });
 

@@ -23,9 +23,11 @@ import { CloudSaveError } from "./cloudSaveStore.js";
  * **Failures are loud and untouched (decision D8)**: a refused save reports
  * "not saved" with BOTH stores exactly as they were — no silent local
  * fallback, no retry loop. The one deliberate exception is upload over a
- * CORRUPT cloud save: the store's load arms the revision even when the text
+ * CORRUPT cloud save: the store's load arms the revision even when the TEXT
  * is damaged (#29's repair path), so upload proceeds and replaces the
- * damage. An `auth` failure ends the INSTANCE (decision D6): the re-login
+ * damage — but when the record's REVISION anchor is the damage, no write can
+ * CAS against it and upload reports the corruption instead of a phantom
+ * conflict. An `auth` failure ends the INSTANCE (decision D6): the re-login
  * guide comes up and every further action refuses without a backend call —
  * the player's re-login rebuilds the transport around the new session.
  */
@@ -147,12 +149,17 @@ export class CloudSync {
    */
   upload(snapshot: Snapshot): Promise<SyncState> {
     return this.run("upload", async () => {
+      let damage: CloudSaveError | null = null;
       try {
         await this.cloud.load(); // observe: arm the CAS, see what is there
       } catch (error) {
-        // A corrupt cloud save still armed its revision (#29) — proceeding is
-        // the REPAIR path, not a silent degrade: this upload replaces damage.
+        // A corrupt cloud save USUALLY still armed its revision (#29's repair
+        // path) and the write below replaces the damage. When the damage is
+        // in the record's revision anchor nothing is armed, and the write
+        // would CAS-create into an occupied slot — the conflict-refresh below
+        // tells the two apart and reports the damage honestly instead.
         if (!(error instanceof CloudSaveError && error.kind === "corrupt")) throw error;
+        damage = error;
       }
       try {
         await this.cloud.save(snapshot);
@@ -162,6 +169,12 @@ export class CloudSync {
           // choose (decision D7). The refresh re-observes, which is exactly
           // what a later deliberate replace needs anyway.
           this.views.remote = await this.remoteViewToleratingCorrupt();
+          if (damage && this.views.remote.kind === "corrupt") {
+            // No session wrote — the row is still damaged: its revision anchor
+            // was never armed, so no write can CAS against it. Say THAT, not
+            // a phantom "another device updated the cloud save".
+            throw damage;
+          }
           return { phase: "conflict", cause: "save" };
         }
         throw error;

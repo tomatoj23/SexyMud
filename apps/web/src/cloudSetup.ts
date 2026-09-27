@@ -44,7 +44,15 @@ export function setupCloud(envId: string | undefined): CloudStack | null {
       const transport = new CloudBaseSaveTransport(db, session, {
         mintRevision: () => crypto.randomUUID(),
       });
-      return new CloudSync(new CloudSaveStore(transport, SAVE_SLOT_KEY), new LocalSaveStore(SAVE_SLOT_KEY), auth);
+      // The expiry sink is BOUND to this session (decision D6): a late auth
+      // failure from an old session must never expire the one the player
+      // holds now, so the mark carries its owner's identity.
+      const expiry = { markExpired: () => auth.markExpired(session) };
+      return new CloudSync(
+        new CloudSaveStore(transport, SAVE_SLOT_KEY),
+        new LocalSaveStore(SAVE_SLOT_KEY),
+        expiry,
+      );
     },
   };
 }

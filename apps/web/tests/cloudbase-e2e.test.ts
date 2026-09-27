@@ -23,15 +23,17 @@ import { snapshotFixture } from "./support.js";
  * Console checklist to get there (deployment, not code):
  *   1. 腾讯云 CloudBase 控制台建环境，把环境 id 填进上面的变量
  *      （网页宿主另需 `apps/web/.env.local` 的 `VITE_CLOUDBASE_ENV_ID`）；
- *   2. 身份认证开启「用户名 + 密码」登录（decision D1 的账密源）；
+ *   2. 身份认证开启账密登录（decision D1），并**在控制台建一个测试用户**
+ *      （邮箱／用户名 + 密码——SDK 的自助注册是邮箱验证码两步流，冒烟不走它）；
  *   3. 云数据库建集合 `save_slots`，安全规则只许本人读写
- *      （`_id` 前缀是 uid（decision D4），规则是第二把锁）；
+ *      （`_id` 是 `uid~key` 形态（decision D4），规则是第二把锁）；
  *   4. `corepack pnpm --filter @sexymud/web test tests/cloudbase-e2e.test.ts`
  *
- * Smoke calibration points (残余风险 E1) — the two places fake-based tests
+ * Smoke calibration points (残余风险 E1) — the places fake-based tests
  * cannot vouch for: ①错误分类信号（UNAUTHENTICATED 16 / "unauthenticated" /
  * 401）对真后端错误形状是否成立；②条件更新 `updated` 计数与事务 create 的
- * 真语义。If either misbehaves, the failure is loud here — never silent.
+ * 真语义；③文档 id 的 `~` 拼接在真实 REST 路径上的通行。If any misbehaves,
+ * the failure is loud here — never silent.
  */
 
 const envId = process.env["CLOUDBASE_ENV_ID"];
@@ -46,14 +48,12 @@ describe.skipIf(!configured)("CloudBase e2e — the adapter against a real backe
     const auth = createCloudbaseAuthClient(app);
     const db: CloudBaseDb = createCloudbaseSaveDb(app);
 
-    // Sign-up on first run, sign-in afterwards (a taken username is expected).
-    let session;
-    try {
-      session = await auth.signUp(testUser!, testPassword!);
-    } catch {
-      session = await auth.signIn(testUser!, testPassword!);
-    }
-    expect(session.uid).toBeTruthy();
+    // The test user is PRE-PROVISIONED in the console (see the checklist) —
+    // the SDK's self-serve sign-up is a two-step email-OTP flow the smoke
+    // deliberately does not drive.
+    const session = await auth.signIn(testUser!, testPassword!);
+    expect(typeof session.uid).toBe("string");
+    expect(session.uid.length).toBeGreaterThan(0);
 
     // A per-run slot: the smoke never clobbers a player's save.
     const key = `e2e-${Date.now()}`;
