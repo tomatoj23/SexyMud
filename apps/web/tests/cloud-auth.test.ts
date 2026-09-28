@@ -36,6 +36,8 @@ const otherSession: CloudAuthSession = { uid: "uid-2", account: "阿波" };
 class FakeAuthClient implements CloudAuthClient {
   /** What `getLoginState` reports — the persisted session of a previous visit. */
   restored: CloudAuthSession | null = null;
+  /** What `signIn` hands out — override to mint a NEW object for a re-login. */
+  signInSession: CloudAuthSession = session;
   /** When set, `signIn`/`signUp` reject with this error — wrong password, offline. */
   failing: CloudAuthError | null = null;
   /** When set, `signOut` rejects — a failed logout must not move the state. */
@@ -53,7 +55,7 @@ class FakeAuthClient implements CloudAuthClient {
   signIn(account: string, password: string): Promise<CloudAuthSession> {
     this.calls.push({ method: "signIn", account, password });
     if (this.failing) return Promise.reject(this.failing);
-    return Promise.resolve(session);
+    return Promise.resolve(this.signInSession);
   }
 
   signUp(email: string, password: string): Promise<(code: string) => Promise<CloudAuthSession>> {
@@ -249,6 +251,20 @@ describe("CloudAuth — expiry is a re-login prompt, owned by the session that d
 
     auth.markExpired(otherSession); // …and THEN the old session's failure lands
     expectStatus(auth.state, "signed-in"); // the player's new session survives
+  });
+
+  it("a re-login of the SAME account is a new session — the old login's late failure must not expire it", async () => {
+    const client = new FakeAuthClient();
+    client.restored = session; // one login…
+    const auth = new CloudAuth(client);
+    await auth.restore();
+    await auth.signOut();
+    client.signInSession = { uid: session.uid, account: session.account }; // …a NEW login, same uid
+    await auth.signIn("侠客行", "口令");
+
+    auth.markExpired(session); // the OLD login's failure finally lands
+
+    expectStatus(auth.state, "signed-in"); // uid names the account; the session object is the identity
   });
 
   it("signing back in from 'expired' returns to signed-in — the re-login the prompt asks for", async () => {

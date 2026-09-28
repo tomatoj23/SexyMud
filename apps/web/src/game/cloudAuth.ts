@@ -176,7 +176,11 @@ export class CloudAuth {
    * there is nothing to expire.
    */
   markExpired(session: CloudAuthSession): void {
-    if (this.current.status === "signed-in" && this.current.session.uid === session.uid) {
+    // The SESSION OBJECT is the identity, not `uid`: uid names the ACCOUNT,
+    // and the same account re-logs-in as a NEW session — a late failure from
+    // the old login must not expire the one the player holds now (decision
+    // D6). Cross-account protection is the same test.
+    if (this.current.status === "signed-in" && this.current.session === session) {
       this.transition({ status: "expired", account: session.account });
     }
   }

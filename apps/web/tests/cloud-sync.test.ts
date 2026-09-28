@@ -191,6 +191,36 @@ describe("CloudSync — probe shows both sides; sync is never automatic (decisio
 
     expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "probe" });
   });
+
+  it("the probe owns the verdict — 'in-sync' never outlives the divergence a later probe finds", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    const snapshot = snapshotFixture({ nowTick: 20 });
+    await local.save(snapshot);
+    seedRemote(transport, snapshot);
+    await sync.probe();
+    expect(sync.last).toBe("in-sync");
+
+    await local.save(snapshotFixture({ nowTick: 55 })); // the player played on
+    await sync.probe();
+
+    expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
+    expect(sync.last).toBe("none"); // no stale "in-sync" beside a divergence
+  });
+
+  it("the probe owns the verdict — 'saved' never outlives a cloud save that vanished", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
+    expect(sync.last).toBe("saved");
+
+    transport.slots.delete(KEY); // the cloud save is gone (console, another client)
+    await sync.probe();
+
+    expect(sync.last).toBe("none"); // the status line must not claim "已存到云端" beside "无存档"
+    expect(sync.remoteView).toEqual({ kind: "empty" });
+  });
 });
 
 describe("CloudSync — upload: observe then write (decision D8)", () => {
@@ -252,13 +282,16 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
   it("offline: upload fails 'network' and BOTH stores are untouched — 'not saved' never pretends 'saved' (decision D8)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, local, sync } = rig();
-    await local.save(snapshotFixture({ nowTick: 20 }));
+    const mine = snapshotFixture({ nowTick: 20 });
+    await local.save(mine);
     transport.failing = new CloudSaveError("network", "offline");
 
     await sync.upload();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "upload" });
     expect(transport.slots.has(KEY)).toBe(false); // remote untouched
+    await expect(local.load()).resolves.toEqual(mine); // local untouched too
+    expect(sync.localView).toEqual({ kind: "save", snapshot: mine }); // but the read DID refresh the view
   });
 
   it("an UNREPAIRABLE corrupt record reports 'corrupt', not a phantom 'another device' conflict (decision D8)", async () => {
@@ -275,6 +308,27 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
 
     expect(sync.state).toEqual({ phase: "failed", failure: "corrupt", action: "upload" });
     expect(remoteText(transport)).toBe(JSON.stringify(theirs)); // nothing overwrote the damage
+  });
+
+  it("anchor damage PLUS a real race is the RACE — a healthy save appearing mid-flow wins the 'conflict' verdict, not 'corrupt'", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    const theirs = snapshotFixture({ nowTick: 99 });
+    transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 1 });
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    // Our observe sees the damaged anchor (nothing armed); between observe and
+    // write another session REPLACES the row with a healthy one — the re-observe
+    // then sees a save, so this is the race, reported as the conflict it is.
+    transport.revisionDamage = 17;
+    transport.onceAfterRead = () => {
+      transport.revisionDamage = null;
+      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 2 });
+    };
+
+    await sync.upload();
+
+    expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
+    expect(sync.remoteView).toEqual({ kind: "save", snapshot: theirs });
   });
 
   it("an unclassified rejection is 'network' — the host's defensive reading of the unknown", async () => {
@@ -324,6 +378,7 @@ describe("CloudSync — the upload payload is the LOCAL SLOT's current content (
 
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("local-empty");
+    expect(sync.localView).toEqual({ kind: "empty" }); // the read is the refresh
     expect(transport.reads).toBe(0); // the payload check is at the very front — no backend at all
     expect(transport.writes).toBe(0);
   });
@@ -336,8 +391,37 @@ describe("CloudSync — the upload payload is the LOCAL SLOT's current content (
     await sync.upload();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "local-corrupt", action: "upload" });
+    expect(sync.localView).toEqual({ kind: "corrupt" }); // the read is the refresh
     expect(transport.reads).toBe(0);
     expect(transport.writes).toBe(0);
+  });
+
+  it("regression net: a STALE save view never becomes the payload — an emptied slot still reports 'local-empty'", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.probe(); // the view now CLAIMS a save
+    localStorage.removeItem(KEY); // the slot is emptied behind the machine
+    const readsBefore = transport.reads;
+
+    await sync.upload();
+
+    expect(sync.last).toBe("local-empty"); // never the stale view's bytes, never "saved"
+    expect(transport.reads).toBe(readsBefore); // the upload itself never reached the backend
+  });
+
+  it("regression net: a STALE save view never becomes the payload — a damaged slot still reports 'local-corrupt'", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.probe(); // the view now CLAIMS a save
+    localStorage.setItem(KEY, "{not json"); // the slot is damaged behind the machine
+    const readsBefore = transport.reads;
+
+    await sync.upload();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-corrupt", action: "upload" });
+    expect(transport.reads).toBe(readsBefore); // the upload itself never reached the backend
   });
 
   it("AC4 view symmetry: a successful upload refreshes the local view — stale display data dies here", async () => {
@@ -365,6 +449,7 @@ describe("CloudSync — download: cloud into the local slot", () => {
 
     expect(sync.last).toBe("downloaded");
     await expect(local.load()).resolves.toEqual(snapshot);
+    expect(sync.localView).toEqual({ kind: "save", snapshot }); // the success path refreshes the local view
   });
 
   it("an empty cloud is 'remote-empty', not a failure — and local is untouched", async () => {
@@ -454,6 +539,25 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
     expect(sync.last).toBe("downloaded");
     await expect(local.load()).resolves.toEqual(remoteSnapshot);
   });
+
+  it("the CAS-race conflict (cause 'save') offers the same three exits — dismiss walks away from it too", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    const theirs = snapshotFixture({ nowTick: 99 });
+    // The world moves between our observe and our write — the CAS race.
+    transport.onceAfterRead = () => {
+      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 2 });
+    };
+    await sync.upload();
+    expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
+
+    sync.dismiss();
+
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.last).toBe("dismissed");
+    expect(remoteText(transport)).toBe(JSON.stringify(theirs)); // the cloud is untouched
+  });
 });
 
 describe("CloudSync — an auth failure ends the instance (decision D6)", () => {
@@ -497,6 +601,9 @@ describe("CloudSync — busy is a refusal, not a queue", () => {
     const first = sync.upload();
     await expect(sync.upload()).rejects.toThrow(/in flight/i);
     await first;
+
+    expect(sync.state.phase).toBe("idle"); // the first one landed normally
+    expect(sync.last).toBe("saved");
   });
 
   it("dismiss outside a conflict is a refusal — there is nothing to walk away from", async () => {

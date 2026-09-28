@@ -50,7 +50,9 @@ function exportSnapshot(snapshot: Snapshot): void {
   anchor.href = url;
   anchor.download = "sexymud-save.json";
   anchor.click();
-  URL.revokeObjectURL(url);
+  // Deferred: revoking synchronously can cancel the download itself in some
+  // browsers — the salvage channel must not fail silently.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /** The two-step confirm shared by every destructive exit (decision D7). */
@@ -102,13 +104,20 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     await action().catch(() => undefined);
   }
 
-  function uploadWarning(): string | null {
+  function uploadWarning(): string {
     if (sync.remoteView.kind === "save") return "云端存档将被覆盖——另一台设备的进度将被丢弃（可先导出本地存档保底）。";
     if (sync.remoteView.kind === "corrupt") return "云端存档已损坏——上传将以本地存档修复它。";
-    // An UNKNOWN cloud is destructive too: the last probe never saw what is
-    // up there, so an overwrite must still say its cost out loud (decision D7).
-    if (sync.remoteView.kind === "unknown") return "云端状态未知（尚未检查成功）——若云端已有存档，上传将覆盖它。";
-    return null;
+    // The views are display caches (#31), so even "empty" is the last probe's
+    // CLAIM, not a fact — every overwrite says its cost out loud first
+    // (decision D7), and no view state gets to skip that.
+    if (sync.remoteView.kind === "empty") return "云端当前显示无存档——上传即新建；若显示已过期而云端实际有档，它将被覆盖。";
+    return "云端状态未知（尚未检查成功）——若云端已有存档，上传将覆盖它。";
+  }
+
+  /** The mirror warning: a download overwrites the LOCAL slot, cache or not. */
+  function downloadWarning(): string {
+    if (sync.localView.kind === "save") return "本地存档将被云端存档覆盖（可先导出本地存档保底）。";
+    return "本地当前显示无存档（显示可能过期）——若本地实际已有存档，下载将覆盖它（可先导出保底）。";
   }
 
   return (
@@ -155,7 +164,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             <button style={buttonStyle} onClick={() => void run(() => sync.download())}>
               以云端为准（载入云端）
             </button>
-            <button style={buttonStyle} onClick={() => sync.dismiss()}>
+            <button style={buttonStyle} onClick={() => void run(async () => sync.dismiss())}>
               继续本地玩（暂不同步）
             </button>
             {localSnapshot && (
@@ -167,7 +176,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
           {confirming === "upload" && (
             <div style={rowStyle}>
               <ConfirmButtons
-                warning={uploadWarning() ?? ""}
+                warning={uploadWarning()}
                 confirmLabel="确认覆盖"
                 onConfirm={() => void run(() => sync.upload())}
                 onCancel={() => setConfirming(null)}
@@ -181,39 +190,42 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
         <div style={rowStyle}>
           {confirming === "upload" ? (
             <ConfirmButtons
-              warning={uploadWarning() ?? ""}
+              warning={uploadWarning()}
               confirmLabel="确认上传"
               onConfirm={() => void run(() => sync.upload())}
               onCancel={() => setConfirming(null)}
             />
           ) : confirming === "download" ? (
             <ConfirmButtons
-              warning="本地存档将被云端存档覆盖（可先导出本地存档保底）。"
+              warning={downloadWarning()}
               confirmLabel="确认下载"
               onConfirm={() => void run(() => sync.download())}
               onCancel={() => setConfirming(null)}
             />
           ) : (
             <>
+              {/* The views gate the BUTTONS (decision D3 kept) but never the
+                  CONFIRM: a stale cache must not skip the cost notice (D7). */}
               <button
                 style={buttonStyle}
-                onClick={() => {
-                  if (uploadWarning()) setConfirming("upload");
-                  else void run(() => sync.upload());
-                }}
+                onClick={() => setConfirming("upload")}
                 disabled={!localSnapshot || busy || state.phase === "auth-expired"}
               >
                 上传到云端
               </button>
               <button
                 style={buttonStyle}
-                onClick={() => {
-                  if (sync.localView.kind === "save") setConfirming("download");
-                  else void run(() => sync.download());
-                }}
+                onClick={() => setConfirming("download")}
                 disabled={sync.remoteView.kind !== "save" || busy || state.phase === "auth-expired"}
               >
                 下载云端存档
+              </button>
+              <button
+                style={buttonStyle}
+                onClick={() => void run(() => sync.probe())}
+                disabled={busy || state.phase === "auth-expired"}
+              >
+                重新检查
               </button>
               {localSnapshot && (
                 <button style={buttonStyle} onClick={() => exportSnapshot(localSnapshot)}>

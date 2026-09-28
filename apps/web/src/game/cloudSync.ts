@@ -136,12 +136,15 @@ export class CloudSync {
   /**
    * Shows both sides (decision D3): empty / save / corrupt per slot. Two
    * byte-equal saves are "in-sync"; two different ones go to the compare
-   * conflict — the probe never picks a winner by itself.
+   * conflict — the probe never picks a winner by itself. The verdict is
+   * this comparison's own answer: "in-sync" or nothing — a fresh probe
+   * never leaves an older verdict contradicting what it just read.
    */
   probe(): Promise<SyncState> {
     return this.run("probe", async () => {
       this.views.remote = await this.remoteViewToleratingCorrupt();
       this.views.local = await this.readLocalView();
+      this.outcome = "none";
       if (this.views.local.kind === "save" && this.views.remote.kind === "save") {
         if (JSON.stringify(this.views.local.snapshot) === JSON.stringify(this.views.remote.snapshot)) {
           this.outcome = "in-sync";
@@ -265,7 +268,13 @@ export class CloudSync {
     this.transition({ phase: "busy", action });
     return work().then(
       (next) => this.transition(next),
-      (error: unknown) => this.transition(this.failureState(error, action)),
+      (error: unknown) => {
+        const landed = this.transition(this.failureState(error, action));
+        // Tell the session only AFTER the state landed: the expiry notifies
+        // listeners synchronously, and none of them should read "busy" here.
+        if (landed.phase === "auth-expired") this.session?.markExpired();
+        return landed;
+      },
     );
   }
 
@@ -279,15 +288,15 @@ export class CloudSync {
   }
 
   /**
-   * The one failure verdict (decision D5/D6): `auth` ends the instance and
-   * tells the session; `corrupt` names the damage; everything else — every
-   * unknown error included — is `network` (retryable is the safe reading).
-   * A `conflict` here is unreachable (upload intercepts its own), mapped to
-   * `network` only so the taxonomy stays closed.
+   * The one failure verdict (decision D5/D6): `auth` ends the instance (the
+   * session is told by {@link run} once the state has landed); `corrupt`
+   * names the damage; everything else — every unknown error included — is
+   * `network` (retryable is the safe reading). A `conflict` here is
+   * unreachable (upload intercepts its own), mapped to `network` only so
+   * the taxonomy stays closed.
    */
   private failureState(error: unknown, action: SyncAction): SyncState {
     if (error instanceof CloudSaveError && error.kind === "auth") {
-      this.session?.markExpired();
       return { phase: "auth-expired" };
     }
     return {
@@ -298,7 +307,7 @@ export class CloudSync {
   }
 
   /** The remote slot's view, absorbing `corrupt` into the view instead of failing. */
-  private async remoteViewToleratingCorrupt(): Promise<SlotView> {
+  private async remoteViewToleratingCorrupt(): Promise<ReadSlotView> {
     try {
       const record = await this.cloud.load();
       return record === null ? { kind: "empty" } : { kind: "save", snapshot: record };
