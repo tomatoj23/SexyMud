@@ -12,6 +12,9 @@ import { CloudSaveError } from "./cloudSaveStore.js";
  * nothing. The probe only shows both sides; every write is a button. Byte-
  * equal saves are "in sync"; anything else is the player's call, because a
  * snapshot is one whole JSON document with no field-level merge to invent.
+ * What an upload SENDS is the local slot's current content, read by the
+ * machine itself (#31): the views below are last-known display caches and
+ * can never be a payload.
  *
  * **Adjudication has three exits (decision D7)**: keep local (the deliberate
  * replace — `load` first observes, then `save` CAS-overwrites the other
@@ -39,6 +42,9 @@ export type SlotView =
   | { kind: "save"; snapshot: Snapshot }
   | { kind: "corrupt" };
 
+/** What a READ of a slot can produce — `unknown` is "never read", not a read result. */
+type ReadSlotView = Exclude<SlotView, { kind: "unknown" }>;
+
 /** The last sync action's verdict — what the status line says. */
 export type SyncOutcome =
   | "none" // nothing synced yet
@@ -46,6 +52,7 @@ export type SyncOutcome =
   | "downloaded" // the cloud save came down into the local slot
   | "dismissed" // adjudicated: playing on locally, cloud untouched
   | "remote-empty" // nothing to download — absence is not failure
+  | "local-empty" // nothing to upload — the same absence, on the local side (#31)
   | "in-sync"; // both sides byte-equal
 
 export type SyncAction = "probe" | "upload" | "download";
@@ -65,8 +72,13 @@ export type SyncState =
     }
   | {
       phase: "failed";
-      /** `local` is the rare one: the local write itself refused (quota). */
-      failure: "network" | "corrupt" | "local";
+      /**
+       * `local` is the rare one: the local write itself refused (quota).
+       * `local-corrupt` is the upload's front half (#31): the local slot's
+       * text is damaged, so there is no payload to send — separate from
+       * `corrupt` (cloud damage), whose repair path IS the upload.
+       */
+      failure: "network" | "corrupt" | "local" | "local-corrupt";
       action: SyncAction;
     }
   | { phase: "auth-expired" };
@@ -142,13 +154,34 @@ export class CloudSync {
   }
 
   /**
-   * Uploads a snapshot into the cloud slot — create or the DELIBERATE
-   * replace (decision D8: observe first, then CAS). This is also the "keep
-   * local" exit of a conflict: same observe-then-write, same explicit
-   * overwrite the confirm dialog already named.
+   * Uploads the LOCAL SLOT's current save into the cloud slot — create or
+   * the DELIBERATE replace (decision D8: observe first, then CAS). This is
+   * also the "keep local" exit of a conflict: same observe-then-write, same
+   * explicit overwrite the confirm dialog already named.
+   *
+   * **The payload is the slot's current content, read HERE (#31 D1)**:
+   * `upload()` takes no argument, so no display view can be the payload
+   * source — "thought it saved, saved the stale one" dies at the signature.
+   * Acquisition is the action's very front, before any backend call (#31
+   * D2): an empty slot is `"local-empty"` (absence is not failure — the dual
+   * of `"remote-empty"`), a damaged one is `failed`/`"local-corrupt"` for
+   * the player to repair locally. Neither is a network problem and neither
+   * pretends to be an "another device" conflict. The read IS the view
+   * refresh (#31 D3): every upload re-reads the local view, success or
+   * failure — `download()` refreshes the same view on its success path.
    */
-  upload(snapshot: Snapshot): Promise<SyncState> {
+  upload(): Promise<SyncState> {
     return this.run("upload", async () => {
+      const view = await this.readLocalView();
+      this.views.local = view;
+      if (view.kind === "corrupt") {
+        return { phase: "failed", failure: "local-corrupt", action: "upload" };
+      }
+      if (view.kind === "empty") {
+        this.outcome = "local-empty";
+        return { phase: "idle" };
+      }
+      const snapshot = view.snapshot;
       let damage: CloudSaveError | null = null;
       try {
         await this.cloud.load(); // observe: arm the CAS, see what is there
@@ -276,7 +309,7 @@ export class CloudSync {
   }
 
   /** The local slot's view — any local read failure is visible damage. */
-  private async readLocalView(): Promise<SlotView> {
+  private async readLocalView(): Promise<ReadSlotView> {
     try {
       const record = await this.local.load();
       return record === null ? { kind: "empty" } : { kind: "save", snapshot: record };

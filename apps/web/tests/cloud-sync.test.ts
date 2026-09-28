@@ -24,6 +24,11 @@ import { memoryStorage, snapshotFixture } from "./support.js";
  *     "not saved" never pretends "saved", never falls back to local-only;
  *   - an `auth` failure ends the instance (decision D6): the re-login guide
  *     comes up and NOTHING retries on its own.
+ *
+ * #31 adds the payload rule: an upload SENDS the local slot's current
+ * content, read by the machine (`upload()` takes no argument) — and the
+ * read is the action's very front, so an empty slot ("local-empty") or a
+ * damaged one ("local-corrupt") never reaches the backend at all.
  */
 
 /** A RAM transport keeping the contract's law: `write` is an atomic CAS. */
@@ -191,10 +196,11 @@ describe("CloudSync — probe shows both sides; sync is never automatic (decisio
 describe("CloudSync — upload: observe then write (decision D8)", () => {
   it("first upload creates the cloud save — the 'enable cross-device' moment", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
     const snapshot = snapshotFixture({ nowTick: 20 });
+    await local.save(snapshot);
 
-    await sync.upload(snapshot);
+    await sync.upload();
 
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("saved");
@@ -203,22 +209,25 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
 
   it("upload over an existing cloud save is the DELIBERATE replace — observe first, then write", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
     seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    const mine = snapshotFixture({ nowTick: 20 });
+    await local.save(mine);
 
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
 
-    expect(remoteText(transport)).toBe(JSON.stringify(snapshotFixture({ nowTick: 20 })));
+    expect(remoteText(transport)).toBe(JSON.stringify(mine));
     expect(sync.last).toBe("saved");
   });
 
   it("upload over a CORRUPT cloud save lands — the repair path #29 deliberately kept open", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
     transport.slots.set(KEY, { text: "{not json", revision: 1 });
     const snapshot = snapshotFixture({ nowTick: 20 });
+    await local.save(snapshot);
 
-    await sync.upload(snapshot);
+    await sync.upload();
 
     expect(remoteText(transport)).toBe(JSON.stringify(snapshot));
     expect(sync.last).toBe("saved");
@@ -226,14 +235,15 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
 
   it("a save refused by another session's write surfaces as 'conflict' with the other side visible", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
     const theirs = snapshotFixture({ nowTick: 99 });
+    await local.save(snapshotFixture({ nowTick: 20 }));
     // The world moves between our observe and our write — exactly the CAS race.
     transport.onceAfterRead = () => {
       transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 2 });
     };
 
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
 
     expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
     expect(sync.remoteView).toEqual({ kind: "save", snapshot: theirs });
@@ -241,10 +251,11 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
 
   it("offline: upload fails 'network' and BOTH stores are untouched — 'not saved' never pretends 'saved' (decision D8)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
     transport.failing = new CloudSaveError("network", "offline");
 
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "upload" });
     expect(transport.slots.has(KEY)).toBe(false); // remote untouched
@@ -252,14 +263,15 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
 
   it("an UNREPAIRABLE corrupt record reports 'corrupt', not a phantom 'another device' conflict (decision D8)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
     const theirs = snapshotFixture({ nowTick: 99 });
     transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 1 });
+    await local.save(snapshotFixture({ nowTick: 20 }));
     // The damage is in the revision ANCHOR: the store cannot arm it (#29), so
     // no write can CAS against this row — the upload must say THAT.
     transport.revisionDamage = 17;
 
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "corrupt", action: "upload" });
     expect(remoteText(transport)).toBe(JSON.stringify(theirs)); // nothing overwrote the damage
@@ -267,12 +279,78 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
 
   it("an unclassified rejection is 'network' — the host's defensive reading of the unknown", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync } = rig();
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
     transport.failing = new TypeError("Failed to fetch"); // outside the contract's error shape
 
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "upload" });
+  });
+});
+
+describe("CloudSync — the upload payload is the LOCAL SLOT's current content (#31)", () => {
+  it("AC1 fresh payload: the slot updates after the probe and upload pushes the NEW save, not the stale view", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.probe(); // the display view is now last-known "nowTick 20"
+    const newer = snapshotFixture({ nowTick: 55 });
+    await local.save(newer); // the player played on — the view is stale from here
+
+    await sync.upload();
+
+    expect(sync.last).toBe("saved");
+    expect(remoteText(transport)).toBe(JSON.stringify(newer));
+  });
+
+  it("AC2 payload self-read: upload() takes no argument and never consults the view — the panel is not the payload source", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    const mine = snapshotFixture({ nowTick: 20 });
+    await local.save(mine);
+    expect(sync.localView.kind).toBe("unknown"); // no probe: the display view knows nothing
+
+    await sync.upload();
+
+    expect(remoteText(transport)).toBe(JSON.stringify(mine));
+  });
+
+  it("AC3 empty slot → 'local-empty' and ZERO backend calls — absence is not failure (the dual of 'remote-empty')", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, sync } = rig();
+
+    await sync.upload();
+
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.last).toBe("local-empty");
+    expect(transport.reads).toBe(0); // the payload check is at the very front — no backend at all
+    expect(transport.writes).toBe(0);
+  });
+
+  it("AC3 damaged slot → failed 'local-corrupt' and ZERO backend calls — the damage is local, never a phantom conflict", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, sync } = rig();
+    localStorage.setItem(KEY, "{not json");
+
+    await sync.upload();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-corrupt", action: "upload" });
+    expect(transport.reads).toBe(0);
+    expect(transport.writes).toBe(0);
+  });
+
+  it("AC4 view symmetry: a successful upload refreshes the local view — stale display data dies here", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.probe(); // the view is last-known "nowTick 20"
+    const newer = snapshotFixture({ nowTick: 55 });
+    await local.save(newer);
+
+    await sync.upload();
+
+    expect(sync.localView).toEqual({ kind: "save", snapshot: newer });
   });
 });
 
@@ -359,7 +437,7 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, sync, localSnapshot } = await conflictRig();
 
-    await sync.upload(localSnapshot);
+    await sync.upload();
 
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("saved");
@@ -381,11 +459,12 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
 describe("CloudSync — an auth failure ends the instance (decision D6)", () => {
   it("an expired session → the re-login guide, the expiry sink is told, and nothing retries", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { transport, sync, expired } = rig();
+    const { transport, local, sync, expired } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
     // The session dies mid-flow: the observe succeeds, the write is refused.
     transport.failWrite = new CloudSaveError("auth", "session expired");
 
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
 
     expect(sync.state.phase).toBe("auth-expired");
     expect(expired).toEqual(["expired"]); // CloudAuth flips to its 'expired' prompt
@@ -400,7 +479,7 @@ describe("CloudSync — an auth failure ends the instance (decision D6)", () => 
     expect(sync.state.phase).toBe("auth-expired");
 
     const readsBefore = transport.reads;
-    await expect(sync.upload(snapshotFixture())).rejects.toThrow(/sign in again/i);
+    await expect(sync.upload()).rejects.toThrow(/sign in again/i);
     await expect(sync.download()).rejects.toThrow(/sign in again/i);
     await expect(sync.probe()).rejects.toThrow(/sign in again/i);
 
@@ -412,10 +491,11 @@ describe("CloudSync — an auth failure ends the instance (decision D6)", () => 
 describe("CloudSync — busy is a refusal, not a queue", () => {
   it("an overlapping action rejects while one is in flight", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { sync } = rig();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
 
-    const first = sync.upload(snapshotFixture({ nowTick: 20 }));
-    await expect(sync.upload(snapshotFixture({ nowTick: 30 }))).rejects.toThrow(/in flight/i);
+    const first = sync.upload();
+    await expect(sync.upload()).rejects.toThrow(/in flight/i);
     await first;
   });
 
@@ -432,12 +512,13 @@ describe("CloudSync — busy is a refusal, not a queue", () => {
 describe("CloudSync — state changes are observable (the panel follows, never polls)", () => {
   it("every transition notifies subscribers", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { sync } = rig();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
     const seen: string[] = [];
     const unsubscribe = sync.subscribe(() => seen.push(sync.state.phase));
 
     await sync.probe();
-    await sync.upload(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
     unsubscribe();
 
     expect(seen).toEqual(["busy", "idle", "busy", "idle"]);

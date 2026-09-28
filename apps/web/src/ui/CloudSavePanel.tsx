@@ -13,6 +13,7 @@ const VERDICT: Record<SyncOutcome, string> = {
   downloaded: "云端存档已载入本地 ✓",
   dismissed: "继续本地玩——云端未同步",
   "remote-empty": "云端没有存档",
+  "local-empty": "本地没有存档可上传",
   "in-sync": "本地与云端一致 ✓",
 };
 
@@ -125,7 +126,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
 
       {state.phase === "failed" && (
         <p style={{ color: "#b91c1c" }}>
-          {state.action === "upload" && "没存上："}
+          {state.action === "upload" && state.failure !== "local-corrupt" && "没存上："}
           {state.action === "download" && "没下载到本地："}
           {state.action === "probe" && "检查失败："}
           {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
@@ -134,6 +135,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               ? "云端存档损坏且无法经保存修复（记录锚已损坏）——本地存档无恙，可导出保底。"
               : "云端存档损坏，无法下载——若损坏仅在内容，上传本地存档可修复它。")}
           {state.failure === "local" && "本地写入失败（可能空间不足）。"}
+          {state.failure === "local-corrupt" && "本地存档损坏，无法上传——先修复或重置本地存档。"}
         </p>
       )}
 
@@ -167,7 +169,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               <ConfirmButtons
                 warning={uploadWarning() ?? ""}
                 confirmLabel="确认覆盖"
-                onConfirm={() => localSnapshot && void run(() => sync.upload(localSnapshot))}
+                onConfirm={() => void run(() => sync.upload())}
                 onCancel={() => setConfirming(null)}
               />
             </div>
@@ -181,7 +183,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             <ConfirmButtons
               warning={uploadWarning() ?? ""}
               confirmLabel="确认上传"
-              onConfirm={() => localSnapshot && void run(() => sync.upload(localSnapshot))}
+              onConfirm={() => void run(() => sync.upload())}
               onCancel={() => setConfirming(null)}
             />
           ) : confirming === "download" ? (
@@ -197,7 +199,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                 style={buttonStyle}
                 onClick={() => {
                   if (uploadWarning()) setConfirming("upload");
-                  else if (localSnapshot) void run(() => sync.upload(localSnapshot));
+                  else void run(() => sync.upload());
                 }}
                 disabled={!localSnapshot || busy || state.phase === "auth-expired"}
               >
