@@ -70,7 +70,7 @@ interface Authority {
 - `meta` 含 **seq 范围**，让 UI 能做间隙检测与重放。
 依据：ADR-0017、ADR-0025 §一.4
 
-> **落地（M4-T7，#26）**：`LocalAuthority` 住在宿主（`apps/web/src/game/localAuthority.ts`）——包本地引擎实例，按 `spec/04` §4.1 的固定四步分发（预检 → 推进 → 分发 → `observeDispatch`），结算事件排在命令自身事件之前；`subscribe` **每个被消耗的 seq 发一个批次**（`meta` = 该次 seq；`invalid` 不消耗 seq、也不发批次，调用方可原 seq 重发——批次流因此是连续的 seq 台账，缺口 = 真丢了投递）；`snapshot()` = `serializeWorld(state, { nowTick, rngState, due })`（§1.5 约定 3）；心跳是接口之外的宿主方法 **`heartbeat(seq)`**——无命令的推进，**seq 由调用方显式给**、与命令 seq 同一单调空间，只跑世界层（ADR-0034 §5）。到期桶**必传**（布雷、触发、存档是同一个桶 —— 存档边界拿空 `due` 盖住活引信，正是 `spec/04` §4.5 要封死的那种丢失）；交互输入队列（`CommandDeps.inputs`）本票未接、`takeInput()` 恒空，随交互流那张票走。`RemoteAuthority` 仍是将来；事件的**收件人路由**走 `Message`（`spec/05` 输出管线，未实现），订阅流只带纯语义事件。
+> **落地（M4-T7，#26）**：`LocalAuthority` 住在宿主（`apps/web/src/game/localAuthority.ts`）——包本地引擎实例，按 `spec/04` §4.1 的固定四步分发（预检 → 推进 → 分发 → `observeDispatch`；四步时序唯一实现在 `command/driver.ts`，#35——本行的 `LocalAuthority` 是薄 adapter），结算事件排在命令自身事件之前；`subscribe` **每个被消耗的 seq 发一个批次**（`meta` = 该次 seq；`invalid` 不消耗 seq、也不发批次，调用方可原 seq 重发——批次流因此是连续的 seq 台账，缺口 = 真丢了投递）；`snapshot()` = `serializeWorld(state, { nowTick, rngState, due })`（§1.5 约定 3）；心跳是接口之外的宿主方法 **`heartbeat(seq)`**——无命令的推进，**seq 由调用方显式给**、与命令 seq 同一单调空间，只跑世界层（ADR-0034 §5）。到期桶**必传**（布雷、触发、存档是同一个桶 —— 存档边界拿空 `due` 盖住活引信，正是 `spec/04` §4.5 要封死的那种丢失）；交互输入队列（`CommandDeps.inputs`）本票未接、`takeInput()` 恒空，随交互流那张票走。`RemoteAuthority` 仍是将来；事件的**收件人路由**走 `Message`（`spec/05` 输出管线，未实现），订阅流只带纯语义事件。
 
 ## 4. 三类失败（重试语义完全不同）
 

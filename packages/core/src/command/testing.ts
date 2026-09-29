@@ -1,9 +1,9 @@
 import type { Command, CommandResult, GameEvent } from "../types.js";
 import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
-import { createTickClock, observeDispatch } from "../clock.js";
+import { createTickClock } from "../clock.js";
 import type { TickClock } from "../clock.js";
-import { effectiveNowTick, parseCommand, runCommand } from "./pipeline.js";
+import { createDispatchDriver } from "./driver.js";
 import type { CommandSpec, Message } from "./pipeline.js";
 import type { SettleRequest } from "../time/settle.js";
 import type { DueBucket } from "../time/due.js";
@@ -13,9 +13,10 @@ import { mergeCmdSets } from "./cmdset.js";
 import type { CmdSetSource } from "./cmdset.js";
 
 /**
- * The command test harness (ADR-0023 §1). `call()` manually drives the four
- * stages and returns the recorded output, so every command gets at least one
- * `call()` case asserting its output sequence.
+ * The command test harness (ADR-0023 §1). `call()` drives one command through
+ * the dispatch driver — the ONE implementation of the driver-side four steps
+ * (spec/04 §4.1, ADR-0038) — and shapes the harness's exit, so every command
+ * gets at least one `call()` case asserting its output sequence.
  *
  * The injected dependencies: the tick clock (the engine's high-water mark,
  * which the harness owns between calls), output sink (collector), world
@@ -155,7 +156,7 @@ export interface CommandHarness<W> {
 
 export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarness<W> {
   // The high-water mark lives on the side that drives the world — here, the
-  // harness (spec/04 §2.2). runCommand stays a pure function of its inputs.
+  // harness (spec/04 §2.2). The pipeline stays a pure function of its inputs.
   const clock = createTestClock(options.nowTick ?? 0);
   const receiverSet = new Set(options.receivers);
   // One RNG stream per harness: a session replays as a command sequence, so
@@ -172,6 +173,11 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
       ? createVerbTable(mergeCmdSets(options.cmdsets).verbEntries())
       : undefined;
   let nextSeq = 1;
+
+  // One driver per harness (D5: one factory closure). The four steps and
+  // their rules live THERE (spec/04 §4.1, ADR-0038); this file is the exit:
+  // it decides who is a receiver and what the recorded output looks like.
+  const driver = createDispatchDriver<W>({ clock, settle: options.settle });
 
   return {
     clock,
@@ -191,7 +197,6 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         },
       };
       const deps = {
-        nowTick: clock.nowTick(),
         rng,
         world: options.liveWorld ? options.world : structuredClone(options.world),
         sink,
@@ -201,36 +206,13 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         predicates: options.predicates,
         due: options.due,
       };
-      let settled: Message[] = [];
-      if (options.settle !== undefined) {
-        // Advanced BEFORE the command runs, and only for an input that can
-        // become one: a malformed input must not fast-forward the world
-        // (spec/04 §4.1), so it never reaches this hook at all.
-        const parsed = parseCommand(spec, command, deps);
-        if (!parsed.ok) {
-          return {
-            result: { ok: false, seq: command.seq, kind: "invalid", reason: parsed.reason },
-            messages: [],
-          };
-        }
-        settled = options.settle({
-          // The same "now" the command will see, from the same one function.
-          toTick: effectiveNowTick(deps.nowTick, command),
-          seq: command.seq,
-          actorId: command.actorId,
-        });
-      }
-      const result = runCommand(spec, command, deps);
-      // Only a command that reached the execution stage moves the world
-      // (spec/04 §4.1): an invalid input must not fast-forward it.
-      observeDispatch(clock, command, result);
-      // Settlement events ride the command's seq and sit in front of its own
-      // events: the player reads "what happened while you were away" first.
-      const withSettlement = result.ok
-        ? { ...result, events: [...settled.map((message) => message.event), ...result.events] }
-        : result;
+      const { result, settled } = driver.dispatch(command, spec, deps);
+      // The harness's exit (AC4): settlement messages to declared receivers
+      // ride BEFORE the command's own sink messages — the player reads "what
+      // happened while you were away" first. The result's events are already
+      // ordered by the driver.
       return {
-        result: withSettlement,
+        result,
         messages: [...settled.filter((message) => receiverSet.has(message.to)), ...messages],
       };
     },

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   SAVE_VERSION,
@@ -291,5 +294,35 @@ describe("snapshot(): the save boundary (ADR-0033, O9)", () => {
     expect(data.due).toEqual([{ dueTick: 70, payload: { kind: "fuse" } }]);
     expect(data.entities["jia"]?.lastSeenTick).toBe(10);
     expect(r.fired).toEqual([]);
+  });
+});
+
+describe("the four-step sequence has one home (mechanical scan)", () => {
+  const file = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../src/game/localAuthority.ts",
+  );
+
+  it("localAuthority.ts delegates — it references none of the four primitives", () => {
+    const text = readFileSync(file, "utf8");
+    for (const id of ["parseCommand", "runCommand", "observeDispatch", "effectiveNowTick"]) {
+      expect(text, `localAuthority.ts must not reference ${id}`).not.toMatch(
+        new RegExp(`\\b${id}\\b`),
+      );
+    }
+  });
+
+  it("settleTo appears only as the injected function", () => {
+    const text = readFileSync(file, "utf8");
+    // The settler's method may enter the driver as a function value and
+    // nowhere else — an inline `settler.settleTo({...})` call would be a
+    // second, hand-rolled copy of the advance step.
+    const stripped = text.replace(/settler\.settleTo\b/g, "");
+    expect(stripped).not.toMatch(/\bsettleTo\b/);
+  });
+
+  it("localAuthority.ts drives through the driver, not its own copy", () => {
+    const text = readFileSync(file, "utf8");
+    expect(text).toMatch(/createDispatchDriver/);
   });
 });

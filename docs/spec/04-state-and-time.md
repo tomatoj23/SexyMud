@@ -279,16 +279,16 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 
 「推进到高水位」里的高水位含本条命令的 tick（`max(驱动侧水位, command.tick)`，§2.2），而 `invalid` 又不许推进 ⇒ **不能等分发完再回头推进**：那既要让命令跑在一个「还没结算到现在」的世界（炸弹该在 50 tick 炸、命令在 100 tick 却没看见），又要把结算事件插到已发出的事件之前。
 
-**驱动侧的固定四步**（`WorldRuntime`／宿主 `Authority`／测试 harness 都照这个顺序，测试 harness 已实现，见 `command/testing.ts` 的 `settle` 钩子）：
+**驱动侧的固定四步**——**唯一实现是 `command/driver.ts` 的 `createDispatchDriver`（#35／ADR-0038）**。测试 harness 的 `settle` 钩子与宿主 `Authority`（`apps/web` 的 `LocalAuthority`）都是它的**薄 adapter**：约定变结构，「忘掉一步」不再靠自觉，机械扫描钉死两侧 adapter 不再引用四原语：
 
 1. 先跑一次**预检**（`parseCommand(spec, command, deps)`，只跑 parse 段）：解析失败就直接回 `invalid`、**不再调 `runCommand`**，推进函数一次都不会被调用，水位也不动；
-2. 解析成功才**推进**：`settler.settleTo({ toTick: effectiveNowTick(水位, command), seq, actorId })`（`time/settle.ts`，两层，见 §4.3）；
+2. 解析成功才**推进**：`settle({ toTick: effectiveNowTick(水位, command), seq, actorId })`（注入的推进钩子——宿主传 `settler.settleTo`，两层，见 §4.3）；
 3. 再跑 `runCommand`（它内部会再解析一次 —— 与「分发器已匹配动词、管线内再切一次」同一个既有取舍，代价是 **parse 段必须无副作用**）；
-4. 最后 `observeDispatch` 抬水位，并把结算事件**排在命令自身事件之前**返回。
+4. 最后 `observeDispatch` **白名单守卫**（`ok`／`rejected` 才抬水位，`invalid` 不抬）；**抬水位在推进内**（`settleTo` 内部就 `clock.observe`），**无推进路径由 `observeDispatch` 兜底**（无钩子 harness 塌缩为「分发→observe」两步时它就是唯一的抬水位者）。结算事件**排在命令自身事件之前**返回——这条排前规则的实现在 driver 的返回值里，出口（消息路由／批次投递）各自保持。
 
-「现在的算法」同样只有一个副本：`effectiveNowTick(水位, command)`（`command/pipeline.ts`）—— 预检、分发、驱动侧的推进目标都调它，两个 tick 的合法性也由它一起挡。
+「现在的算法」同样只有一个副本：`effectiveNowTick(水位, command)`（`command/pipeline.ts`）—— 预检、分发、驱动侧的推进目标都调它，两个 tick 的合法性也由它一起挡。`deps.nowTick` 的读数也收进 driver（adapter 交进来的 deps **没有**这个字段，第二口钟无处可插）。
 
-⚠️ 全程跑这四步的有两处：**测试 harness**（`HarnessOptions.settle`）与**宿主 `Authority`**（`apps/web` 的 `LocalAuthority`，#26）；`WorldRuntime` 持有高水位但**不分发**（分发是宿主 `Authority` 的事，见 O10）。没有配推进钩子的 harness 不需要预检，也就不跑它。
+⚠️ **没有钩子就没有世界要保护**：无推进钩子的 harness 不预检、不跑第 2 步，塌缩为「分发→observe」两步——这条怪癖观测等价（不预检时 `runCommand` 内部 parse 返回的 invalid 形状完全一致），原样保留（D4）。`WorldRuntime` 持有高水位但**不分发**（分发是宿主 `Authority` 的事，见 O10）。
 
 ⚠️ 只有 1 能挡住「发一堆乱码快进世界」：若跳过预检直接按 `command.tick` 推进，一条 tick=1000000 的乱码照样把到期桶提前引爆 —— 水位虽不抬，**世界已经动了**。
 
@@ -329,7 +329,7 @@ pulses = min(floor((nowTick - startTick) / interval), maxPulses) - applied
 > - 未知实体、非法 `toTick` **大声失败**。
 > - **状态树新增 `lastSeenTick` 槽**（`state/tree.ts`），`WorldRuntime.addEntity` 用**当前 tick** 种子（不是 0），且 `WorldRuntime` 现在**持有 `clock`**（§2.2「高水位住在驱动世界那一侧」的字面实现）；恢复路径 `attachEntity` 不重新种子（恢复＝重放树）。
 > - 推进一次＝两个回调各一次，**与跨度长度无关**（1 万还是 100 万 tick 都是一次，§4.4 的构造性保证）。
-> - 驱动侧预检在 `command/pipeline.ts` 的 `parseCommand`，harness 的 `settle` 钩子按上面四步跑（§4.1）。
+> - 驱动侧预检在 `command/pipeline.ts` 的 `parseCommand`，四步时序在 `command/driver.ts` 的 `createDispatchDriver`（§4.1）——adapter 只注 `settle` 钩子，不排步骤。
 > - 测试：`tests/settle.test.ts`（22 例）。
 
 ### 4.4 大跨度：靠构造性保证，不加数值上限
@@ -428,4 +428,4 @@ Script 实体、per-object timer、线程、async/await、任何墙钟。
 | ~~O7~~ | ~~**创建 `calendar.json` 那张票的文档同步债**~~ | **✅ 已在 #21 一并改**：`docs/agents/content.md` 的 config 清单（四类 + 新增「日历集合」字段约定节）、`docs/spec/06` 状态行与 `spec/00` 的 schema 总数口径（19 → **20**、`config` 三类 → **四类**、14 → **15** 待重估）、`HANDBOOK` 三处数字与 `content/config/` 文件数。**编辑器表单那一处**待 `apps/editor` 脱离占位后随行 |
 | ~~O8~~ | ~~**★引擎侧要用到 calendar／到期桶处理器时，走什么通道**~~ | **✅ 已定案（#23）**：**新增 `CommandDeps.due?: DueBucket`**，照 `subjectOf` 的先例**由宿主注入**（不是让命令执行函数读内容注册表），命令侧经 `ctx.due.schedule(dueTick, payload)` 布雷；`ctx.due` 只暴露窄接口 `DueScheduler`（能布雷，不能触发、不能窥视），缺 `deps.due` 时布雷**大声失败**（`NO_DUE_BUCKET`，与 `deps.verbs` 缺失同律）。**触发**那一半的处理器（`fire`）在 `createDueBucket({ fire })` 构造时注入 —— 引擎全程不知道 payload 是什么。**calendar 那一半**走的是另一条既有通道：注册表 `calendar?` → `createGameTime`（#21） |
 | ~~O9~~ | ~~**★`serializeWorld`／`restoreWorld` 的签名怎么容纳 `nowTick`／`rngState`**~~ | **✅ 已定案（#24）：选 (b)** —— `serializeWorld(world, meta)`（`meta` **必填**）／`restoreWorld(snapshot) → { state, meta }`，`WorldMeta = { nowTick, rngState, due }`。理由与被否的两条见 §1.5 约定 3。`due` 是 #23 的交接（ADR-0033 §2 只列了三样），一并进了 v2 |
-| O10 | **`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提） | 今天 `runCommand` 内部算了 `max(deps.nowTick, command.tick)` 却**不回传**，驱动侧必须自己再调 `observeDispatch` 才能把水位持久化。**忘调的后果是「世界静默不前进」，不报错** —— 属最难查的一类（所有时间判定仍自洽，只是永远停在旧水位）。两条路：(a) 给 `ok`／`rejected` 结果加一个 `nowTick` 字段（动 `spec/01` §2.2 的结果形状，且 `invalid` 不给）；(b) 不动形状，约定「驱动侧一律经 `observeDispatch`」，由 #22（`WorldRuntime` 侧）与 #26（宿主 Authority）各自照做。倾向 **(b)** —— 心跳（无命令）也要抬水位，它本来就没有 `CommandResult` 可用，(a) 救不了那一半。**归 #22／#26**。⚠️ **#22 已落驱动侧那一半**：`WorldRuntime` 现在**持有 `clock`**、`addEntity` 从它取当前 tick 种子，测试 harness 的 `settle` 钩子按「预检 → 推进 → 分发 → `observeDispatch`」四步跑（§4.1）；**宿主 `Authority` 那一半已由 #26 落**（照同一四步做，**不**指望 `runCommand` 回传水位）。⚠️ **#26 落的形状**：`apps/web` 的 `LocalAuthority` 照同一四步跑（预检 → 推进 → 分发 → `observeDispatch`），并带 `heartbeat(seq)`（心跳＝无命令的推进，seq 由调用方显式给、与命令 seq 同一单调空间）与 `snapshot()`（`serializeWorld(state, { nowTick, rngState, due })`） |
+| ~~O10~~ | ~~**`runCommand` 算出的 `nowTick` 要不要回传给驱动侧**（#20 复查新提）~~ | **✅ 已收口（#35）**：(b)「约定驱动侧一律经 `observeDispatch`」被 **driver 结构取代**——四步时序收成 `command/driver.ts` 的 `createDispatchDriver`（ADR-0038），`deps.nowTick` 读数一并收进 driver（adapter 交进来的 deps 没有这个字段，第二口钟无处可插）；「忘调＝世界静默不前进」从靠自觉变成写不出来，机械扫描钉死两侧 adapter 不再引用 `parseCommand`／`runCommand`／`observeDispatch`／`effectiveNowTick`。历史：本行原是「(a) 结果加 `nowTick` 回传 vs (b) 约定经 `observeDispatch`」二选一并归 #22／#26 各自手抄 (b)——两份副本实测漂出 6 处差异，#35 把它们并成一份（harness 的 `settle` 钩子与 `LocalAuthority` 退成薄 adapter，心跳同归 driver）；(a) 的被否理由（动 `spec/01` §2.2 结果形状、心跳没有 `CommandResult` 可用）不过时 |

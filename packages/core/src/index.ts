@@ -29,6 +29,13 @@ export type {
   PredicateRegistry,
 } from "./conditions.js";
 export { effectiveNowTick, parseCommand, runCommand } from "./command/pipeline.js";
+export { createDispatchDriver } from "./command/driver.js";
+export type {
+  DispatchDriver,
+  DispatchDriverOptions,
+  DispatchOutcome,
+  HeartbeatRequest,
+} from "./command/driver.js";
 export type {
   CommandContext,
   CommandDeps,

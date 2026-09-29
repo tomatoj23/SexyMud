@@ -16,13 +16,10 @@ import type {
   WorldRuntime,
 } from "@sexymud/core";
 import {
+  createDispatchDriver,
   createSettler,
   createVerbTable,
-  effectiveNowTick,
   mergeCmdSets,
-  observeDispatch,
-  parseCommand,
-  runCommand,
   serializeWorld,
 } from "@sexymud/core";
 import type { HostClock } from "./hostClock.js";
@@ -30,20 +27,15 @@ import type { HostClock } from "./hostClock.js";
 /**
  * `LocalAuthority` — the local-first `Authority` (ADR-0017, spec/01 §3): the
  * side that DRIVES the world in production. It is the host counterpart of the
- * test harness (`createCommandHarness`), running the same fixed four steps
- * (spec/04 §4.1):
+ * test harness (`createCommandHarness`), and like it, it is a thin adapter
+ * over the dispatch driver (`command/driver.ts`, spec/04 §4.1): the fixed
+ * four steps and their rules live THERE, once (ADR-0038). What stays here is
+ * the resolve step in front (which spec does this input name?) and the exit
+ * behind (one delivery per consumed seq).
  *
- *   1. PRE-FLIGHT — parse only. An input that cannot become a command returns
- *      `invalid` and the world is not advanced at all.
- *   2. SETTLE — `settleTo` up to the "now" this command sees: world layer
- *      first, then THIS actor's entity layer (spec/04 §4.3).
- *   3. DISPATCH — `runCommand`.
- *   4. OBSERVE — `observeDispatch` raises the high-water mark, and the
- *      settlement events ride in front of the command's own events.
- *
- * ⚠️ `runCommand` reports no "now" back — the mark moves through
- * `observeDispatch` and nowhere else (spec/04 §6 O10, option (b)). Forgetting
- * it would freeze the world silently, so the step lives here, once.
+ * ⚠️ Nothing here sequences a dispatch by hand: forgetting one of the steps
+ * freezes the world SILENTLY (O10's failure mode), and "the order exists once"
+ * is the whole point of the driver.
  *
  * Everything time-shaped is injected: the tick a command carries is built by
  * the caller from the {@link HostClock}, and a heartbeat names its own seq.
@@ -117,6 +109,14 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
   });
   const listeners = new Set<GameListener>();
 
+  // One driver per Authority (D5: one factory closure). The advance hook is
+  // the settler's own function, injected as a value — the four steps
+  // themselves are the driver's business.
+  const driver = createDispatchDriver<WorldRuntime>({
+    clock: runtime.clock,
+    settle: (request) => settler.settleTo(request),
+  });
+
   /**
    * One delivery per CONSUMED seq — `ok`, `rejected`, a heartbeat — even when
    * it carries no events. `invalid` consumes no seq and produces no delivery,
@@ -144,12 +144,27 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
 
   const dispatchNow = (command: Command): CommandResult => {
     const table = verbTableFor(command.actorId);
+    // The resolve step (C4's domain) stays with the adapter — the driver
+    // takes a spec, "which spec does this input name" is this side's loud
+    // business. An input no verb matches is answered HERE, before anything
+    // settles (it must not fast-forward the world, spec/04 §4.1).
+    const match = table.match(command.raw);
+    if (!match.ok) {
+      return { ok: false, seq: command.seq, kind: "invalid", reason: match.reason };
+    }
+    const spec = specs.get(match.commandKey);
+    if (spec === undefined) {
+      // Wiring bug, not play: a verb routed to a key nobody bound behaviour
+      // to. Loud, like every unbound seam here.
+      throw new Error(
+        `local authority: no spec bound to command key "${match.commandKey}" (verb "${match.verb}")`,
+      );
+    }
     // What the execution stage said, in order. Recipient routing rides the
     // `Message` (spec/05 output pipeline, not built yet); the subscriber
     // stream is the semantic journal, so only the events are kept here.
     const emitted: GameEvent[] = [];
     const deps = {
-      nowTick: runtime.clock.nowTick(),
       rng,
       world: runtime,
       sink: {
@@ -163,59 +178,28 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
       due: bucket,
     };
 
-    // 1. Pre-flight: which spec does this input name, and can it parse? An
-    // input that cannot become a command must not fast-forward the world
-    // (spec/04 §4.1) — so it is answered here, before anything settles.
-    const match = table.match(command.raw);
-    if (!match.ok) {
-      return { ok: false, seq: command.seq, kind: "invalid", reason: match.reason };
-    }
-    const spec = specs.get(match.commandKey);
-    if (spec === undefined) {
-      // Wiring bug, not play: a verb routed to a key nobody bound behaviour
-      // to. Loud, like every unbound seam here.
-      throw new Error(
-        `local authority: no spec bound to command key "${match.commandKey}" (verb "${match.verb}")`,
-      );
-    }
-    const parsed = parseCommand(spec, command, deps);
-    if (!parsed.ok) {
-      return { ok: false, seq: command.seq, kind: "invalid", reason: parsed.reason };
-    }
+    // The four steps and their rules run in the driver (spec/04 §4.1): this
+    // adapter never sequences a dispatch by hand.
+    const { result, settled } = driver.dispatch(command, spec, deps);
 
-    // 2. Settle — the same "now" the command will see, from the same one
-    // function. Settlement events come back in delivery order. The parse
-    // stage runs twice by design (pre-flight + the real run), which is why
-    // it must be PURE (spec/04 §4.1): an impure parse that passed the
-    // pre-flight and then failed would leave the world settled for an
-    // `invalid` result — unreachable under that contract, exactly as in the
-    // test harness.
-    const settled = settler.settleTo({
-      toTick: effectiveNowTick(deps.nowTick, command),
-      seq: command.seq,
-      actorId: command.actorId,
-    });
-
-    // 3. Dispatch.
-    const result = runCommand(spec, command, deps);
-
-    // 4. Observe: only a command that reached the execution stage moves the
-    // world's high-water mark (spec/04 §4.1).
-    observeDispatch(runtime.clock, command, result);
-
-    // Settlement events ride the command's seq and sit in FRONT of its own
-    // events: "what happened while you were away" reads before "you go north"
-    // (ADR-0034 §4). On a rejection the refusal events are what the sink saw —
-    // the result shape carries no events field (spec/01 §4).
+    // The exit (AC4): one batch per CONSUMED seq — `ok`, `rejected`, a
+    // heartbeat — even when it carries no events. `invalid` consumes no seq
+    // and produces no delivery, which is exactly what makes the seq line
+    // contiguous for gap detection (spec/01 §3): an empty batch means "seq N
+    // happened and said nothing", a missing batch means "seq N never
+    // happened".
+    //
+    // The ok result's events already carry the settlement events in front
+    // (the driver's ordering — "what happened while you were away" reads
+    // before "you go north", ADR-0034 §4). On a rejection the refusal events
+    // are what the sink saw, and they ride AFTER the settlement — the result
+    // shape carries no events field (spec/01 §4).
     const settlement = settled.map((message) => message.event);
     if (result.ok) {
-      const events = [...settlement, ...result.events];
-      deliver(events, command.seq);
-      return { ...result, events };
+      deliver(result.events, command.seq);
+      return result;
     }
     if (result.kind === "rejected") {
-      // The refusal events already went through the sink; a rejection's
-      // result shape carries no events field (spec/01 §4).
       deliver([...settlement, ...emitted], command.seq);
     }
     return result;
@@ -234,7 +218,10 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
       };
     },
     heartbeat(seq) {
-      const settled = settler.settleTo({ toTick: hostClock.nowTick(), seq });
+      // The beat is the driver's no-command entry (D3): advance + raise the
+      // mark, world layer only. `toTick` comes from the host clock HERE —
+      // the driver reads no wall clock of its own.
+      const settled = driver.heartbeat({ toTick: hostClock.nowTick(), seq });
       const events = settled.map((message) => message.event);
       deliver(events, seq);
       return events;
