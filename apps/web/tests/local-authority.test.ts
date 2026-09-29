@@ -325,4 +325,13 @@ describe("the four-step sequence has one home (mechanical scan)", () => {
     const text = readFileSync(file, "utf8");
     expect(text).toMatch(/createDispatchDriver/);
   });
+
+  it("the ranking rule has one home — the exit composes, it does not concatenate", () => {
+    // Rule 3 ("settlement output ranks before the command's own") lives in
+    // the driver as `settlementFirst`; the delivery exit composes through it.
+    // A hand-rolled `[...settlement, ...]` here would be a second ranking.
+    const text = readFileSync(file, "utf8");
+    expect(text).toMatch(/settlementFirst/);
+    expect(text).not.toMatch(/\[\s*\.\.\.(?:settled|settlement)\b/);
+  });
 });

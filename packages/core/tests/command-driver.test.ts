@@ -203,7 +203,9 @@ describe("heartbeat: advance without a command (spec/04 §4.2, ADR-0034 §5)", (
 
     // No `actorId` key at all: a heartbeat is a settle without an actor (the
     // world layer alone), never a forged system command with an empty id.
-    expect(requests).toEqual([{ toTick: 42, seq: 7 }]);
+    // `toStrictEqual`, not `toEqual` — an `actorId: undefined` key would pass
+    // a loose match and is exactly the forged-command shape being excluded.
+    expect(requests).toStrictEqual([{ toTick: 42, seq: 7 }]);
     expect(settled.map((message) => message.event.type)).toEqual(["worldAwake"]);
     // "The advance IS the mark raise": the beat moves the mark to the host's
     // "now" (spec/04 §4.2).
@@ -252,5 +254,21 @@ describe("the four-step sequence has one home (mechanical scan)", () => {
   it("testing.ts drives through the driver, not its own copy", () => {
     const text = readFileSync(resolve(dir, "testing.ts"), "utf8");
     expect(text).toMatch(/createDispatchDriver/);
+  });
+
+  it("the ranking rule has one home — adapters never hand-roll the settled spread", () => {
+    // Rule 3 ("settlement output ranks before the command's own") is not
+    // three coincidental `[...settled, ...]` spreads in three files: it is
+    // `settlementFirst`, and every output channel composes through it. A
+    // hand-rolled spread in an adapter would be the rule reimplemented.
+    const adapter = readFileSync(resolve(dir, "testing.ts"), "utf8");
+    expect(adapter).toMatch(/settlementFirst/);
+    expect(adapter, "adapters compose, they do not concatenate").not.toMatch(
+      /\[\s*\.\.\.(?:settled|settlement)\b/,
+    );
+    // The rule itself lives in driver.ts — the scan above is not vacuous.
+    const driver = readFileSync(resolve(dir, "driver.ts"), "utf8");
+    expect(driver).toMatch(/\[\s*\.\.\.settled\b/);
+    expect(driver).toMatch(/settlementFirst/);
   });
 });

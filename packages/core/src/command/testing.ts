@@ -3,7 +3,7 @@ import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
 import { createTickClock } from "../clock.js";
 import type { TickClock } from "../clock.js";
-import { createDispatchDriver } from "./driver.js";
+import { createDispatchDriver, settlementFirst } from "./driver.js";
 import type { CommandSpec, Message } from "./pipeline.js";
 import type { SettleRequest } from "../time/settle.js";
 import type { DueBucket } from "../time/due.js";
@@ -213,7 +213,10 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
       // ordered by the driver.
       return {
         result,
-        messages: [...settled.filter((message) => receiverSet.has(message.to)), ...messages],
+        messages: settlementFirst(
+          settled.filter((message) => receiverSet.has(message.to)),
+          messages,
+        ),
       };
     },
   };

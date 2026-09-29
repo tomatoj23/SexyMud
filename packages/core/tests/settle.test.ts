@@ -207,6 +207,10 @@ describe("the advance and the dispatch contract (spec/04 §4.1)", () => {
     for (let i = 0; i < 5; i += 1) {
       const out = harness.call(broken, "乱码", { seq: 100 + i, actorId: "jia", tick: 1000 });
       expect(out.result).toMatchObject({ ok: false, kind: "invalid" });
+      // Pre-flight failure exits with an EMPTY message list — settled is empty
+      // (no advance ever ran) and the sink buffer is empty (no dispatch ran).
+      // Pinned because the exit composes two empties rather than a literal [].
+      expect(out.messages).toEqual([]);
     }
     expect(worldSpans).toEqual([]);
     expect(harness.clock.nowTick()).toBe(0);

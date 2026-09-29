@@ -284,7 +284,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 1. 先跑一次**预检**（`parseCommand(spec, command, deps)`，只跑 parse 段）：解析失败就直接回 `invalid`、**不再调 `runCommand`**，推进函数一次都不会被调用，水位也不动；
 2. 解析成功才**推进**：`settle({ toTick: effectiveNowTick(水位, command), seq, actorId })`（注入的推进钩子——宿主传 `settler.settleTo`，两层，见 §4.3）；
 3. 再跑 `runCommand`（它内部会再解析一次 —— 与「分发器已匹配动词、管线内再切一次」同一个既有取舍，代价是 **parse 段必须无副作用**）；
-4. 最后 `observeDispatch` **白名单守卫**（`ok`／`rejected` 才抬水位，`invalid` 不抬）；**抬水位在推进内**（`settleTo` 内部就 `clock.observe`），**无推进路径由 `observeDispatch` 兜底**（无钩子 harness 塌缩为「分发→observe」两步时它就是唯一的抬水位者）。结算事件**排在命令自身事件之前**返回——这条排前规则的实现在 driver 的返回值里，出口（消息路由／批次投递）各自保持。
+4. 最后 `observeDispatch` **白名单守卫**（`ok`／`rejected` 才抬水位，`invalid` 不抬）；**抬水位在推进内**（`settleTo` 内部就 `clock.observe`），**无推进路径由 `observeDispatch` 兜底**（无钩子 harness 塌缩为「分发→observe」两步时它就是唯一的抬水位者）。结算事件**排在命令自身事件之前**返回——这条排前规则**只有一份实现**：driver 导出的 `settlementFirst`（事件通道、消息通道、批次通道都经它合成，adapter 不许自己拼 `[...结算, ...自己]`）；出口（消息路由／批次投递）各自保持。
 
 「现在的算法」同样只有一个副本：`effectiveNowTick(水位, command)`（`command/pipeline.ts`）—— 预检、分发、驱动侧的推进目标都调它，两个 tick 的合法性也由它一起挡。`deps.nowTick` 的读数也收进 driver（adapter 交进来的 deps **没有**这个字段，第二口钟无处可插）。
 

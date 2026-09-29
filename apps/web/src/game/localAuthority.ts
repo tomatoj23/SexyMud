@@ -21,6 +21,7 @@ import {
   createVerbTable,
   mergeCmdSets,
   serializeWorld,
+  settlementFirst,
 } from "@sexymud/core";
 import type { HostClock } from "./hostClock.js";
 
@@ -200,7 +201,7 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
       return result;
     }
     if (result.kind === "rejected") {
-      deliver([...settlement, ...emitted], command.seq);
+      deliver(settlementFirst(settlement, emitted), command.seq);
     }
     return result;
   };

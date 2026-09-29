@@ -37,9 +37,10 @@ import type { SettleRequest } from "../time/settle.js";
  *     path nothing ran at all; on the no-hook path the observe step's
  *     whitelist is the guard (spec/04 §4.1's table).
  *   - **Settlement rides before the command's own output.** The advance runs
- *     before the dispatch, and its events are prepended to the result's —
- *     "what happened while you were away" reads before "you go north"
- *     (ADR-0034 §4).
+ *     before the dispatch, and every output channel composes through ONE
+ *     ordering helper ({@link settlementFirst}) — "what happened while you
+ *     were away" reads before "you go north" (ADR-0034 §4), and no exit gets
+ *     to decide who comes first on its own.
  *
  * The mark's "now" reading (`deps.nowTick`) also lives only here: adapters
  * hand in deps WITHOUT it (the `Omit` below), so there is no second `max` to
@@ -85,6 +86,22 @@ export interface HeartbeatRequest {
    * is not a forged system command and there is no second seq space.
    */
   seq: number;
+}
+
+/**
+ * Rule 3 of the four-step sequence (spec/04 §4.1): settlement output ranks
+ * BEFORE the command's own — the player reads "what happened while you were
+ * away" first (ADR-0034 §4). Every output channel composes through THIS
+ * function, so the ranking has exactly one home: the exits decide WHAT to
+ * compose (receiver filtering, sink capture, batch shape — AC4, each exit
+ * keeps its own) but never WHO comes first. A hand-rolled `[own, settled]`
+ * concat in an adapter would re-implement the rule and invert it silently.
+ */
+export function settlementFirst<T>(
+  settled: readonly T[],
+  own: readonly T[],
+): T[] {
+  return [...settled, ...own];
 }
 
 export interface DispatchDriver<W> {
@@ -146,10 +163,17 @@ export function createDispatchDriver<W>(
       // and on the no-advance path this is the only thing raising it.
       observeDispatch(clock, command, result);
       // Rule 3: settlement events ride the command's seq and sit in FRONT of
-      // its own events. Only an `ok` result carries an events field — a
-      // rejection's refusal is what the sink saw (spec/01 §4).
+      // its events — one ranking, one home (see {@link settlementFirst}). Only
+      // an `ok` result carries an events field; a rejection's refusal is what
+      // the sink saw (spec/01 §4).
       const withSettlement = result.ok
-        ? { ...result, events: [...settled.map((message) => message.event), ...result.events] }
+        ? {
+            ...result,
+            events: settlementFirst(
+              settled.map((message) => message.event),
+              result.events,
+            ),
+          }
         : result;
       return { result: withSettlement, settled };
     },
