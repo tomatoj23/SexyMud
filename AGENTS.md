@@ -23,7 +23,7 @@
 - 新依赖只进 workspace 的 dependencies/devDependencies；pnpm 要求审批构建脚本时逐个审慎添加
 - 详见 `docs/adr/0007-project-isolated-dependency-environment.md`
 
-**pre-commit 钩子（husky，`package.json` 的 `prepare` 脚本，装依赖时自动接上）**：`.husky/pre-commit` 依次跑 `corepack pnpm check`（content + docs 两道）→ `corepack pnpm typecheck` → `corepack pnpm test`，任一步失败即中止提交。
+**pre-commit 钩子（husky，`package.json` 的 `prepare` 脚本，装依赖时自动接上）**：`.husky/pre-commit` 依次跑 `corepack pnpm check`（content + docs + refs 三道）→ `corepack pnpm typecheck` → `corepack pnpm test`，任一步失败即中止提交。
 **故意没有 lint-staged／Prettier**：本仓没有 Prettier 配置，装上会把整棵树重排在一个提交里；要加就当一次独立决策。⚠️ 卡住时**不要用 `--no-verify` 绕过** —— 门禁报的是真问题，修它。
 
 ## Agent skills
@@ -39,6 +39,12 @@ Issues live in the repo's GitHub Issues, accessed via the `gh` CLI. See `docs/ag
 
 **设计与落盘的次序**：设计访谈/定案先落 `.scratch` 决策表；**实现并跑绿之后**才升级成 `docs/spec/` 正文与 ADR。口径先于事实就会漂——M4 那 4 篇 ADR 与 spec 重写之后，实现期又查出 5 处口径错，原因就在这里。
 
+### Reference lookup（上游源码查证）
+
+本机有上游源码只读库 `D:\My_Projects\Reference_Documents`（13 个上游项目 HEAD 快照）。按需查证纪律见 `docs/agents/reference-lookup.md`，四句口诀：
+**现状问实装（node_modules），上游问参考库，版本问 registry，领域问 spec。先定年代，再限子树，引用带三件套。库只读，写库＝事故。**
+引库必带 `路径:行号（快照 X，项目 Y，版本差标签）`；跨大版结论不得当现状语义用。
+
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
@@ -50,7 +56,7 @@ Game content lives as JSON files under `content/`, validated by JSON Schema (`co
 > **Note**: `corepack pnpm content:check` is the committed pipeline contract (ADR-0003); the script (`scripts/check-content.mjs`, landed with issue #2) auto-discovers every JSON under `content/` and validates it against `schemas/` by directory convention — currently `content/config/`, `content/commands/` (M1-T5) and `content/rooms/`, `content/npcs/`, `content/monster/` (M1-T6). Cross-file `$ref` between schemas is supported (all schemas are pre-registered by `$id`). Every schema is also compile-swept for draft-07 legality: failures on content-mapped schemas fail the gate; schemas with no content mapping — including the two `$ref` libraries (`condition.schema.json` / `common.schema.json`, which are referenced by other schemas and never mapped by a directory) — surface their violations as WARN lines (the script reports them).
 > **Authoritative docs (descending precedence)**: **`docs/spec/` (living spec — HIGHEST)** > `CONTEXT.md` (glossary, **wuxia content pack scope, not the engine**) / `docs/agents/content.md` (content pipeline) > `docs/adr/` (decision history) > `content/style-guide.md` (writing style) > `docs/engine-reservations.md` (**reference / lowest**: a design inventory, not a decision).
 >
-> ⚠️ **Docs gate**: `corepack pnpm docs:check` (`scripts/check-docs.mjs`) scans the LIVING docs — `docs/spec/**`, `docs/HANDBOOK.md`, `AGENTS.md`, `CONTEXT.md`, `docs/agents/content.md`, `docs/chinese-mud-concerns.md` — for ① wording an ADR has retired (`进入执行段`、`不共用代码路径`、`CommandDeps.clock`、`db.*`／`ndb.*`…) ② counts that must have one home (test size: HANDBOOK only) or match reality (schema / entry-collection / content-JSON / dimensions / concerns-list / test-file totals) ③ `ADR-00NN` references whose file does not exist and ADR totals that disagree with the directory. **`docs/adr/` is deliberately NOT scanned** — an ADR is a log, its superseded wording is the history. Growing the scan = add the file, run `DOCS_CHECK_REPORT_ONLY=1 node scripts/check-docs.mjs` once to judge the scale, then commit it as a hard target. Run the gate after any terminology or count change; `corepack pnpm check` runs both gates.
+> ⚠️ **Docs gate**: `corepack pnpm docs:check` (`scripts/check-docs.mjs`) scans the LIVING docs — `docs/spec/**`, `docs/HANDBOOK.md`, `AGENTS.md`, `CONTEXT.md`, `docs/agents/content.md`, `docs/chinese-mud-concerns.md` — for ① wording an ADR has retired (`进入执行段`、`不共用代码路径`、`CommandDeps.clock`、`db.*`／`ndb.*`…) ② counts that must have one home (test size: HANDBOOK only) or match reality (schema / entry-collection / content-JSON / dimensions / concerns-list / test-file totals) ③ `ADR-00NN` references whose file does not exist and ADR totals that disagree with the directory. **`docs/adr/` is deliberately NOT scanned** — an ADR is a log, its superseded wording is the history. Growing the scan = add the file, run `DOCS_CHECK_REPORT_ONLY=1 node scripts/check-docs.mjs` once to judge the scale, then commit it as a hard target. Run the gate after any terminology or count change; `corepack pnpm check` runs all three gates (content / docs / refs).
 >
 > ⚠️ ADRs are a decision LOG, not the current spec — they override each other in a tangled web (0025 revises 0017; 0024 corrects 0022 and 0023). **On conflict, `docs/spec/` wins.**
 > `docs/design-spec-BRIEF.md`, `docs/archive/`, `docs/design/` were **deleted on 2026-09-01** (idle-game era, stale after the MUD pivot). Don't reference them; recover with `git checkout 79bd991 -- docs/design-spec-BRIEF.md docs/archive/` if ever needed.
