@@ -827,6 +827,36 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     expect(sync.localView).toEqual({ kind: "save", snapshot: JSON.parse(V1_TEXT) });
     // Stored UNMIGRATED — v1 bytes, none of the v2 scalars added in transit.
     expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
+    // A second commit finds no escrow — the confirm is answered once.
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("the classifier words the DAMAGE, never the version stamp's accident — `data: null` is 'file-corrupt' on v1 AND v2", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+    // Regression: the v1 migration step CRASHES on `data: null` (its
+    // `data.nowTick` access), and a probe fed the real payload once worded
+    // that one damage `file-version` on v1 while v2 said `file-corrupt` for
+    // it. The chain is asked without the payload, so both stamps agree.
+    await sync.beginImport(pickedFile(JSON.stringify({ version: 1, data: null })));
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+
+    await sync.beginImport(pickedFile(JSON.stringify({ version: 2, data: null })));
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    await expect(local.load()).resolves.toBeNull(); // nothing half-written
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("a failed re-pick SPENDS the escrow — the staged payload and the last picked file can never differ", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+    await sync.beginImport(pickedFile(V1_TEXT)); // staged and verified
+    await sync.beginImport(pickedFile("{not json")); // the player changed their mind, and that file is bad
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+
+    // The earlier file must not land under a later confirm.
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expect(local.load()).resolves.toBeNull();
   });
 
   it("the import payload is never a view: views move between stage and commit, the imported bytes still land", async () => {
@@ -856,11 +886,12 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
   it("JSON that is not a snapshot envelope is 'file-corrupt' too — the parse seam is parseSnapshotText (AC1)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { sync } = rig();
+    const { local, sync } = rig();
 
     await sync.beginImport(pickedFile(JSON.stringify([1, 2, 3])));
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    await expect(local.load()).resolves.toBeNull(); // nothing half-written
     await expect(sync.commitImport()).rejects.toThrow("no import staged");
   });
 
@@ -892,12 +923,14 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
   it("the two file words never blur: an OLD save with a damaged payload is 'file-corrupt' — the chain walks, the payload does not", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    const { sync } = rig();
+    const { local, sync } = rig();
     const oldButBroken = JSON.stringify({ version: 1, data: { entities: [] } });
 
     await sync.beginImport(pickedFile(oldButBroken));
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    await expect(local.load()).resolves.toBeNull(); // nothing half-written
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
   });
 
   it("a file that cannot be READ is 'file' — the source's own failure, not save damage (AC4)", async () => {
@@ -941,6 +974,20 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     expect(sync.state).toEqual({ phase: "failed", failure: "local", action: "import" });
     expect(sync.last).not.toBe("imported"); // the verdict never claims a write that did not land
     expect(sync.localView.kind).toBe("unknown"); // and the view is not half-refreshed either
+    // The confirm was ANSWERED — the attempt spends the escrow even though
+    // the write did not land; re-importing is the retry.
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("commitImport takes NO payload — a smuggled snapshot cannot even be expressed (type pin, the #31 law mirrored)", () => {
+    // Never called — this exists to be COMPILED: widen the signature to
+    // accept a payload and the call below becomes legal, the
+    // `@ts-expect-error` goes unused, and typecheck fails.
+    const compileOnly = (machine: CloudSync, smuggled: Snapshot): void => {
+      // @ts-expect-error commitImport takes no argument — no view can be the payload
+      void machine.commitImport(smuggled);
+    };
+    void compileOnly;
   });
 
   it("a confirmed import into UNREACHABLE storage reports 'local-unavailable', never quota-worded 'local' (#32 D4 words ride on import too)", async () => {

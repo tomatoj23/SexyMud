@@ -157,9 +157,13 @@ export class CloudSync {
   /**
    * The import's validated payload, held between the two halves of the
    * action (#33): `beginImport` stages it (parsed AND proven restorable),
-   * `commitImport` spends it. Not a view — views describe the SLOTS; this is
+   * `commitImport` spends it. NOT a view — views describe the SLOTS; this is
    * the one write awaiting its confirm, so no display cache can ever be the
-   * payload source (the #31 law, mirrored).
+   * payload source (the #31 law, mirrored). Attempt-spent, both halves: a
+   * pick attempt replaces it whether or not the new file verifies, and a
+   * commit attempt consumes it whether or not the write lands (the retry is
+   * re-importing). Guard refusals (busy / expired / conflict) are not
+   * attempts — they leave the escrow exactly as it was.
    */
   private pendingImport: Snapshot | null = null;
   private listeners = new Set<() => void>();
@@ -313,14 +317,22 @@ export class CloudSync {
    * Validation is `restoreWorld`'s whole chain, not just the migration
    * walk: an envelope-clean file with a damaged payload would otherwise be
    * welcomed now and explode at the worst time (the actual load). Which
-   * class of damage it is, the migration chain names: a chain that cannot
-   * walk is `file-version`, a chain that walks leaves payload damage
-   * (`file-corrupt`) — sound because migration steps never judge payload
-   * damage (migrations.ts leaves that to `readSaveData`; a step that
-   * validated on its own would blur these two words).
+   * class of damage it is, the chain is asked WITHOUT the payload: an empty
+   * payload cannot crash a migration step, so the probe fails only when the
+   * version itself cannot walk (bad stamp / no step) — `file-version`; a
+   * probe that walks leaves the damage in the payload — `file-corrupt`. The
+   * probe must never eat the real payload: a hostile shape (`data: null`)
+   * CRASHES the v1 step (`data.nowTick` on null), and a real-payload probe
+   * once worded that one damage `file-version` on v1 and `file-corrupt` on
+   * v2 — the words name the damage, never the version stamp's accident.
    */
   beginImport(source: ImportSource): Promise<SyncState> {
     return this.run("import", async () => {
+      // A pick REPLACES the escrow, attempt-spent either way: "the staged
+      // payload" and "the last picked file" must never be able to differ —
+      // a failed re-pick cannot leave the earlier file to land under the
+      // next confirm.
+      this.pendingImport = null;
       let text: string;
       try {
         text = await source.text();
@@ -338,7 +350,7 @@ export class CloudSync {
       } catch {
         let failure: "file-version" | "file-corrupt" = "file-corrupt";
         try {
-          migrateSnapshot(parsed);
+          migrateSnapshot({ version: parsed.version, data: {} } as Snapshot);
         } catch {
           failure = "file-version";
         }

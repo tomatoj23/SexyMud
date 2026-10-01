@@ -130,10 +130,10 @@ v1 里没有引擎 tick 与 RNG 种子；它们的消费者就是本章 §2–§
 2. **（#33 D2）写路径收进机器**：`CloudSync` 两段导入操作——`beginImport`（读文件 → parse → 验证 → 暂存）＋`commitImport`（消耗暂存写槽，**无参**——暂存载荷即写入载荷，视图缓存永不作载荷，#31 律）→ `views.local` 随写刷新；面板只做文件选择＋确认。⚠️ 两段的分界就是二次确认的位置（AC1「验证通过才进确认」与「一条链」不可同时成立于单操作，实现期拆段留痕票面）。
 3. **（#33 D3）解析先行＋确认无条件化＋冲突态禁用**：验证通过才弹二次确认，明示代价「**覆盖当前本地存档、不可撤销、建议先导出保命**」；确认不经任何视图缓存短路；**冲突态禁用导入**（裁决中不可动赌注——机器守卫为准，面板 disabled 只是视图门/展示）。
 4. **（#33 D4）「restore 必可载」验证**：调 `restoreWorld`（纯函数）整链验证（migrate 链＋九类载荷一并验——只跑 migrate 链挡不住信封好载荷坏的档）；**存未迁移的解析结果**（store 不迁移律不破，§1.6 定案点 3 同律）。
-5. **（#33 D5）失败口径**：`file`（读不出）｜`file-corrupt`（解析损坏**或载荷类验证失败**）｜`file-version`（**限版本/迁移类**验证失败）三词可分辨（失败源是文件——与 `local-*`（槽）、`corrupt`（云端）对仗）；写入失败沿 `local`（配额）/`local-unavailable`（#32 D4 词）；成功 outcome `imported`；用户取消文件选择＝静默，不算失败。
+5. **（#33 D5）失败口径**：`file`（读不出）｜`file-corrupt`（解析损坏**或载荷类验证失败**）｜`file-version`（**限版本/迁移类**验证失败）三词可分辨（失败源是文件——与 `local-*`（槽）、`corrupt`（云端）对仗）；写入失败沿 `local`（配额）/`local-unavailable`（#32 D4 词）；成功 outcome `imported`；用户取消文件选择＝静默，不算失败。⚠️ **分词机制（2026-10-01 复查收口）**：`file-version` vs `file-corrupt` 由**空载荷探针**问「链能否走」（`migrateSnapshot({version, data:{}})` 抛 ⇒ 纯版本/缺步类）——**探针绝不喂真载荷**：敌意形状（`data: null`）会崩掉 v1 迁移步，实测曾把同一种伤害按版本戳漂移成两词。
 6. **（#33 D6）红线**：core 零改动；不做存档槽管理、不做自动上传/合并（版本兼容交 `migrateSnapshot` 一条链，导入原样进槽；活世界写入方是命令层的活）。
 
-> **落地（#33）**：`apps/web/src/game/cloudSync.ts`（`beginImport`／`commitImport`＋`ImportSource`〔文件的最小切片，读失败也是机器裁决〕＋词表 `file`/`file-corrupt`/`file-version`＋outcome `imported`＋`SyncAction` 加 `"import"`＋冲突守卫）；`ui/CloudSavePanel.tsx`（导入按钮＋文件选择＋二次确认＋按 action 分文案）。测试 `cloud-sync.test.ts` 45 → 58 例。
+> **落地（#33）**：`apps/web/src/game/cloudSync.ts`（`beginImport`／`commitImport`＋`ImportSource`〔文件的最小切片，读失败也是机器裁决〕＋词表 `file`/`file-corrupt`/`file-version`＋outcome `imported`＋`SyncAction` 加 `"import"`＋冲突守卫）；`ui/CloudSavePanel.tsx`（导入按钮＋文件选择＋二次确认＋按 action 分文案）。测试 `cloud-sync.test.ts` 45 → 61 例（复查轮补分类回归、暂存生命周期、无参签名机械钉）。
 
 ## 2. 时间：tick 计数（ADR-0031）
 
