@@ -56,7 +56,10 @@ export type RawLocalRead =
 /**
  * Browser-local SaveStore implementation. Its cloud-backed sibling — same
  * interface, same snapshot text — is `CloudSaveStore` (cloudSaveStore.ts,
- * ticket #29); the two stores interchange saves byte-for-byte.
+ * ticket #29); the two stores interchange saves byte-for-byte. Besides the
+ * port it carries the machine's raw face ({@link readRaw}) — structurally the
+ * `LocalSlot` seam cloudSync.ts declares (#34 D4: the core port stays as-is,
+ * the extra face hangs here on the host's store).
  */
 export class LocalSaveStore implements SaveStore {
   constructor(private readonly key: string) {}

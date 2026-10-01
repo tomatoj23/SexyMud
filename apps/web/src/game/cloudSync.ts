@@ -175,6 +175,15 @@ export class CloudSync {
   };
   private outcome: SyncOutcome = "none";
   /**
+   * The door the last verdict came through (#34): a verdict is the PAIR
+   * (outcome, action) — `local-empty` is one word for two actions and the
+   * status line splits its copy per door. Held HERE because the pair must
+   * move atomically: a pick attempt or a refusal that leaves the verdict
+   * untouched must leave its attribution untouched too (a panel-side
+   * "which button was last pressed" counter cannot know that).
+   */
+  private outcomeFrom: SyncAction | "dismiss" | null = null;
+  /**
    * The import's validated payload, held between the two halves of the
    * action (#33): `beginImport` stages it (parsed AND proven restorable),
    * `commitImport` spends it. NOT a view — views describe the SLOTS; this is
@@ -201,6 +210,11 @@ export class CloudSync {
   /** The last verdict — what the status line says. */
   get last(): SyncOutcome {
     return this.outcome;
+  }
+
+  /** The door {@link last} came through — shared verdict words split their copy per action. */
+  get lastFrom(): SyncAction | "dismiss" | null {
+    return this.outcomeFrom;
   }
 
   /** The local slot as last known — readable in any phase. */
@@ -230,10 +244,10 @@ export class CloudSync {
     return this.run("probe", async () => {
       this.views.remote = await this.remoteViewToleratingCorrupt();
       this.views.local = await this.readLocalView();
-      this.outcome = "none";
+      this.settle("none", "probe");
       if (this.views.local.kind === "save" && this.views.remote.kind === "save") {
         if (JSON.stringify(this.views.local.snapshot) === JSON.stringify(this.views.remote.snapshot)) {
-          this.outcome = "in-sync";
+          this.settle("in-sync", "probe");
           return { phase: "idle" };
         }
         return { phase: "conflict", cause: "compare" };
@@ -272,14 +286,14 @@ export class CloudSync {
         return { phase: "failed", failure: "local-unavailable", action: "upload" };
       }
       if (view.kind === "empty") {
-        this.outcome = "local-empty";
+        this.settle("local-empty", "upload");
         return { phase: "idle" };
       }
       const snapshot = view.snapshot;
       const result = await this.cloud.replace(snapshot);
       if (result.outcome === "saved") {
         this.views.remote = { kind: "save", snapshot };
-        this.outcome = "saved";
+        this.settle("saved", "upload");
         return { phase: "idle" };
       }
       // Either refusal shows the remote as it NOW stands — damage included —
@@ -307,7 +321,7 @@ export class CloudSync {
       }
       this.views.remote = record === null ? { kind: "empty" } : { kind: "save", snapshot: record };
       if (record === null) {
-        this.outcome = "remote-empty";
+        this.settle("remote-empty", "download");
         return { phase: "idle" };
       }
       try {
@@ -320,7 +334,7 @@ export class CloudSync {
         };
       }
       this.views.local = this.views.remote;
-      this.outcome = "downloaded";
+      this.settle("downloaded", "download");
       return { phase: "idle" };
     });
   }
@@ -340,10 +354,13 @@ export class CloudSync {
    * own refusal (Blob/URL) is `failed`/`"file"` (#33's word). A SUCCESS or an
    * ABSENCE changes nothing anywhere, so a standing adjudication stands —
    * exporting is not one of decision D7's three exits, and an empty slot is
-   * not a failure (D2). Only a FAILURE replaces the phase: "a failure covers
-   * the old verdict" is the one sanctioned override (D8), and even that
-   * chooses nothing — both slots stay exactly as they were and a probe
-   * re-derives the same comparison.
+   * not a failure (D2). Only a FAILURE interrupts a standing adjudication:
+   * "a failure covers the old verdict" is the one sanctioned override (the
+   * loud-failure law, ADR-0037 D8's last sentence), and even that chooses
+   * nothing — both slots stay exactly as they were and a probe re-derives the
+   * same comparison. (A standing FAILED phase is cleared by any fresh
+   * verdict, upload/probe style — a new verdict supersedes an old failure;
+   * that is supersession, not the cover-up the law forbids.)
    */
   exportLocal(): Promise<SyncState> {
     // Captured before `run` parks the machine on "busy": a non-failure export
@@ -356,7 +373,7 @@ export class CloudSync {
         return { phase: "failed", failure: "local-unavailable", action: "export" };
       }
       if (raw.kind === "empty") {
-        this.outcome = "local-empty";
+        this.settle("local-empty", "export");
         return standing;
       }
       try {
@@ -364,7 +381,7 @@ export class CloudSync {
       } catch {
         return { phase: "failed", failure: "file", action: "export" };
       }
-      this.outcome = "exported";
+      this.settle("exported", "export");
       return standing;
     });
   }
@@ -451,7 +468,7 @@ export class CloudSync {
         };
       }
       this.views.local = { kind: "save", snapshot };
-      this.outcome = "imported";
+      this.settle("imported", "import");
       return { phase: "idle" };
     });
   }
@@ -461,7 +478,7 @@ export class CloudSync {
     if (this.current.phase !== "conflict") {
       throw new Error("cloud sync: nothing to dismiss");
     }
-    this.outcome = "dismissed";
+    this.settle("dismissed", "dismiss");
     return this.transition({ phase: "idle" });
   }
 
@@ -589,6 +606,12 @@ export class CloudSync {
     this.current = next;
     for (const listener of this.listeners) listener();
     return next;
+  }
+
+  /** The verdict moves as one pair — the outcome and its door, never one without the other. */
+  private settle(outcome: SyncOutcome, from: SyncAction | "dismiss"): void {
+    this.outcome = outcome;
+    this.outcomeFrom = from;
   }
 }
 

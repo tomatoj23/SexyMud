@@ -1260,6 +1260,61 @@ describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34
     expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "export" });
   });
 
+  it("the verdict pair moves atomically (#34 复查回归钉): a pick attempt never re-attributes an earlier verdict", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    captureFiles();
+    const { sync } = rig();
+
+    await sync.exportLocal(); // empty slot — the absence verdict through the EXPORT door
+    expect(sync.last).toBe("local-empty");
+    expect(sync.lastFrom).toBe("export");
+
+    // beginImport succeeds but claims no verdict of its own — the earlier
+    // absence verdict must keep its door (a "last button pressed" counter
+    // would have re-worded it 可上传 here, calling the export door's verdict
+    // the upload door's).
+    await sync.beginImport({ text: () => Promise.resolve(JSON.stringify(snapshotFixture())) });
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.last).toBe("local-empty");
+    expect(sync.lastFrom).toBe("export");
+
+    await sync.commitImport(); // a real verdict — the pair moves together
+    expect(sync.last).toBe("imported");
+    expect(sync.lastFrom).toBe("import");
+  });
+
+  it("a standing FAILED phase is cleared by a later verdict — a fresh outcome replaces an old failure (upload/probe 同律)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    refuseFiles();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.exportLocal();
+    expect(sync.state.phase).toBe("failed");
+
+    captureFiles(); // the file side recovers
+    await sync.exportLocal();
+
+    expect(sync.state.phase).toBe("idle"); // the old failure does not stick around
+    expect(sync.last).toBe("exported");
+    expect(sync.lastFrom).toBe("export");
+  });
+
+  it("unreachable storage mid-adjudication lands 'failed' — the one sanctioned override — and moves NOTHING", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    captureFiles();
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+    vi.stubGlobal("localStorage", disabledStorage()); // the storage dies under the machine
+
+    await sync.exportLocal();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "export" });
+    expect(transport.writes).toBe(0); // no bytes, no file — and nothing chose an exit
+  });
+
   it("busy is a refusal, not a queue — an export cannot run beside an action in flight", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     captureFiles();

@@ -165,4 +165,13 @@ describe("LocalSaveStore — the raw face: bytes out, no verdicts (#34 D4)", () 
     const unreachable = new LocalSaveStore("save-slot-1");
     await expect(unreachable.readRaw()).resolves.toEqual({ kind: "unavailable" });
   });
+
+  it("an EMPTY-STRING slot is 'empty', not zero-byte text — the same falsy line load() draws", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const store = new LocalSaveStore("save-slot-1");
+    localStorage.setItem("save-slot-1", "");
+
+    await expect(store.readRaw()).resolves.toEqual({ kind: "empty" });
+    await expect(store.load()).resolves.toBeNull(); // the two faces agree: nothing stored
+  });
 });

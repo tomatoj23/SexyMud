@@ -47,7 +47,9 @@ function statusLine(
             : "检查失败";
   }
   // The shared absence word splits per action (#34, L14): the copy names the
-  // door the player just tried — 上传 says 可上传, 导出 says 可导出.
+  // door the verdict came through — `from` is the machine's own attribution
+  // (`sync.lastFrom`, the verdict pair moves atomically there), so a pick
+  // attempt or a refused click never re-attributes an earlier verdict.
   if (last === "local-empty") {
     return from === "export" ? "本地没有存档可导出" : "本地没有存档可上传";
   }
@@ -117,11 +119,8 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   // disabled only for absence and unreachable storage. Display only; the
   // machine is the authority on what it will actually ship.
   const exportDisabled = sync.localView.kind === "empty" || sync.localView.kind === "unavailable";
-  /** Which door the last verdict came through — words the shared `local-empty` (#34, L14). */
-  const verdictAction = useRef<SyncAction | "dismiss" | null>(null);
 
-  async function run(from: SyncAction | "dismiss", action: () => Promise<unknown>): Promise<void> {
-    verdictAction.current = from;
+  async function run(action: () => Promise<unknown>): Promise<void> {
     setConfirming(null);
     // Refusals (busy / expired) surface as state, not as thrown noise here.
     await action().catch(() => undefined);
@@ -160,7 +159,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     // Clearing the value lets the same file be picked twice.
     event.target.value = "";
     if (!picked) return; // picker cancelled — silent, no state change (#33 D5)
-    await run("import", async () => {
+    await run(async () => {
       const staged = await sync.beginImport(picked);
       if (staged.phase === "idle") setConfirming("import");
     });
@@ -170,7 +169,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     <section style={{ borderTop: "1px solid #ddd", marginTop: 12, paddingTop: 8 }}>
       <div style={rowStyle}>
         <strong>云存档：</strong>
-        <span>{statusLine(state, sync.last, verdictAction.current, sync.localView)}</span>
+        <span>{statusLine(state, sync.last, sync.lastFrom, sync.localView)}</span>
       </div>
       <div style={rowStyle}>
         <span>本地：{slotSummary(sync.localView)}</span>
@@ -181,39 +180,44 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
 
       {state.phase === "failed" && (
         <p style={{ color: "#b91c1c" }}>
-          {state.action === "upload" &&
-            state.failure !== "local-corrupt" &&
-            state.failure !== "local-unavailable" &&
-            "没存上："}
-          {state.action === "download" && "没下载到本地："}
-          {state.action === "probe" && "检查失败："}
-          {state.action === "import" && state.failure !== "local-unavailable" && "没导入："}
-          {state.action === "export" && state.failure !== "local-unavailable" && "没导出："}
-          {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
-          {state.failure === "corrupt" &&
-            (state.action === "upload"
-              ? "云端存档损坏且无法经保存修复（记录锚已损坏）——本地存档无恙，可导出保底。"
-              : "云端存档损坏，无法下载——若损坏仅在内容，上传本地存档可修复它。")}
-          {state.failure === "local" && "本地写入失败（可能空间不足）——清理浏览器存储空间后可重试。"}
-          {state.failure === "local-corrupt" && "本地存档损坏，无法上传——先修复或重置本地存档。"}
-          {state.failure === "local-unavailable" &&
-            (state.action === "upload"
-              ? "本地存储不可访问，无法上传——请检查浏览器设置或退出隐私模式（重试无用）。"
-              : state.action === "import"
-                ? "本地存储不可访问，无法导入——请检查浏览器设置或退出隐私模式（重试无用）。"
-                : state.action === "export"
-                  ? "本地存储不可访问，无法导出——请检查浏览器设置或退出隐私模式（重试无用）。"
-                  : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
-          {/* The file family (#33/#34) — the advice follows the file's ROLE:
-              an import's pick gets "another file", an export's refused
-              download gets "retry"; repair/export salvage target the local
-              slot, never the pick. */}
-          {state.failure === "file" &&
-            (state.action === "export"
-              ? "文件生成或下载失败（可能被浏览器拦截）——可重试；本地存档未改动。"
-              : "文件读不出来（可能已移动或被占用）——换一个文件再试，本地存档未改动。")}
-          {state.failure === "file-corrupt" && "文件损坏或不是有效存档，本地存档未改动。"}
-          {state.failure === "file-version" && "存档版本不可载（过新或迁移不可走），本地存档未改动。"}
+          {state.action === "export" ? (
+            // Export's failure vocabulary is CLOSED (#34): `local-unavailable`
+            // and `file` are the only words it speaks — the closed block keeps
+            // even a defensive reach from borrowing another door's advice.
+            state.failure === "local-unavailable"
+              ? "本地存储不可访问，无法导出——请检查浏览器设置或退出隐私模式（重试无用）。"
+              : state.failure === "file"
+                ? "没导出：文件生成或下载失败（可能被浏览器拦截）——可重试；本地存档未改动。"
+                : "没导出：导出未能完成——本地存档未改动。"
+          ) : (
+            <>
+              {state.action === "upload" &&
+                state.failure !== "local-corrupt" &&
+                state.failure !== "local-unavailable" &&
+                "没存上："}
+              {state.action === "download" && "没下载到本地："}
+              {state.action === "probe" && "检查失败："}
+              {state.action === "import" && state.failure !== "local-unavailable" && "没导入："}
+              {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
+              {state.failure === "corrupt" &&
+                (state.action === "upload"
+                  ? "云端存档损坏且无法经保存修复（记录锚已损坏）——本地存档无恙，可导出保底。"
+                  : "云端存档损坏，无法下载——若损坏仅在内容，上传本地存档可修复它。")}
+              {state.failure === "local" && "本地写入失败（可能空间不足）——清理浏览器存储空间后可重试。"}
+              {state.failure === "local-corrupt" && "本地存档损坏，无法上传——先修复或重置本地存档。"}
+              {state.failure === "local-unavailable" &&
+                (state.action === "upload"
+                  ? "本地存储不可访问，无法上传——请检查浏览器设置或退出隐私模式（重试无用）。"
+                  : state.action === "import"
+                    ? "本地存储不可访问，无法导入——请检查浏览器设置或退出隐私模式（重试无用）。"
+                    : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
+              {/* The file family (#33) — the advice is "another file":
+                  repair/export salvage target the local slot, never the pick. */}
+              {state.failure === "file" && "文件读不出来（可能已移动或被占用）——换一个文件再试，本地存档未改动。"}
+              {state.failure === "file-corrupt" && "文件损坏或不是有效存档，本地存档未改动。"}
+              {state.failure === "file-version" && "存档版本不可载（过新或迁移不可走），本地存档未改动。"}
+            </>
+          )}
         </p>
       )}
 
@@ -234,10 +238,10 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             >
               以本地为准（覆盖云端）
             </button>
-            <button style={buttonStyle} onClick={() => void run("download", () => sync.download())}>
+            <button style={buttonStyle} onClick={() => void run(() => sync.download())}>
               以云端为准（载入云端）
             </button>
-            <button style={buttonStyle} onClick={() => void run("dismiss", async () => sync.dismiss())}>
+            <button style={buttonStyle} onClick={() => void run(async () => sync.dismiss())}>
               继续本地玩（暂不同步）
             </button>
             {/* The escape hatch is live mid-adjudication (#34 D7): exporting
@@ -245,7 +249,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                 choice standing. */}
             <button
               style={buttonStyle}
-              onClick={() => void run("export", () => sync.exportLocal())}
+              onClick={() => void run(() => sync.exportLocal())}
               disabled={exportDisabled}
             >
               导出本地存档（保底）
@@ -262,7 +266,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               <ConfirmButtons
                 warning={uploadWarning()}
                 confirmLabel="确认覆盖"
-                onConfirm={() => void run("upload", () => sync.upload())}
+                onConfirm={() => void run(() => sync.upload())}
                 onCancel={() => setConfirming(null)}
               />
             </div>
@@ -276,14 +280,14 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             <ConfirmButtons
               warning={uploadWarning()}
               confirmLabel="确认上传"
-              onConfirm={() => void run("upload", () => sync.upload())}
+              onConfirm={() => void run(() => sync.upload())}
               onCancel={() => setConfirming(null)}
             />
           ) : confirming === "download" ? (
             <ConfirmButtons
               warning={downloadWarning()}
               confirmLabel="确认下载"
-              onConfirm={() => void run("download", () => sync.download())}
+              onConfirm={() => void run(() => sync.download())}
               onCancel={() => setConfirming(null)}
             />
           ) : confirming === "import" ? (
@@ -293,7 +297,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             <ConfirmButtons
               warning="覆盖当前本地存档、不可撤销、建议先导出保命。"
               confirmLabel="确认导入"
-              onConfirm={() => void run("import", () => sync.commitImport())}
+              onConfirm={() => void run(() => sync.commitImport())}
               onCancel={() => setConfirming(null)}
             />
           ) : (
@@ -316,7 +320,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               </button>
               <button
                 style={buttonStyle}
-                onClick={() => void run("probe", () => sync.probe())}
+                onClick={() => void run(() => sync.probe())}
                 disabled={busy || state.phase === "auth-expired"}
               >
                 重新检查
@@ -326,7 +330,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                   disabled is display, the machine is the authority. */}
               <button
                 style={buttonStyle}
-                onClick={() => void run("export", () => sync.exportLocal())}
+                onClick={() => void run(() => sync.exportLocal())}
                 disabled={exportDisabled}
               >
                 导出本地存档
