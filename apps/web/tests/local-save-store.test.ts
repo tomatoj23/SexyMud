@@ -146,3 +146,23 @@ describe("LocalSaveStore — storage trouble and text trouble are different door
     expect(error).not.toBeInstanceOf(LocalSaveUnavailableError); // …never the "check settings" door
   });
 });
+
+describe("LocalSaveStore — the raw face: bytes out, no verdicts (#34 D4)", () => {
+  it("readRaw hands the stored TEXT back untouched — damage is the caller's parse, never this face's word", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const store = new LocalSaveStore("save-slot-1");
+    localStorage.setItem("save-slot-1", "{oops"); // damaged bytes — still readable bytes
+
+    await expect(store.readRaw()).resolves.toEqual({ kind: "text", text: "{oops" });
+  });
+
+  it("readRaw says 'empty' for absence and 'unavailable' for trouble — it never throws and never says 'corrupt'", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const store = new LocalSaveStore("save-slot-1");
+    await expect(store.readRaw()).resolves.toEqual({ kind: "empty" });
+
+    vi.stubGlobal("localStorage", brokenStorage({ read: new DOMException("denied", "SecurityError") }));
+    const unreachable = new LocalSaveStore("save-slot-1");
+    await expect(unreachable.readRaw()).resolves.toEqual({ kind: "unavailable" });
+  });
+});

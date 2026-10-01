@@ -1,7 +1,6 @@
 import { useRef, useState, useSyncExternalStore } from "react";
 import type { ChangeEvent } from "react";
-import type { Snapshot } from "@sexymud/core";
-import type { CloudSync, SlotView, SyncOutcome, SyncState } from "../game/cloudSync.js";
+import type { CloudSync, SlotView, SyncAction, SyncOutcome, SyncState } from "../game/cloudSync.js";
 
 const rowStyle = { display: "flex", gap: 8, alignItems: "center", margin: "8px 0", flexWrap: "wrap" } as const;
 const buttonStyle = { padding: "6px 12px", borderRadius: 4, cursor: "pointer" } as const;
@@ -13,9 +12,12 @@ const VERDICT: Record<SyncOutcome, string> = {
   saved: "已存到云端 ✓（存了）",
   downloaded: "云端存档已载入本地 ✓",
   imported: "已导入本地存档 ✓",
+  exported: "已导出本地存档为文件 ✓",
   dismissed: "继续本地玩——云端未同步",
   "remote-empty": "云端没有存档",
-  "local-empty": "本地没有存档可上传",
+  // `local-empty` is the one word two actions share — statusLine splits it per
+  // action; this entry is only the type's fallback.
+  "local-empty": "本地没有存档",
   "in-sync": "本地与云端一致 ✓",
 };
 
@@ -24,7 +26,12 @@ const VERDICT: Record<SyncOutcome, string> = {
  * say 没存上 — the earlier verdict never papers over it), then the last
  * verdict. Per action the failure names what did not happen.
  */
-function statusLine(state: SyncState, last: SyncOutcome): string {
+function statusLine(
+  state: SyncState,
+  last: SyncOutcome,
+  from: SyncAction | "dismiss" | null,
+  local: SlotView,
+): string {
   if (state.phase === "busy") return "同步中…";
   if (state.phase === "auth-expired") return "登录已过期";
   if (state.phase === "conflict") return "冲突——请选择以哪边继续";
@@ -35,7 +42,19 @@ function statusLine(state: SyncState, last: SyncOutcome): string {
         ? "没下载到本地"
         : state.action === "import"
           ? "没导入"
-          : "检查失败";
+          : state.action === "export"
+            ? "没导出"
+            : "检查失败";
+  }
+  // The shared absence word splits per action (#34, L14): the copy names the
+  // door the player just tried — 上传 says 可上传, 导出 says 可导出.
+  if (last === "local-empty") {
+    return from === "export" ? "本地没有存档可导出" : "本地没有存档可上传";
+  }
+  // Salvage says what it shipped (#34 D2): a corrupt slot's export is the raw
+  // damaged bytes — the file is for repair, not a restorable save.
+  if (last === "exported" && local.kind === "corrupt") {
+    return "已导出原始字节 ✓（存档损坏，可修复后经导入取回）";
   }
   return VERDICT[last];
 }
@@ -49,19 +68,6 @@ function slotSummary(view: SlotView): string {
   const nowTick = (view.snapshot.data as { nowTick?: unknown }).nowTick;
   const progress = typeof nowTick === "number" ? ` · 进度 ${nowTick} tick` : "";
   return `存档 v${view.snapshot.version}${progress}`;
-}
-
-/** The exportable document goes out as a file — the player's own copy (ADR-0002 §21). */
-function exportSnapshot(snapshot: Snapshot): void {
-  const blob = new Blob([JSON.stringify(snapshot)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "sexymud-save.json";
-  anchor.click();
-  // Deferred: revoking synchronously can cancel the download itself in some
-  // browsers — the salvage channel must not fail silently.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /** The two-step confirm shared by every destructive exit (decision D7). */
@@ -105,10 +111,17 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   /** Two-step confirms: the destructive exits say their cost first (decision D7). */
   const [confirming, setConfirming] = useState<"upload" | "download" | "import" | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const localSnapshot = sync.localView.kind === "save" ? sync.localView.snapshot : null;
   const busy = state.phase === "busy";
+  // The export gate reads the VIEW's kind (#34 D2): available whenever the
+  // machine can produce a file — a corrupt slot's bytes ARE the salvage — and
+  // disabled only for absence and unreachable storage. Display only; the
+  // machine is the authority on what it will actually ship.
+  const exportDisabled = sync.localView.kind === "empty" || sync.localView.kind === "unavailable";
+  /** Which door the last verdict came through — words the shared `local-empty` (#34, L14). */
+  const verdictAction = useRef<SyncAction | "dismiss" | null>(null);
 
-  async function run(action: () => Promise<unknown>): Promise<void> {
+  async function run(from: SyncAction | "dismiss", action: () => Promise<unknown>): Promise<void> {
+    verdictAction.current = from;
     setConfirming(null);
     // Refusals (busy / expired) surface as state, not as thrown noise here.
     await action().catch(() => undefined);
@@ -147,7 +160,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     // Clearing the value lets the same file be picked twice.
     event.target.value = "";
     if (!picked) return; // picker cancelled — silent, no state change (#33 D5)
-    await run(async () => {
+    await run("import", async () => {
       const staged = await sync.beginImport(picked);
       if (staged.phase === "idle") setConfirming("import");
     });
@@ -157,7 +170,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     <section style={{ borderTop: "1px solid #ddd", marginTop: 12, paddingTop: 8 }}>
       <div style={rowStyle}>
         <strong>云存档：</strong>
-        <span>{statusLine(state, sync.last)}</span>
+        <span>{statusLine(state, sync.last, verdictAction.current, sync.localView)}</span>
       </div>
       <div style={rowStyle}>
         <span>本地：{slotSummary(sync.localView)}</span>
@@ -175,6 +188,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
           {state.action === "download" && "没下载到本地："}
           {state.action === "probe" && "检查失败："}
           {state.action === "import" && state.failure !== "local-unavailable" && "没导入："}
+          {state.action === "export" && state.failure !== "local-unavailable" && "没导出："}
           {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
           {state.failure === "corrupt" &&
             (state.action === "upload"
@@ -187,10 +201,17 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               ? "本地存储不可访问，无法上传——请检查浏览器设置或退出隐私模式（重试无用）。"
               : state.action === "import"
                 ? "本地存储不可访问，无法导入——请检查浏览器设置或退出隐私模式（重试无用）。"
-                : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
-          {/* The file family (#33) — the advice is always "another file":
-              repair/export salvage target the local slot, never the pick. */}
-          {state.failure === "file" && "文件读不出来（可能已移动或被占用）——换一个文件再试，本地存档未改动。"}
+                : state.action === "export"
+                  ? "本地存储不可访问，无法导出——请检查浏览器设置或退出隐私模式（重试无用）。"
+                  : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
+          {/* The file family (#33/#34) — the advice follows the file's ROLE:
+              an import's pick gets "another file", an export's refused
+              download gets "retry"; repair/export salvage target the local
+              slot, never the pick. */}
+          {state.failure === "file" &&
+            (state.action === "export"
+              ? "文件生成或下载失败（可能被浏览器拦截）——可重试；本地存档未改动。"
+              : "文件读不出来（可能已移动或被占用）——换一个文件再试，本地存档未改动。")}
           {state.failure === "file-corrupt" && "文件损坏或不是有效存档，本地存档未改动。"}
           {state.failure === "file-version" && "存档版本不可载（过新或迁移不可走），本地存档未改动。"}
         </p>
@@ -206,20 +227,29 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               : "本地与云端存档不一致。请选择以哪边继续："}
           </p>
           <div style={rowStyle}>
-            <button style={buttonStyle} onClick={() => setConfirming("upload")} disabled={!localSnapshot}>
+            <button
+              style={buttonStyle}
+              onClick={() => setConfirming("upload")}
+              disabled={sync.localView.kind !== "save"}
+            >
               以本地为准（覆盖云端）
             </button>
-            <button style={buttonStyle} onClick={() => void run(() => sync.download())}>
+            <button style={buttonStyle} onClick={() => void run("download", () => sync.download())}>
               以云端为准（载入云端）
             </button>
-            <button style={buttonStyle} onClick={() => void run(async () => sync.dismiss())}>
+            <button style={buttonStyle} onClick={() => void run("dismiss", async () => sync.dismiss())}>
               继续本地玩（暂不同步）
             </button>
-            {localSnapshot && (
-              <button style={buttonStyle} onClick={() => exportSnapshot(localSnapshot)}>
-                导出本地存档（保底）
-              </button>
-            )}
+            {/* The escape hatch is live mid-adjudication (#34 D7): exporting
+                is not one of the three exits — it ships a file and leaves the
+                choice standing. */}
+            <button
+              style={buttonStyle}
+              onClick={() => void run("export", () => sync.exportLocal())}
+              disabled={exportDisabled}
+            >
+              导出本地存档（保底）
+            </button>
             {/* The view gate (#33 D3): greyed out mid-adjudication — this
                 whole block renders only in the conflict phase, so the button
                 is pure display (the machine's own refusal is the insurance). */}
@@ -232,7 +262,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               <ConfirmButtons
                 warning={uploadWarning()}
                 confirmLabel="确认覆盖"
-                onConfirm={() => void run(() => sync.upload())}
+                onConfirm={() => void run("upload", () => sync.upload())}
                 onCancel={() => setConfirming(null)}
               />
             </div>
@@ -246,14 +276,14 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             <ConfirmButtons
               warning={uploadWarning()}
               confirmLabel="确认上传"
-              onConfirm={() => void run(() => sync.upload())}
+              onConfirm={() => void run("upload", () => sync.upload())}
               onCancel={() => setConfirming(null)}
             />
           ) : confirming === "download" ? (
             <ConfirmButtons
               warning={downloadWarning()}
               confirmLabel="确认下载"
-              onConfirm={() => void run(() => sync.download())}
+              onConfirm={() => void run("download", () => sync.download())}
               onCancel={() => setConfirming(null)}
             />
           ) : confirming === "import" ? (
@@ -263,7 +293,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             <ConfirmButtons
               warning="覆盖当前本地存档、不可撤销、建议先导出保命。"
               confirmLabel="确认导入"
-              onConfirm={() => void run(() => sync.commitImport())}
+              onConfirm={() => void run("import", () => sync.commitImport())}
               onCancel={() => setConfirming(null)}
             />
           ) : (
@@ -273,7 +303,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               <button
                 style={buttonStyle}
                 onClick={() => setConfirming("upload")}
-                disabled={!localSnapshot || busy || state.phase === "auth-expired"}
+                disabled={sync.localView.kind !== "save" || busy || state.phase === "auth-expired"}
               >
                 上传到云端
               </button>
@@ -286,16 +316,21 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               </button>
               <button
                 style={buttonStyle}
-                onClick={() => void run(() => sync.probe())}
+                onClick={() => void run("probe", () => sync.probe())}
                 disabled={busy || state.phase === "auth-expired"}
               >
                 重新检查
               </button>
-              {localSnapshot && (
-                <button style={buttonStyle} onClick={() => exportSnapshot(localSnapshot)}>
-                  导出本地存档
-                </button>
-              )}
+              {/* D2: the button follows "can the machine produce a file" —
+                  a corrupt slot's button is AVAILABLE (export IS the salvage);
+                  disabled is display, the machine is the authority. */}
+              <button
+                style={buttonStyle}
+                onClick={() => void run("export", () => sync.exportLocal())}
+                disabled={exportDisabled}
+              >
+                导出本地存档
+              </button>
               {/* The #33 D1 pair: import lives beside export. The views gate
                   the BUTTONS but never the CONFIRM above (D7). Conflict never
                   reaches this row (its own block owns that phase), so the

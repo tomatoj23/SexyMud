@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SaveStore, Snapshot } from "@sexymud/core";
+import type { Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
 import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore, LocalSaveUnavailableError } from "../src/game/localSaveStore.js";
-import { CloudSync, type ImportSource, type SlotView } from "../src/game/cloudSync.js";
+import { CloudSync, type ImportSource, type LocalSlot, type SlotView } from "../src/game/cloudSync.js";
 import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
 
 /**
@@ -116,6 +116,30 @@ function remoteText(transport: FakeTransport): string | undefined {
 /** Seeds the remote slot directly — the state some other device left behind. */
 function seedRemote(transport: FakeTransport, snapshot: Snapshot): void {
   transport.slots.set(KEY, { text: JSON.stringify(snapshot), revision: "seed" });
+}
+
+/** A `Storage` that throws on access — storage disabled / privacy mode. */
+function disabledStorage(): Storage {
+  return {
+    get length(): number {
+      throw new DOMException("denied", "SecurityError");
+    },
+    clear: () => {
+      throw new DOMException("denied", "SecurityError");
+    },
+    getItem: () => {
+      throw new DOMException("denied", "SecurityError");
+    },
+    key: () => {
+      throw new DOMException("denied", "SecurityError");
+    },
+    removeItem: () => {
+      throw new DOMException("denied", "SecurityError");
+    },
+    setItem: () => {
+      throw new DOMException("denied", "SecurityError");
+    },
+  };
 }
 
 afterEach(() => {
@@ -530,9 +554,10 @@ describe("CloudSync — download: cloud into the local slot", () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, cloud } = rig();
     seedRemote(transport, snapshotFixture({ nowTick: 99 }));
-    const refusingLocal: SaveStore = {
+    const refusingLocal: LocalSlot = {
       load: () => Promise.resolve(null),
       save: () => Promise.reject(new Error("quota exceeded")),
+      readRaw: () => Promise.resolve({ kind: "empty" }),
     };
     const sync = new CloudSync(cloud, refusingLocal, { markExpired: () => undefined });
 
@@ -635,6 +660,7 @@ describe("CloudSync — an auth failure ends the instance (decision D6)", () => 
     await expect(sync.upload()).rejects.toThrow(/sign in again/i);
     await expect(sync.download()).rejects.toThrow(/sign in again/i);
     await expect(sync.probe()).rejects.toThrow(/sign in again/i);
+    await expect(sync.exportLocal()).rejects.toThrow(/sign in again/i);
 
     expect(transport.reads).toBe(readsBefore); // zero further backend calls
     await expect(local.load()).resolves.toBeNull();
@@ -700,30 +726,6 @@ describe("CloudSync — the comparison views carry what the dialog shows", () =>
 });
 
 describe("CloudSync — unreachable storage is its own word, on both paths (#32 D4)", () => {
-  /** A `Storage` that throws on access — storage disabled / privacy mode. */
-  function disabledStorage(): Storage {
-    return {
-      get length(): number {
-        throw new DOMException("denied", "SecurityError");
-      },
-      clear: () => {
-        throw new DOMException("denied", "SecurityError");
-      },
-      getItem: () => {
-        throw new DOMException("denied", "SecurityError");
-      },
-      key: () => {
-        throw new DOMException("denied", "SecurityError");
-      },
-      removeItem: () => {
-        throw new DOMException("denied", "SecurityError");
-      },
-      setItem: () => {
-        throw new DOMException("denied", "SecurityError");
-      },
-    };
-  }
-
   it("the probe shows 'unavailable', not 'corrupt' — a disabled store is not a damaged save", async () => {
     vi.stubGlobal("localStorage", disabledStorage());
     const { sync } = rig();
@@ -737,9 +739,10 @@ describe("CloudSync — unreachable storage is its own word, on both paths (#32 
   it("upload's front half reports 'local-unavailable' with ZERO backend calls — no bytes, no payload (#31 D2 dual)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, cloud } = rig();
-    const unreachable: SaveStore = {
+    const unreachable: LocalSlot = {
       load: () => Promise.reject(new LocalSaveUnavailableError("local save: storage is not accessible")),
       save: () => Promise.reject(new Error("unreachable")),
+      readRaw: () => Promise.resolve({ kind: "unavailable" }),
     };
     const sync = new CloudSync(cloud, unreachable, { markExpired: () => undefined });
 
@@ -765,9 +768,10 @@ describe("CloudSync — unreachable storage is its own word, on both paths (#32 
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, cloud } = rig();
     seedRemote(transport, snapshotFixture({ nowTick: 99 }));
-    const unreachable: SaveStore = {
+    const unreachable: LocalSlot = {
       load: () => Promise.resolve(null),
       save: () => Promise.reject(new LocalSaveUnavailableError("local save: storage is not accessible")),
+      readRaw: () => Promise.resolve({ kind: "empty" }),
     };
     const sync = new CloudSync(cloud, unreachable, { markExpired: () => undefined });
 
@@ -962,9 +966,10 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
   it("a confirmed import whose local write refuses (quota) reports 'local' — never 'imported' over a failed write (AC4)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { cloud } = rig();
-    const refusing: SaveStore = {
+    const refusing: LocalSlot = {
       load: () => Promise.resolve(null),
       save: () => Promise.reject(new Error("quota exceeded")),
+      readRaw: () => Promise.resolve({ kind: "empty" }),
     };
     const sync = new CloudSync(cloud, refusing, { markExpired: () => undefined });
     await sync.beginImport(pickedFile(V1_TEXT));
@@ -993,10 +998,11 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
   it("a confirmed import into UNREACHABLE storage reports 'local-unavailable', never quota-worded 'local' (#32 D4 words ride on import too)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { cloud } = rig();
-    const unreachable: SaveStore = {
+    const unreachable: LocalSlot = {
       load: () => Promise.resolve(null),
       save: () =>
         Promise.reject(new LocalSaveUnavailableError("local save: storage is not accessible")),
+      readRaw: () => Promise.resolve({ kind: "empty" }),
     };
     const sync = new CloudSync(cloud, unreachable, { markExpired: () => undefined });
     await sync.beginImport(pickedFile(V1_TEXT));
@@ -1038,5 +1044,232 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
     expect(sync.last).toBe("imported");
     expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
+  });
+});
+
+describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34)", () => {
+  /** The download DOM the machine's file side drives — a fake anchor is all it needs. */
+  function stubDownloadDom(): void {
+    vi.stubGlobal("document", {
+      createElement: () => ({ href: "", download: "", click: () => undefined }),
+    });
+  }
+
+  /** Stubs the file-out surface and records every file that actually went out. */
+  function captureFiles(): { files: Blob[] } {
+    const files: Blob[] = [];
+    vi.spyOn(URL, "createObjectURL").mockImplementation((blob: Blob | MediaSource) => {
+      files.push(blob as Blob);
+      return "blob:fake";
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    stubDownloadDom();
+    return { files };
+  }
+
+  /** The file side refusing to produce the download — the `file` failure's source. */
+  function refuseFiles(): void {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      throw new Error("download blocked");
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    stubDownloadDom();
+  }
+
+  /** The exported file contents, in order — the bytes that actually went out. */
+  async function fileTexts(files: Blob[]): Promise<string[]> {
+    return Promise.all(files.map((file) => file.text()));
+  }
+
+  it("AC1 stale-view regression: the file is the slot's CURRENT bytes — a slot written behind the machine exports the NEW save", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.probe(); // the display view is now last-known "nowTick 20"
+    const newer = snapshotFixture({ nowTick: 55 });
+    await local.save(newer); // another tab wrote the slot — the view is stale from here
+
+    await sync.exportLocal();
+
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.last).toBe("exported");
+    expect(await fileTexts(files)).toEqual([JSON.stringify(newer)]);
+    expect(sync.localView).toEqual({ kind: "save", snapshot: newer }); // the read is the refresh
+  });
+
+  it("AC1 byte fidelity: the file is the stored TEXT — formatting and all, never a re-serialization", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { sync } = rig();
+    const pretty = JSON.stringify(snapshotFixture({ nowTick: 20 }), null, 2);
+    localStorage.setItem(KEY, pretty); // a hand-formatted save, exactly as a repair would leave it
+
+    await sync.exportLocal();
+
+    expect(await fileTexts(files)).toEqual([pretty]); // a JSON round-trip would compact it away
+    expect(sync.last).toBe("exported");
+  });
+
+  it("AC2 salvage: a CORRUPT slot still exports its raw bytes — the damage is the player's to repair (decision D2)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { sync } = rig();
+    localStorage.setItem(KEY, "{not json"); // damaged — and these bytes are all the player has
+
+    await sync.exportLocal();
+
+    expect(sync.state.phase).toBe("idle"); // salvage SUCCEEDS — it is not a failure
+    expect(sync.last).toBe("exported");
+    expect(await fileTexts(files)).toEqual(["{not json"]);
+    expect(sync.localView).toEqual({ kind: "corrupt" }); // the view still says the damage
+  });
+
+  it("AC2/AC3 unreachable storage fails 'local-unavailable' and NO file goes out", async () => {
+    vi.stubGlobal("localStorage", disabledStorage());
+    const { files } = captureFiles();
+    const { sync } = rig();
+
+    await sync.exportLocal();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "export" });
+    expect(files).toHaveLength(0); // no bytes, no file
+    expect(sync.localView).toEqual({ kind: "unavailable" }); // the read is the refresh
+    expect(sync.last).toBe("none");
+  });
+
+  it("AC2 an empty slot is 'local-empty', not a failure — and no file goes out", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { sync } = rig();
+
+    await sync.exportLocal();
+
+    expect(sync.state.phase).toBe("idle");
+    expect(sync.last).toBe("local-empty");
+    expect(files).toHaveLength(0);
+    expect(sync.localView).toEqual({ kind: "empty" });
+  });
+
+  it("AC3 a Blob/URL failure is 'file' — its own word, nothing pretends the file went out", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    refuseFiles();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+
+    await sync.exportLocal();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file", action: "export" });
+    expect(sync.last).not.toBe("exported");
+    expect(sync.localView.kind).toBe("save"); // the read refreshed the view before the file side refused
+  });
+
+  it("AC3 the failure covers the old verdict (decision D8): 'exported' survives as the verdict but the phase speaks first", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.exportLocal();
+    expect(sync.last).toBe("exported");
+
+    refuseFiles();
+    await sync.exportLocal();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file", action: "export" });
+    expect(sync.last).toBe("exported"); // the machine keeps the verdict; the FAILED phase is the loud half
+    expect(files).toHaveLength(1); // exactly one file ever went out
+  });
+
+  it("exportLocal() takes no argument — the payload self-read, the #31 law mirrored (type pin)", () => {
+    // Never called — this exists to be COMPILED: widen the signature to
+    // accept a payload and the call below becomes legal, the
+    // `@ts-expect-error` goes unused, and typecheck fails.
+    const compileOnly = (machine: CloudSync, smuggled: string): void => {
+      // @ts-expect-error exportLocal takes no argument — no view can be the payload
+      void machine.exportLocal(smuggled);
+    };
+    void compileOnly;
+  });
+
+  it("D7 the escape hatch is live mid-adjudication: the file ships and the adjudication STANDS — exporting is not an exit", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { transport, local, sync } = rig();
+    const mine = snapshotFixture({ nowTick: 20 });
+    await local.save(mine);
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+
+    await sync.exportLocal();
+
+    expect(await fileTexts(files)).toEqual([JSON.stringify(mine)]);
+    expect(sync.state).toEqual({ phase: "conflict", cause: "compare" }); // nothing chose an exit
+    expect(sync.last).toBe("exported");
+  });
+
+  it("a loud export failure mid-adjudication chooses no exit either — the untouched comparison comes back on a probe", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    refuseFiles();
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+
+    await sync.exportLocal();
+
+    // The failure is loud (the phase speaks first, D8) — and it moved NOTHING:
+    // a probe sees the very same comparison again.
+    expect(sync.state).toEqual({ phase: "failed", failure: "file", action: "export" });
+    await sync.probe();
+    expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
+  });
+
+  it("an emptied slot under a standing comparison reports 'local-empty' and moves NO phase — absence is not failure, so it cannot cover the adjudication (D5)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { files } = captureFiles();
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+    localStorage.removeItem(KEY); // the local slot vanished behind the machine
+
+    await sync.exportLocal();
+
+    expect(sync.state).toEqual({ phase: "conflict", cause: "compare" }); // "a failure covers the old verdict" is the ONLY override (AC3)
+    expect(sync.last).toBe("local-empty"); // the absence verdict is still recorded…
+    expect(sync.localView).toEqual({ kind: "empty" }); // …and the row shows why no file went out
+    expect(files).toHaveLength(0);
+  });
+
+  it("a raw face that THROWS is still 'unavailable' — a read that failed did not find nothing", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    captureFiles();
+    const { cloud } = rig();
+    const broken: LocalSlot = {
+      load: () => Promise.resolve(null),
+      save: () => Promise.resolve(),
+      readRaw: () => Promise.reject(new Error("raw face exploded")),
+    };
+    const sync = new CloudSync(cloud, broken, { markExpired: () => undefined });
+
+    await sync.exportLocal();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "export" });
+  });
+
+  it("busy is a refusal, not a queue — an export cannot run beside an action in flight", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    captureFiles();
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+
+    const first = sync.upload();
+    await expect(sync.exportLocal()).rejects.toThrow(/in flight/i);
+    await first;
+
+    expect(sync.last).toBe("saved");
   });
 });

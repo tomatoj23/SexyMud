@@ -1,6 +1,6 @@
 import { migrateSnapshot, restoreWorld, type SaveStore, type Snapshot } from "@sexymud/core";
 import { CloudSaveError, type ReplaceResult } from "./cloudSaveStore.js";
-import { LocalSaveUnavailableError } from "./localSaveStore.js";
+import { LocalSaveUnavailableError, type RawLocalRead } from "./localSaveStore.js";
 import { parseSnapshotText } from "./saveText.js";
 
 /**
@@ -25,13 +25,17 @@ import { parseSnapshotText } from "./saveText.js";
  * feature this project does not have (#29 refused the same route); the
  * escape hatch is the export path (ADR-0002 §21) — and since #33 it has a
  * dual: `beginImport` takes the exported JSON back into the local slot, so
- * the salvage channel is no longer one-way. Importing is a deliberate
- * overwrite of the local slot: the file is read and proven RESTORABLE here
- * before the panel quotes its cost (a damaged or unloadable file is refused
- * loudly and changes nothing), the un-migrated bytes are what lands in the
- * slot (the store never migrates), and the destructive half only runs as
- * the confirm's answer (`commitImport` — the two-step split is where the
- * confirm sits, not a view's).
+ * the salvage channel is no longer one-way. What the export SHIPS is the
+ * local slot's original text, read by the machine itself (#34 — #31 D3's
+ * corollary: a view can never be the payload); damaged bytes ship too
+ * (decision D2: when the save is broken, those bytes are the player's only
+ * copy). Importing is a deliberate overwrite of the local slot: the file is
+ * read and proven RESTORABLE here before the panel quotes its cost (a
+ * damaged or unloadable file is refused loudly and changes nothing), the
+ * un-migrated bytes are what lands in the slot (the store never migrates),
+ * and the destructive half only runs as the confirm's answer
+ * (`commitImport` — the two-step split is where the confirm sits, not a
+ * view's).
  *
  * **Failures are loud and untouched (decision D8)**: a refused save reports
  * "not saved" with BOTH stores exactly as they were — no silent local
@@ -62,12 +66,13 @@ export type SyncOutcome =
   | "saved" // "存了" — the cloud save landed
   | "downloaded" // the cloud save came down into the local slot
   | "imported" // a file save landed in the local slot (#33)
+  | "exported" // the local slot's own bytes went out as a file (#34)
   | "dismissed" // adjudicated: playing on locally, cloud untouched
   | "remote-empty" // nothing to download — absence is not failure
-  | "local-empty" // nothing to upload — the same absence, on the local side (#31)
+  | "local-empty" // nothing to upload or export — the same absence, on the local side (#31/#34)
   | "in-sync"; // both sides byte-equal
 
-export type SyncAction = "probe" | "upload" | "download" | "import";
+export type SyncAction = "probe" | "upload" | "download" | "import" | "export";
 
 /**
  * The machine's PHASE with just its contextual fields — the comparison and
@@ -93,14 +98,16 @@ export type SyncState =
        * settings" and "repair the save" are opposite advice. `corrupt` names
        * cloud damage (whose repair path IS the upload).
        *
-       * The `file` family is the import's own front half (#33) — the
-       * failure SOURCE is the picked file, exactly as `local-*` names the
-       * local slot and `corrupt` the cloud: `file` is the read itself,
-       * `file-corrupt` is damage (parse, or payload-class validation —
-       * repair is "another file"), `file-version` is a save the migration
-       * chain cannot walk (wait for an engine upgrade). Write-side trouble
-       * during import reuses `local`/`local-unavailable` unchanged — a
-       * full or disabled store is the same exit whichever action got there.
+       * The `file` family names the FILE side of the action (#33/#34) — the
+       * failure SOURCE is the file, exactly as `local-*` names the local slot
+       * and `corrupt` the cloud: `file` is the file's own trouble — the
+       * picked file cannot be read (import) or the produced one cannot be
+       * made (export: Blob/URL refused) — `file-corrupt` is damage (parse, or
+       * payload-class validation — repair is "another file"), `file-version`
+       * is a save the migration chain cannot walk (wait for an engine
+       * upgrade). Write-side trouble during import reuses `local`/
+       * `local-unavailable` unchanged — a full or disabled store is the same
+       * exit whichever action got there.
        */
       failure:
         | "network"
@@ -142,6 +149,19 @@ export interface ImportSource {
   text(): Promise<string>;
 }
 
+/**
+ * The host-side local seam (#34, decision D4): the core `SaveStore` port the
+ * machine already drives, plus the RAW read the export path needs — the
+ * slot's original text, exactly as stored (byte-faithful, D1). The port
+ * itself is untouched (the red line): `readRaw` hangs here, on the host's
+ * store, and it is read-only by construction — "corrupt" is never its word
+ * (the bytes of a damaged save still read out), the parse that words damage
+ * is up here.
+ */
+export interface LocalSlot extends SaveStore {
+  readRaw(): Promise<RawLocalRead>;
+}
+
 export class CloudSync {
   private current: SyncState = { phase: "idle" };
   /**
@@ -170,7 +190,7 @@ export class CloudSync {
 
   constructor(
     private readonly cloud: CloudSlot,
-    private readonly local: SaveStore,
+    private readonly local: LocalSlot,
     private readonly session?: SessionExpiry,
   ) {}
 
@@ -302,6 +322,50 @@ export class CloudSync {
       this.views.local = this.views.remote;
       this.outcome = "downloaded";
       return { phase: "idle" };
+    });
+  }
+
+  /**
+   * The escape-hatch export (#34 D1/D2): ships the local slot's ORIGINAL
+   * text out as a file. The payload is read HERE — `exportLocal()` takes no
+   * argument, so no display view can be the payload source (#31 D3's
+   * corollary): the file is the slot's bytes as stored (byte-faithful —
+   * damaged bytes ship too, salvage is the point of decision D2) and a slot
+   * written behind this machine exports the NEW content. The read IS the
+   * view refresh (#31 D3): one read, and the view shows exactly what shipped.
+   *
+   * Absence and trouble are their own verdicts (decision D2/D3): an empty
+   * slot is `"local-empty"` — absence is not failure — an unreachable one is
+   * `failed`/`"local-unavailable"` (no bytes, no file), and the file side's
+   * own refusal (Blob/URL) is `failed`/`"file"` (#33's word). A SUCCESS or an
+   * ABSENCE changes nothing anywhere, so a standing adjudication stands —
+   * exporting is not one of decision D7's three exits, and an empty slot is
+   * not a failure (D2). Only a FAILURE replaces the phase: "a failure covers
+   * the old verdict" is the one sanctioned override (D8), and even that
+   * chooses nothing — both slots stay exactly as they were and a probe
+   * re-derives the same comparison.
+   */
+  exportLocal(): Promise<SyncState> {
+    // Captured before `run` parks the machine on "busy": a non-failure export
+    // must leave a standing adjudication exactly where it was.
+    const standing = this.current.phase === "conflict" ? this.current : { phase: "idle" as const };
+    return this.run("export", async () => {
+      const raw = await this.readRawLocal();
+      this.views.local = this.rawView(raw); // the read is the refresh
+      if (raw.kind === "unavailable") {
+        return { phase: "failed", failure: "local-unavailable", action: "export" };
+      }
+      if (raw.kind === "empty") {
+        this.outcome = "local-empty";
+        return standing;
+      }
+      try {
+        sendSaveFile(raw.text);
+      } catch {
+        return { phase: "failed", failure: "file", action: "export" };
+      }
+      this.outcome = "exported";
+      return standing;
     });
   }
 
@@ -494,9 +558,54 @@ export class CloudSync {
     }
   }
 
+  /**
+   * The raw read (#34), tolerant in exactly one direction: a face that THROWS
+   * has still failed to produce bytes — the same verdict as its `unavailable`
+   * kind ("a read that failed did not find nothing").
+   */
+  private async readRawLocal(): Promise<RawLocalRead> {
+    try {
+      return await this.local.readRaw();
+    } catch {
+      return { kind: "unavailable" };
+    }
+  }
+
+  /**
+   * The local view out of a RAW read (#34): one read, one truth — the view
+   * shows exactly the content the export ships, damage included. "corrupt" is
+   * the parse's verdict here, never the raw face's.
+   */
+  private rawView(raw: RawLocalRead): ReadSlotView {
+    if (raw.kind !== "text") return { kind: raw.kind };
+    try {
+      return { kind: "save", snapshot: parseSnapshotText(raw.text) };
+    } catch {
+      return { kind: "corrupt" };
+    }
+  }
+
   private transition(next: SyncState): SyncState {
     this.current = next;
     for (const listener of this.listeners) listener();
     return next;
   }
+}
+
+/**
+ * Ships one save's text out as a file — the player's own copy (ADR-0002 §21),
+ * byte-for-byte what the slot holds (#34 D1: no re-serialization in between).
+ * Throws when the browser's file side refuses — that throw is the `file`
+ * failure's source, nothing about the save itself.
+ */
+function sendSaveFile(text: string): void {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "sexymud-save.json";
+  link.click();
+  // Deferred: revoking synchronously can cancel the download itself in some
+  // browsers — the salvage channel must not fail on its last step.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

@@ -42,6 +42,18 @@ function isQuotaFailure(error: unknown): boolean {
 }
 
 /**
+ * What a RAW read of the local slot produces (#34, decision D4): the stored
+ * bytes exactly as they are, or their absence. "Corrupt" is NEVER this face's
+ * word — the bytes of a damaged save still read fine and are all a salvage
+ * needs; judging them is the caller's parse, not this read's.
+ */
+export type RawLocalRead =
+  | { kind: "text"; text: string }
+  | { kind: "empty" }
+  /** The storage itself could not be reached (#32 D4) — there are no bytes to read. */
+  | { kind: "unavailable" };
+
+/**
  * Browser-local SaveStore implementation. Its cloud-backed sibling — same
  * interface, same snapshot text — is `CloudSaveStore` (cloudSaveStore.ts,
  * ticket #29); the two stores interchange saves byte-for-byte.
@@ -50,15 +62,7 @@ export class LocalSaveStore implements SaveStore {
   constructor(private readonly key: string) {}
 
   async load(): Promise<Snapshot | null> {
-    let raw: string | null;
-    try {
-      raw = localStorage.getItem(this.key);
-    } catch (cause) {
-      // The storage access itself threw — unreachable, never "damaged" (#32
-      // D4): a reader that cannot reach the bytes must not send the player
-      // repairing a save that is fine.
-      throw new LocalSaveUnavailableError("local save: storage is not accessible", { cause });
-    }
+    const raw = this.readText();
     if (!raw) return null;
     // Corrupt saves fail loudly instead of silently starting a fresh game
     // (which would overwrite the broken save on the next autosave); the host
@@ -83,6 +87,38 @@ export class LocalSaveStore implements SaveStore {
       // deleting saves); everything else the storage layer throws is the
       // unreachable class (#32 D4).
       if (isQuotaFailure(cause)) throw cause;
+      throw new LocalSaveUnavailableError("local save: storage is not accessible", { cause });
+    }
+  }
+
+  /**
+   * The slot's ORIGINAL text (#34, decision D4 — the export path's face):
+   * bytes out untouched, damage included — a salvage works on exactly what
+   * was stored, and so does a repair's diff. The core `SaveStore` port is
+   * untouched (the red line); this raw face hangs here, on the host's store,
+   * and it never parses: `empty` is absence, `unavailable` is unreachable
+   * storage (#32 D4), and everything else is `text` for the caller to judge.
+   */
+  async readRaw(): Promise<RawLocalRead> {
+    let raw: string | null;
+    try {
+      raw = this.readText();
+    } catch {
+      return { kind: "unavailable" };
+    }
+    return raw ? { kind: "text", text: raw } : { kind: "empty" };
+  }
+
+  /**
+   * The one storage read both faces sit on: the stored text or its absence,
+   * and nothing else — an unreachable store throws its own class (#32 D4):
+   * a reader that cannot reach the bytes must not send the player repairing
+   * a save that is fine.
+   */
+  private readText(): string | null {
+    try {
+      return localStorage.getItem(this.key);
+    } catch (cause) {
       throw new LocalSaveUnavailableError("local save: storage is not accessible", { cause });
     }
   }
