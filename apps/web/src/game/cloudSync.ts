@@ -1,6 +1,7 @@
-import type { SaveStore, Snapshot } from "@sexymud/core";
+import { migrateSnapshot, restoreWorld, type SaveStore, type Snapshot } from "@sexymud/core";
 import { CloudSaveError, type ReplaceResult } from "./cloudSaveStore.js";
 import { LocalSaveUnavailableError } from "./localSaveStore.js";
+import { parseSnapshotText } from "./saveText.js";
 
 /**
  * The host's cloud-sync surface (#30, spec/04 §1.6, ADR-0037): the sync
@@ -22,7 +23,15 @@ import { LocalSaveUnavailableError } from "./localSaveStore.js";
  * remote (download it into the local slot), or dismiss and play on locally.
  * "Keep both" is not one of them: forking save slots is a slot-management
  * feature this project does not have (#29 refused the same route); the
- * escape hatch is the export path (ADR-0002 §21).
+ * escape hatch is the export path (ADR-0002 §21) — and since #33 it has a
+ * dual: `beginImport` takes the exported JSON back into the local slot, so
+ * the salvage channel is no longer one-way. Importing is a deliberate
+ * overwrite of the local slot: the file is read and proven RESTORABLE here
+ * before the panel quotes its cost (a damaged or unloadable file is refused
+ * loudly and changes nothing), the un-migrated bytes are what lands in the
+ * slot (the store never migrates), and the destructive half only runs as
+ * the confirm's answer (`commitImport` — the two-step split is where the
+ * confirm sits, not a view's).
  *
  * **Failures are loud and untouched (decision D8)**: a refused save reports
  * "not saved" with BOTH stores exactly as they were — no silent local
@@ -52,12 +61,13 @@ export type SyncOutcome =
   | "none" // nothing synced yet
   | "saved" // "存了" — the cloud save landed
   | "downloaded" // the cloud save came down into the local slot
+  | "imported" // a file save landed in the local slot (#33)
   | "dismissed" // adjudicated: playing on locally, cloud untouched
   | "remote-empty" // nothing to download — absence is not failure
   | "local-empty" // nothing to upload — the same absence, on the local side (#31)
   | "in-sync"; // both sides byte-equal
 
-export type SyncAction = "probe" | "upload" | "download";
+export type SyncAction = "probe" | "upload" | "download" | "import";
 
 /**
  * The machine's PHASE with just its contextual fields — the comparison and
@@ -82,8 +92,25 @@ export type SyncState =
        * cannot be reached at all (#32 D4): its own word, because "check
        * settings" and "repair the save" are opposite advice. `corrupt` names
        * cloud damage (whose repair path IS the upload).
+       *
+       * The `file` family is the import's own front half (#33) — the
+       * failure SOURCE is the picked file, exactly as `local-*` names the
+       * local slot and `corrupt` the cloud: `file` is the read itself,
+       * `file-corrupt` is damage (parse, or payload-class validation —
+       * repair is "another file"), `file-version` is a save the migration
+       * chain cannot walk (wait for an engine upgrade). Write-side trouble
+       * during import reuses `local`/`local-unavailable` unchanged — a
+       * full or disabled store is the same exit whichever action got there.
        */
-      failure: "network" | "corrupt" | "local" | "local-corrupt" | "local-unavailable";
+      failure:
+        | "network"
+        | "corrupt"
+        | "local"
+        | "local-corrupt"
+        | "local-unavailable"
+        | "file"
+        | "file-corrupt"
+        | "file-version";
       action: SyncAction;
     }
   | { phase: "auth-expired" };
@@ -105,6 +132,16 @@ export interface CloudSlot {
   replace(snapshot: Snapshot): Promise<ReplaceResult>;
 }
 
+/**
+ * The narrow slice of the picked file this machine needs (#33) — just its
+ * text. The read is part of the IMPORT ACTION (the panel only picks and
+ * confirms), which is why a read failure is a machine verdict (`failed`/
+ * `"file"`) and not panel noise.
+ */
+export interface ImportSource {
+  text(): Promise<string>;
+}
+
 export class CloudSync {
   private current: SyncState = { phase: "idle" };
   /**
@@ -117,6 +154,14 @@ export class CloudSync {
     remote: { kind: "unknown" },
   };
   private outcome: SyncOutcome = "none";
+  /**
+   * The import's validated payload, held between the two halves of the
+   * action (#33): `beginImport` stages it (parsed AND proven restorable),
+   * `commitImport` spends it. Not a view — views describe the SLOTS; this is
+   * the one write awaiting its confirm, so no display cache can ever be the
+   * payload source (the #31 law, mirrored).
+   */
+  private pendingImport: Snapshot | null = null;
   private listeners = new Set<() => void>();
 
   constructor(
@@ -244,16 +289,93 @@ export class CloudSync {
       try {
         await this.local.save(record);
       } catch (error) {
-        // The local write's own classification (#32 D4): unreachable storage
-        // is its own word — "check settings" is not "free some space".
         return {
           phase: "failed",
-          failure: error instanceof LocalSaveUnavailableError ? "local-unavailable" : "local",
+          failure: this.localWriteFailure(error),
           action: "download",
         };
       }
       this.views.local = this.views.remote;
       this.outcome = "downloaded";
+      return { phase: "idle" };
+    });
+  }
+
+  /**
+   * The import's front half (#33 D3/D4): read the picked file, parse it,
+   * and prove `restoreWorld` can load it — only then does the panel quote
+   * the overwrite's cost. Nothing is written here and no verdict is claimed:
+   * a refusal is loud and the slot is untouched (`file` cannot read /
+   * `file-corrupt` damaged / `file-version` the chain cannot walk), and the
+   * verified payload — **un-migrated bytes, the store never migrates** — is
+   * staged for {@link commitImport}.
+   *
+   * Validation is `restoreWorld`'s whole chain, not just the migration
+   * walk: an envelope-clean file with a damaged payload would otherwise be
+   * welcomed now and explode at the worst time (the actual load). Which
+   * class of damage it is, the migration chain names: a chain that cannot
+   * walk is `file-version`, a chain that walks leaves payload damage
+   * (`file-corrupt`) — sound because migration steps never judge payload
+   * damage (migrations.ts leaves that to `readSaveData`; a step that
+   * validated on its own would blur these two words).
+   */
+  beginImport(source: ImportSource): Promise<SyncState> {
+    return this.run("import", async () => {
+      let text: string;
+      try {
+        text = await source.text();
+      } catch {
+        return { phase: "failed", failure: "file", action: "import" };
+      }
+      let parsed: Snapshot;
+      try {
+        parsed = parseSnapshotText(text);
+      } catch {
+        return { phase: "failed", failure: "file-corrupt", action: "import" };
+      }
+      try {
+        restoreWorld(parsed);
+      } catch {
+        let failure: "file-version" | "file-corrupt" = "file-corrupt";
+        try {
+          migrateSnapshot(parsed);
+        } catch {
+          failure = "file-version";
+        }
+        return { phase: "failed", failure, action: "import" };
+      }
+      this.pendingImport = parsed;
+      return { phase: "idle" };
+    });
+  }
+
+  /**
+   * The import's destructive half: the confirmed overwrite of the local
+   * slot. Takes no argument — the payload is the staged, verified one (no
+   * view can smuggle itself in, #31) — and refuses without one (the
+   * confirm's escrow is spent by the attempt: a refused write still counts
+   * as answered, loudly, and re-importing is the retry). A write failure is
+   * the local store's own classification (#32 D4), and nothing half-writes:
+   * the slot, the views and the last verdict are all as they were.
+   */
+  commitImport(): Promise<SyncState> {
+    const snapshot = this.pendingImport;
+    if (!snapshot) {
+      return Promise.reject(new Error("cloud sync: no import staged"));
+    }
+    return this.run("import", async () => {
+      this.pendingImport = null;
+      try {
+        await this.local.save(snapshot);
+      } catch (error) {
+        return {
+          phase: "failed",
+          failure: this.localWriteFailure(error),
+          action: "import",
+        };
+      }
+      this.views.local = { kind: "save", snapshot };
+      this.outcome = "imported";
       return { phase: "idle" };
     });
   }
@@ -270,7 +392,7 @@ export class CloudSync {
   /** Runs one action through the guard and the failure mapping. */
   private run(action: SyncAction, work: () => Promise<SyncState>): Promise<SyncState> {
     try {
-      this.ensureRunnable();
+      this.ensureRunnable(action);
     } catch (error) {
       return Promise.reject(error);
     }
@@ -287,12 +409,20 @@ export class CloudSync {
     );
   }
 
-  private ensureRunnable(): void {
+  private ensureRunnable(action: SyncAction): void {
     if (this.current.phase === "busy") {
       throw new Error("cloud sync: another sync action is in flight");
     }
     if (this.current.phase === "auth-expired") {
       throw new Error("cloud sync: session expired — sign in again");
+    }
+    // Importing may not move the stakes mid-adjudication (#33 D3 — the
+    // ADR-0037 D7 law that adjudication is among deliberate exits): an
+    // import swaps the very slot the conflict is comparing. The panel's
+    // disabled button is a display gate reading this same state — this
+    // refusal is the only insurance.
+    if (this.current.phase === "conflict" && action === "import") {
+      throw new Error("cloud sync: a conflict is awaiting adjudication");
     }
   }
 
@@ -325,6 +455,15 @@ export class CloudSync {
       if (error instanceof CloudSaveError && error.kind === "corrupt") return { kind: "corrupt" };
       throw error;
     }
+  }
+
+  /**
+   * The local write's own classification (#32 D4), one mapping for every
+   * write path: unreachable storage is its own word — "check settings" is
+   * not "free some space".
+   */
+  private localWriteFailure(error: unknown): "local" | "local-unavailable" {
+    return error instanceof LocalSaveUnavailableError ? "local-unavailable" : "local";
   }
 
   /**

@@ -1,4 +1,5 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
+import type { ChangeEvent } from "react";
 import type { Snapshot } from "@sexymud/core";
 import type { CloudSync, SlotView, SyncOutcome, SyncState } from "../game/cloudSync.js";
 
@@ -11,6 +12,7 @@ const VERDICT: Record<SyncOutcome, string> = {
   none: "尚未同步",
   saved: "已存到云端 ✓（存了）",
   downloaded: "云端存档已载入本地 ✓",
+  imported: "已导入本地存档 ✓",
   dismissed: "继续本地玩——云端未同步",
   "remote-empty": "云端没有存档",
   "local-empty": "本地没有存档可上传",
@@ -27,7 +29,13 @@ function statusLine(state: SyncState, last: SyncOutcome): string {
   if (state.phase === "auth-expired") return "登录已过期";
   if (state.phase === "conflict") return "冲突——请选择以哪边继续";
   if (state.phase === "failed") {
-    return state.action === "upload" ? "没存上" : state.action === "download" ? "没下载到本地" : "检查失败";
+    return state.action === "upload"
+      ? "没存上"
+      : state.action === "download"
+        ? "没下载到本地"
+        : state.action === "import"
+          ? "没导入"
+          : "检查失败";
   }
   return VERDICT[last];
 }
@@ -95,7 +103,8 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     () => sync.state,
   );
   /** Two-step confirms: the destructive exits say their cost first (decision D7). */
-  const [confirming, setConfirming] = useState<"upload" | "download" | null>(null);
+  const [confirming, setConfirming] = useState<"upload" | "download" | "import" | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const localSnapshot = sync.localView.kind === "save" ? sync.localView.snapshot : null;
   const busy = state.phase === "busy";
 
@@ -126,6 +135,24 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     return "本地当前显示无存档（显示可能过期）——若本地实际已有存档，下载将覆盖它（可先导出保底）。";
   }
 
+  /**
+   * The pick is only a pick (#33): the machine reads and proves the file
+   * restorable, and the confirm pops for a proven payload and for NOTHING
+   * else — it is the very next thing after `beginImport` says so, whatever
+   * the slot views currently claim (a stale cache never skips the cost
+   * notice, #33 D3). Cancelling the picker is silence itself.
+   */
+  async function onImportFile(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const picked = event.target.files?.[0];
+    // Clearing the value lets the same file be picked twice.
+    event.target.value = "";
+    if (!picked) return; // picker cancelled — silent, no state change (#33 D5)
+    await run(async () => {
+      const staged = await sync.beginImport(picked);
+      if (staged.phase === "idle") setConfirming("import");
+    });
+  }
+
   return (
     <section style={{ borderTop: "1px solid #ddd", marginTop: 12, paddingTop: 8 }}>
       <div style={rowStyle}>
@@ -147,6 +174,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             "没存上："}
           {state.action === "download" && "没下载到本地："}
           {state.action === "probe" && "检查失败："}
+          {state.action === "import" && state.failure !== "local-unavailable" && "没导入："}
           {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
           {state.failure === "corrupt" &&
             (state.action === "upload"
@@ -157,7 +185,14 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
           {state.failure === "local-unavailable" &&
             (state.action === "upload"
               ? "本地存储不可访问，无法上传——请检查浏览器设置或退出隐私模式（重试无用）。"
-              : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
+              : state.action === "import"
+                ? "本地存储不可访问，无法导入——请检查浏览器设置或退出隐私模式（重试无用）。"
+                : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
+          {/* The file family (#33) — the advice is always "another file":
+              repair/export salvage target the local slot, never the pick. */}
+          {state.failure === "file" && "文件读不出来（可能已移动或被占用）——换一个文件再试，本地存档未改动。"}
+          {state.failure === "file-corrupt" && "文件损坏或不是有效存档，本地存档未改动。"}
+          {state.failure === "file-version" && "存档版本不可载（过新或迁移不可走），本地存档未改动。"}
         </p>
       )}
 
@@ -185,6 +220,12 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                 导出本地存档（保底）
               </button>
             )}
+            {/* The view gate (#33 D3): greyed out mid-adjudication — this
+                whole block renders only in the conflict phase, so the button
+                is pure display (the machine's own refusal is the insurance). */}
+            <button style={buttonStyle} disabled>
+              导入本地存档
+            </button>
           </div>
           {confirming === "upload" && (
             <div style={rowStyle}>
@@ -213,6 +254,16 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               warning={downloadWarning()}
               confirmLabel="确认下载"
               onConfirm={() => void run(() => sync.download())}
+              onCancel={() => setConfirming(null)}
+            />
+          ) : confirming === "import" ? (
+            // The cost notice verbatim (#33 D3): 覆盖当前本地存档、
+            // 不可撤销、建议先导出保命 — unconditional, and it is the
+            // confirm's answer that runs the write (commitImport).
+            <ConfirmButtons
+              warning="覆盖当前本地存档、不可撤销、建议先导出保命。"
+              confirmLabel="确认导入"
+              onConfirm={() => void run(() => sync.commitImport())}
               onCancel={() => setConfirming(null)}
             />
           ) : (
@@ -245,10 +296,28 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                   导出本地存档
                 </button>
               )}
+              {/* The #33 D1 pair: import lives beside export. The views gate
+                  the BUTTONS but never the CONFIRM above (D7). Conflict never
+                  reaches this row (its own block owns that phase), so the
+                  conflict gate here is the block split above. */}
+              <button
+                style={buttonStyle}
+                onClick={() => fileInput.current?.click()}
+                disabled={busy || state.phase === "auth-expired"}
+              >
+                导入本地存档
+              </button>
             </>
           )}
         </div>
       )}
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: "none" }}
+        onChange={(event) => void onImportFile(event)}
+      />
     </section>
   );
 }

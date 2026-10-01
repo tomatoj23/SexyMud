@@ -6,7 +6,7 @@ import type { SaveStore, Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
 import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore, LocalSaveUnavailableError } from "../src/game/localSaveStore.js";
-import { CloudSync, type SlotView } from "../src/game/cloudSync.js";
+import { CloudSync, type ImportSource, type SlotView } from "../src/game/cloudSync.js";
 import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
 
 /**
@@ -39,6 +39,15 @@ import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
  * revision anchor, a damaged text — never a knob through the store's
  * back), and the local side's storage trouble reads "unavailable", not
  * "corrupt" and not "quota".
+ *
+ * #33 closes the export channel's dual: `beginImport` reads a picked file
+ * and proves `restoreWorld` can load it BEFORE any confirm is offered,
+ * `commitImport` spends that verified payload on the local slot. The tests
+ * pin each refusal as its own word (`file` / `file-corrupt` /
+ * `file-version` / the write-side `local` family), the envelope-clean
+ * PAYLOAD-damaged file the gate must still refuse (the #33 review's H3),
+ * and the store-gets-the-original-bytes law (a v1 file stays v1 in the
+ * slot — the store never migrates).
  */
 
 /** A RAM transport keeping the contract's law: `write` is an atomic CAS. */
@@ -785,5 +794,202 @@ describe("CloudSync — the store's knowledge stays in the store (#32 AC1)", () 
     expect(source).not.toMatch(/武装/);
     expect(source).not.toMatch(/\b(?:re|dis)?arm(?:s|ed|ing)?\b/i);
     expect(source).not.toMatch(/\banchor\b/i);
+  });
+});
+
+describe("CloudSync — import: the export channel's dual (#33)", () => {
+  /** The picked file as the machine sees it — the panel hands the File; its text is all that matters. */
+  function pickedFile(text: string): ImportSource {
+    return { text: () => Promise.resolve(text) };
+  }
+
+  /** A v1 save an old build wrote — the chain walks it, but the slot must keep these exact bytes. */
+  const V1_TEXT = JSON.stringify({
+    version: 1,
+    data: { entities: { jia: { id: "jia", locationId: "room-a", flags: ["seen"] } } },
+  });
+
+  it("a verified file lands in the local slot on the CONFIRM — outcome 'imported', view refreshed, and the ORIGINAL bytes stored (the store never migrates)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+
+    await sync.beginImport(pickedFile(V1_TEXT));
+
+    // AC1/AC3: the front half writes NOTHING — no half-import before the confirm.
+    expect(sync.state).toEqual({ phase: "idle" });
+    await expect(local.load()).resolves.toBeNull();
+    expect(sync.last).toBe("none");
+
+    await sync.commitImport();
+
+    // AC3: the success path refreshes the local view with the imported save.
+    expect(sync.last).toBe("imported");
+    expect(sync.localView).toEqual({ kind: "save", snapshot: JSON.parse(V1_TEXT) });
+    // Stored UNMIGRATED — v1 bytes, none of the v2 scalars added in transit.
+    expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
+  });
+
+  it("the import payload is never a view: views move between stage and commit, the imported bytes still land", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, sync } = rig();
+    await sync.beginImport(pickedFile(V1_TEXT));
+
+    // A probe refreshes both views mid-flow — a display cache is not a payload (#31).
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    await sync.commitImport();
+
+    expect(sync.last).toBe("imported");
+    expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
+  });
+
+  it("a file that is not JSON is refused 'file-corrupt' — loud, nothing staged, nothing written (AC1)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+
+    await sync.beginImport(pickedFile("{not json"));
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    await expect(local.load()).resolves.toBeNull();
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("JSON that is not a snapshot envelope is 'file-corrupt' too — the parse seam is parseSnapshotText (AC1)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+
+    await sync.beginImport(pickedFile(JSON.stringify([1, 2, 3])));
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("an envelope-clean file with a DAMAGED PAYLOAD is still refused 'file-corrupt' — restoreWorld is the gate, not just the parse (H3 regression)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+    // The #33 review's H3 case: `{version, data}` present and parseable,
+    // but `data.entities` is not an object — a migrate-only check would
+    // welcome it and the real load would explode later.
+    const envelopeClean = JSON.stringify({ version: 2, data: { entities: [] } });
+
+    await sync.beginImport(pickedFile(envelopeClean));
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("a save the migration chain cannot walk is 'file-version' — its own word, never blurred into 'file-corrupt' (AC4)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+
+    await sync.beginImport(pickedFile(JSON.stringify({ version: 99, data: { entities: {} } })));
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-version", action: "import" });
+
+    // A version that is a number but not a step the chain can stand on.
+    await sync.beginImport(pickedFile(JSON.stringify({ version: 1.5, data: { entities: {} } })));
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-version", action: "import" });
+  });
+
+  it("the two file words never blur: an OLD save with a damaged payload is 'file-corrupt' — the chain walks, the payload does not", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+    const oldButBroken = JSON.stringify({ version: 1, data: { entities: [] } });
+
+    await sync.beginImport(pickedFile(oldButBroken));
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+  });
+
+  it("a file that cannot be READ is 'file' — the source's own failure, not save damage (AC4)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+    const unreadable: ImportSource = { text: () => Promise.reject(new Error("file moved")) };
+
+    await sync.beginImport(unreadable);
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "file", action: "import" });
+    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+  });
+
+  it("a failure covers the old verdict (decision D8): 'imported' is still the LAST verdict but the phase speaks first", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { sync } = rig();
+    await sync.beginImport(pickedFile(V1_TEXT));
+    await sync.commitImport();
+    expect(sync.last).toBe("imported");
+
+    await sync.beginImport(pickedFile("{not json"));
+
+    // The machine keeps the verdict; the panel's status line reads the
+    // FAILED phase over it — the old verdict never papers over a failure.
+    expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
+    expect(sync.last).toBe("imported");
+  });
+
+  it("a confirmed import whose local write refuses (quota) reports 'local' — never 'imported' over a failed write (AC4)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { cloud } = rig();
+    const refusing: SaveStore = {
+      load: () => Promise.resolve(null),
+      save: () => Promise.reject(new Error("quota exceeded")),
+    };
+    const sync = new CloudSync(cloud, refusing, { markExpired: () => undefined });
+    await sync.beginImport(pickedFile(V1_TEXT));
+
+    await sync.commitImport();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local", action: "import" });
+    expect(sync.last).not.toBe("imported"); // the verdict never claims a write that did not land
+    expect(sync.localView.kind).toBe("unknown"); // and the view is not half-refreshed either
+  });
+
+  it("a confirmed import into UNREACHABLE storage reports 'local-unavailable', never quota-worded 'local' (#32 D4 words ride on import too)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { cloud } = rig();
+    const unreachable: SaveStore = {
+      load: () => Promise.resolve(null),
+      save: () =>
+        Promise.reject(new LocalSaveUnavailableError("local save: storage is not accessible")),
+    };
+    const sync = new CloudSync(cloud, unreachable, { markExpired: () => undefined });
+    await sync.beginImport(pickedFile(V1_TEXT));
+
+    await sync.commitImport();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "import" });
+  });
+
+  it("import may not move the stakes mid-adjudication — beginImport refuses while a conflict stands (#33 D3)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
+
+    await expect(sync.beginImport(pickedFile(V1_TEXT))).rejects.toThrow("conflict");
+
+    // The refusal changes nothing — the adjudication stands untouched.
+    expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
+  });
+
+  it("a staged import cannot land mid-adjudication — commitImport refuses, the escrow SURVIVES, and lands only after the conflict is resolved", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await sync.beginImport(pickedFile(V1_TEXT)); // staged and answered before the trouble
+    const mine = snapshotFixture({ nowTick: 20 });
+    await local.save(mine);
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+
+    await expect(sync.commitImport()).rejects.toThrow("conflict");
+    await expect(local.load()).resolves.toEqual(mine); // no half-write under the refusal
+
+    sync.dismiss();
+    await sync.commitImport();
+
+    expect(sync.last).toBe("imported");
+    expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
   });
 });
