@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { restoreWorld } from "@sexymud/core";
-import type { EntityState, Snapshot } from "@sexymud/core";
+import type { EntityState, SaveStore, Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
 import type {
   CloudSaveFailureKind,
@@ -317,6 +317,26 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
     await storeB.save(fixture(30));
     expect(armed).toEqual([null, "7"]);
   });
+
+  it("an unusable row neither arms nor DISARMS — an earlier observation stands until a readable row replaces it", async () => {
+    const armed: (string | null)[] = [];
+    let row: { text: string; revision: unknown } = { text: JSON.stringify(fixture(20)), revision: "7" };
+    const transport: CloudSaveTransport = {
+      read: async () => ({ text: row.text, revision: row.revision as string }),
+      write: async (_key, _text, expectedRevision) => {
+        armed.push(expectedRevision);
+        return "next";
+      },
+    };
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await store.load(); // arms "7"
+    row = { text: "{not json", revision: 17 as unknown as string }; // the row rots under us
+    await expectFailure(store.load(), "corrupt");
+
+    await store.save(fixture(30));
+    expect(armed).toEqual(["7"]); // NOT null: the unusable record disarmed nothing
+  });
 });
 
 describe("CloudSaveStore — versions pass through, the engine migrates (decision D3)", () => {
@@ -371,6 +391,16 @@ describe("CloudSaveStore — the text seam round-trips tricky Unicode (G6)", () 
     await store.save(snapshot);
     expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(snapshot));
     await expect(store.load()).resolves.toEqual(snapshot);
+  });
+});
+
+describe("CloudSaveStore — the port red line is mechanical (#32 AC4)", () => {
+  it("core SaveStore carries exactly load/save — growing or shrinking the port breaks this at COMPILE time", () => {
+    // Decision D5's red line ("core `SaveStore` 零改动") as a type-level
+    // pin: a version slot or a `replace` on the port makes this literal stop
+    // compiling — the line is not left to diligence.
+    const portSurface: Record<keyof SaveStore, true> = { load: true, save: true };
+    expect(Object.keys(portSurface).sort()).toEqual(["load", "save"]);
   });
 });
 
@@ -445,6 +475,35 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
     await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "conflict" });
     expect(transport.slots.has("save-slot-1")).toBe(false); // the delete stands — nothing re-created it
+  });
+
+  it("anchor damage PLUS a deleted row is the RACE — and the delete stands: no blind create clobbers it (decision D3)", async () => {
+    const transport = new FakeTransport();
+    transport.slots.set("save-slot-1", anchorDamaged(JSON.stringify(fixture(99))));
+    const store = new CloudSaveStore(transport, "save-slot-1");
+    transport.onceAfterRead = () => {
+      transport.slots.delete("save-slot-1");
+    };
+
+    // The un-armed write would be a CREATE — it lands exactly when somebody
+    // deleted the row mid-dance, i.e. it wins by clobbering the race. Same
+    // race as the test above ⇒ same verdict, whatever the damage form.
+    await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "conflict" });
+    expect(transport.slots.has("save-slot-1")).toBe(false); // the delete stands
+  });
+
+  it("object-shaped damage compares by VALUE — an unmoved row is 'unrepairable' across re-reads, never a phantom race", async () => {
+    const row = { text: JSON.stringify(fixture(99)), revision: { broken: true } };
+    const transport: CloudSaveTransport = {
+      // Fresh object identities per read — what a JSON backend hands back.
+      read: async () => ({ text: row.text, revision: { ...row.revision } as unknown as string }),
+      write: async () => {
+        throw new CloudSaveError("conflict", "transport: unusable anchor");
+      },
+    };
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "unrepairable" });
   });
 
   it("the verdict key is ROW IDENTITY, not the damage form: a CAS refused by an unmoved row is 'unrepairable' whatever the row looks like", async () => {

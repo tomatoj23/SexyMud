@@ -205,12 +205,20 @@ export class CloudSaveStore implements SaveStore {
    * what happened rides the result — a caller never re-enacts the arming
    * rules, because they never leave this class.
    *
-   * A refused write is adjudicated by re-observing the RAW row (decision D3):
-   * the same row — revision token and text both unchanged — means nothing
-   * moved and nothing ever CAN land (`unrepairable`); anything else — a new
-   * row, even a damaged one, or a vanished slot — is somebody writing, i.e. a
-   * real `conflict`. That identity is the ONLY exception; there is no gray
-   * zone where damage impersonates a race or a race impersonates damage.
+   * A refused write — or an anchor no faithful CAS can be expressed against —
+   * is adjudicated by re-observing the RAW row (decision D3): the same row —
+   * revision token and text both unchanged — means nothing moved and nothing
+   * ever CAN land (`unrepairable`); anything else — a new row, even a damaged
+   * one, or a vanished slot — is somebody writing, i.e. a real `conflict`.
+   * That identity is the ONLY exception; there is no gray zone where damage
+   * impersonates a race or a race impersonates damage.
+   *
+   * An unusable anchor is therefore never written against at all: the only
+   * write its absence could express is a blind CREATE, which lands exactly
+   * when somebody deleted the row mid-dance — winning by clobbering the very
+   * race decision D3 assigns to `conflict` (and the verdict would otherwise
+   * depend on whatever an earlier operation left armed). No write, no
+   * clobber, no history-dependence.
    *
    * One enqueue unit (the #29 serialization law) that talks to the transport
    * DIRECTLY — never the public `load`/`save`, whose own enqueue would park
@@ -222,17 +230,22 @@ export class CloudSaveStore implements SaveStore {
       const text = JSON.stringify(snapshot);
       const observed = await this.transport.read(this.key);
       this.arm(observed);
-      try {
-        const revision = await this.transport.write(this.key, text, this.revision);
-        this.revision = revision;
-        return { outcome: "saved" };
-      } catch (error) {
-        if (!(error instanceof CloudSaveError && error.kind === "conflict")) throw error;
-        const now = await this.transport.read(this.key);
-        this.arm(now);
-        if (sameRow(observed, now)) return { outcome: "unrepairable" };
-        return { outcome: "conflict" };
+      // An empty slot anchors a CREATE, a usable token anchors a CAS —
+      // nothing else can anchor any write.
+      const anchored = observed === null || typeof observed.revision === "string";
+      if (anchored) {
+        try {
+          const revision = await this.transport.write(this.key, text, this.revision);
+          this.revision = revision;
+          return { outcome: "saved" };
+        } catch (error) {
+          if (!(error instanceof CloudSaveError && error.kind === "conflict")) throw error;
+        }
       }
+      const now = await this.transport.read(this.key);
+      this.arm(now);
+      if (sameRow(observed, now)) return { outcome: "unrepairable" };
+      return { outcome: "conflict" };
     });
   }
 }
@@ -240,13 +253,21 @@ export class CloudSaveStore implements SaveStore {
 /**
  * The identity of a raw row — decision D3's verdict key: the SAME row means
  * token and text BOTH unchanged. Anything else (a re-minted token, different
- * text, or a vanished slot) is somebody writing.
+ * text, or a vanished slot) is somebody writing. Compared by VALUE, not
+ * reference: a damaged row's fields can be non-strings, and two reads of one
+ * stored row come back as fresh objects — reference comparison would then
+ * misread UNMOVED damage as somebody writing.
  */
 function sameRow(before: CloudSaveRecord | null, now: CloudSaveRecord | null): boolean {
   return (
     before !== null &&
     now !== null &&
-    now.revision === before.revision &&
-    now.text === before.text
+    sameValue(before.revision, now.revision) &&
+    sameValue(before.text, now.text)
   );
+}
+
+/** Value equality over whatever a damaged record field happens to hold. */
+function sameValue(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }

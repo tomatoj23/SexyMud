@@ -770,7 +770,7 @@ describe("CloudSync — unreachable storage is its own word, on both paths (#32 
 });
 
 describe("CloudSync — the store's knowledge stays in the store (#32 AC1)", () => {
-  it("cloudSync.ts never re-enacts the CAS arming rules — no anchor vocabulary lives up here", () => {
+  it("cloudSync.ts never re-enacts the arming rules — no arming/anchor vocabulary lives up here", () => {
     const source = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), "../src/game/cloudSync.ts"),
       "utf8",
@@ -778,9 +778,12 @@ describe("CloudSync — the store's knowledge stays in the store (#32 AC1)", () 
     // The observe-write-adjudicate dance is the store's business (#32 D1):
     // a caller that could re-derive the arming rules is a caller that WILL,
     // and then the two derivations drift. This scan makes the drift
-    // unwritable — the vocabulary simply cannot appear here.
+    // unwritable — the vocabulary simply cannot appear here. The ban is the
+    // ARMING family only (revision / 武装 / arm·disarm·rearm / anchor);
+    // "CAS" stays legal as the name of the concurrency mechanism.
     expect(source).not.toMatch(/revision/i);
     expect(source).not.toMatch(/武装/);
-    expect(source).not.toMatch(/\barm(?:ed|ing|s)?\b/i);
+    expect(source).not.toMatch(/\b(?:re|dis)?arm(?:s|ed|ing)?\b/i);
+    expect(source).not.toMatch(/\banchor\b/i);
   });
 });

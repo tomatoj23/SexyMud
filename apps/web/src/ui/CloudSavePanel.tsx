@@ -118,6 +118,8 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   /** The mirror warning: a download overwrites the LOCAL slot, cache or not. */
   function downloadWarning(): string {
     if (sync.localView.kind === "save") return "本地存档将被云端存档覆盖（可先导出本地存档保底）。";
+    // A damaged slot is NOT "no save" — say what the overwrite throws away.
+    if (sync.localView.kind === "corrupt") return "本地存档已损坏——下载将用云端存档覆盖它，损坏内容将被丢弃。";
     // Unreachable storage has its own advice (#32 D4): change settings, not
     // repair a save — and the write will not land, overwrite or not.
     if (sync.localView.kind === "unavailable") return "本地存储当前不可访问——下载将无法写入，请先检查浏览器设置（重试无用）。";
@@ -150,7 +152,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
             (state.action === "upload"
               ? "云端存档损坏且无法经保存修复（记录锚已损坏）——本地存档无恙，可导出保底。"
               : "云端存档损坏，无法下载——若损坏仅在内容，上传本地存档可修复它。")}
-          {state.failure === "local" && "本地写入失败（可能空间不足）。"}
+          {state.failure === "local" && "本地写入失败（可能空间不足）——清理浏览器存储空间后可重试。"}
           {state.failure === "local-corrupt" && "本地存档损坏，无法上传——先修复或重置本地存档。"}
           {state.failure === "local-unavailable" &&
             (state.action === "upload"
