@@ -61,13 +61,21 @@ function statusLine(
   return VERDICT[last];
 }
 
-/** What the player sees of one slot in the comparison. */
-function slotSummary(view: SlotView): string {
+/**
+ * What the player sees of one slot in the comparison — a TOTAL reader: a
+ * hostile payload (`data: null`) is still a `save` view at the envelope
+ * level, and the summary must never throw on it — a crash here would take
+ * the whole panel down, salvage button included (M7's law; the summary
+ * module of #46 absorbs this). Exported for its direct pin.
+ */
+export function slotSummary(view: SlotView): string {
   if (view.kind === "unknown") return "未检查";
   if (view.kind === "empty") return "无存档";
   if (view.kind === "corrupt") return "存档损坏";
   if (view.kind === "unavailable") return "存储不可访问";
-  const nowTick = (view.snapshot.data as { nowTick?: unknown }).nowTick;
+  const data: unknown = view.snapshot.data;
+  const nowTick =
+    typeof data === "object" && data !== null ? (data as { nowTick?: unknown }).nowTick : undefined;
   const progress = typeof nowTick === "number" ? ` · 进度 ${nowTick} tick` : "";
   return `存档 v${view.snapshot.version}${progress}`;
 }

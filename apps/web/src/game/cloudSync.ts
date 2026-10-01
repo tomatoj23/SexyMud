@@ -32,7 +32,8 @@ import { parseSnapshotText } from "./saveText.js";
  * copy). Importing is a deliberate overwrite of the local slot: the file is
  * read and proven RESTORABLE here before the panel quotes its cost (a
  * damaged or unloadable file is refused loudly and changes nothing), the
- * un-migrated bytes are what lands in the slot (the store never migrates),
+ * un-migrated PARSE RESULT is what lands in the slot (the store serializes
+ * it and never migrates it — "un-migrated" is the law, not byte fidelity),
  * and the destructive half only runs as the confirm's answer
  * (`commitImport` — the two-step split is where the confirm sits, not a
  * view's).
@@ -392,8 +393,9 @@ export class CloudSync {
    * the overwrite's cost. Nothing is written here and no verdict is claimed:
    * a refusal is loud and the slot is untouched (`file` cannot read /
    * `file-corrupt` damaged / `file-version` the chain cannot walk), and the
-   * verified payload — **un-migrated bytes, the store never migrates** — is
-   * staged for {@link commitImport}.
+   * verified payload — **the un-migrated parse result** (the store never
+   * migrates; it serializes what it is given) — is staged for
+   * {@link commitImport}.
    *
    * Validation is `restoreWorld`'s whole chain, not just the migration
    * walk: an envelope-clean file with a damaged payload would otherwise be

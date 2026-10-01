@@ -813,7 +813,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     data: { entities: { jia: { id: "jia", locationId: "room-a", flags: ["seen"] } } },
   });
 
-  it("a verified file lands in the local slot on the CONFIRM — outcome 'imported', view refreshed, and the ORIGINAL bytes stored (the store never migrates)", async () => {
+  it("a verified file lands in the local slot on the CONFIRM — outcome 'imported', view refreshed, and the UN-MIGRATED parse result stored (the store never migrates)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { local, sync } = rig();
 
@@ -1160,7 +1160,7 @@ describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34
     await sync.exportLocal();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file", action: "export" });
-    expect(sync.last).not.toBe("exported");
+    expect(sync.last).toBe("none"); // a refusal claims no verdict of its own
     expect(sync.localView.kind).toBe("save"); // the read refreshed the view before the file side refused
   });
 
@@ -1281,6 +1281,38 @@ describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34
     await sync.commitImport(); // a real verdict — the pair moves together
     expect(sync.last).toBe("imported");
     expect(sync.lastFrom).toBe("import");
+  });
+
+  it("every verdict keeps its own door (#34 复查回归钉): no door's word borrows another's attribution", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    captureFiles();
+    const { transport, local, sync } = rig();
+
+    await sync.upload(); // empty local — the UPLOAD door's absence
+    expect([sync.last, sync.lastFrom]).toEqual(["local-empty", "upload"]);
+
+    await sync.download(); // empty cloud — the DOWNLOAD door's absence
+    expect([sync.last, sync.lastFrom]).toEqual(["remote-empty", "download"]);
+
+    const same = snapshotFixture({ nowTick: 20 });
+    await local.save(same);
+    seedRemote(transport, same);
+    await sync.probe();
+    expect([sync.last, sync.lastFrom]).toEqual(["in-sync", "probe"]);
+
+    await local.save(snapshotFixture({ nowTick: 55 }));
+    await sync.probe(); // diverges — the probe's own "no verdict" answer
+    expect(sync.state.phase).toBe("conflict");
+    expect([sync.last, sync.lastFrom]).toEqual(["none", "probe"]);
+
+    sync.dismiss();
+    expect([sync.last, sync.lastFrom]).toEqual(["dismissed", "dismiss"]);
+
+    await sync.upload(); // keep-local lands a real save verdict
+    expect([sync.last, sync.lastFrom]).toEqual(["saved", "upload"]);
+
+    await sync.download(); // and the mirror exit lands its own
+    expect([sync.last, sync.lastFrom]).toEqual(["downloaded", "download"]);
   });
 
   it("a standing FAILED phase is cleared by a later verdict — a fresh outcome replaces an old failure (upload/probe 同律)", async () => {
