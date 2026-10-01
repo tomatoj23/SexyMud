@@ -8,7 +8,7 @@ import type {
   CloudSaveTransport,
 } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore } from "../src/game/localSaveStore.js";
-import { memoryStorage, snapshotFixture } from "./support.js";
+import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
 
 /**
  * The cloud-backed `SaveStore` — the first REMOTE implementation of the port
@@ -37,9 +37,18 @@ import { memoryStorage, snapshotFixture } from "./support.js";
 
 /** A RAM transport that keeps the contract's law: `write` is an atomic CAS. */
 class FakeTransport implements CloudSaveTransport {
-  readonly slots = new Map<string, { text: string; revision: number }>();
+  /**
+   * Raw rows exactly as `read` hands them out — a damaged one is seeded AS-IS
+   * (bad `revision` or bad `text`), because the store's own verdicts are the
+   * seam here (#32 D6: no knob may reach through the store to fake its
+   * internals).
+   */
+  readonly slots = new Map<string, CloudSaveRecord>();
   /** When set, both operations reject with this failure kind — the offline / auth-expiry paths. */
   failing: CloudSaveFailureKind | null = null;
+  /** Fires once right after a read — "another device wrote just now". */
+  onceAfterRead: (() => void) | null = null;
+  private minted = 0;
 
   private maybeFail(): void {
     if (this.failing) throw new CloudSaveError(this.failing, `transport: ${this.failing}`);
@@ -48,22 +57,27 @@ class FakeTransport implements CloudSaveTransport {
   async read(key: string): Promise<CloudSaveRecord | null> {
     this.maybeFail();
     const slot = this.slots.get(key);
-    return slot ? { text: slot.text, revision: String(slot.revision) } : null;
+    const hook = this.onceAfterRead;
+    if (hook) {
+      this.onceAfterRead = null;
+      hook();
+    }
+    return slot ? { ...slot } : null;
   }
 
   async write(key: string, text: string, expectedRevision: string | null): Promise<string> {
     this.maybeFail();
     const slot = this.slots.get(key);
-    const current = slot ? String(slot.revision) : null;
+    const current = slot ? slot.revision : null;
     if (current !== expectedRevision) {
       throw new CloudSaveError(
         "conflict",
-        `transport: revision is ${current}, expected ${expectedRevision}`,
+        `transport: revision is ${String(current)}, expected ${String(expectedRevision)}`,
       );
     }
-    const revision = (slot?.revision ?? 0) + 1;
+    const revision = `rev-${++this.minted}`;
     this.slots.set(key, { text, revision });
-    return String(revision);
+    return revision;
   }
 }
 
@@ -71,8 +85,8 @@ class FakeTransport implements CloudSaveTransport {
 const fixture = (nowTick = 20): Snapshot => snapshotFixture({ nowTick });
 
 /** Seed the slot with a raw record — the state some earlier session left behind. */
-function seed(transport: FakeTransport, text: string): void {
-  transport.slots.set("save-slot-1", { text, revision: 1 });
+function seed(transport: FakeTransport, text: string, revision = "seed"): void {
+  transport.slots.set("save-slot-1", { text, revision });
 }
 
 /**
@@ -357,5 +371,124 @@ describe("CloudSaveStore — the text seam round-trips tricky Unicode (G6)", () 
     await store.save(snapshot);
     expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(snapshot));
     await expect(store.load()).resolves.toEqual(snapshot);
+  });
+});
+
+describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call (#32, D1)", () => {
+  it("an empty slot is created — 'saved'", async () => {
+    const transport = new FakeTransport();
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "saved" });
+    expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(20)));
+  });
+
+  it("an existing save is deliberately replaced — 'saved'", async () => {
+    const transport = new FakeTransport();
+    seed(transport, JSON.stringify(fixture(20)));
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "saved" });
+    expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(30)));
+  });
+
+  it("a text-damaged row is REPAIRED — 'saved' (the #29 repair path, now one call)", async () => {
+    const transport = new FakeTransport();
+    seed(transport, "{not json"); // bad text row: the anchor still arms
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "saved" });
+    expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(20)));
+  });
+
+  it("an anchor-damaged row is 'unrepairable' — no write can CAS, and the row stays exactly as it was", async () => {
+    const transport = new FakeTransport();
+    const damaged = anchorDamaged(JSON.stringify(fixture(99)));
+    transport.slots.set("save-slot-1", damaged); // bad revision row: nothing arms
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "unrepairable" });
+    expect(transport.slots.get("save-slot-1")).toEqual(damaged); // nothing overwrote the damage
+  });
+
+  it("a real race is 'conflict' — the verdict is the other session's write, never the damage", async () => {
+    const transport = new FakeTransport();
+    seed(transport, JSON.stringify(fixture(20)));
+    const store = new CloudSaveStore(transport, "save-slot-1");
+    transport.onceAfterRead = () => {
+      transport.slots.set("save-slot-1", { text: JSON.stringify(fixture(99)), revision: "theirs" });
+    };
+
+    await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "conflict" });
+    expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(99)));
+  });
+
+  it("a race that writes a NEW damaged row is still the RACE — 'conflict', not 'unrepairable' (decision D3)", async () => {
+    const transport = new FakeTransport();
+    transport.slots.set("save-slot-1", anchorDamaged(JSON.stringify(fixture(99))));
+    const store = new CloudSaveStore(transport, "save-slot-1");
+    transport.onceAfterRead = () => {
+      // Somebody wrote under us — their row is broken too, but it is THEIRS.
+      transport.slots.set("save-slot-1", anchorDamaged("{still broken"));
+    };
+
+    await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "conflict" });
+  });
+
+  it("a race that DELETES the row is the race too — deleting is somebody writing (decision D3)", async () => {
+    const transport = new FakeTransport();
+    seed(transport, JSON.stringify(fixture(20)));
+    const store = new CloudSaveStore(transport, "save-slot-1");
+    transport.onceAfterRead = () => {
+      transport.slots.delete("save-slot-1");
+    };
+
+    await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "conflict" });
+    expect(transport.slots.has("save-slot-1")).toBe(false); // the delete stands — nothing re-created it
+  });
+
+  it("the verdict key is ROW IDENTITY, not the damage form: a CAS refused by an unmoved row is 'unrepairable' whatever the row looks like", async () => {
+    const row: CloudSaveRecord = { text: JSON.stringify(fixture(20)), revision: "stuck" };
+    const transport: CloudSaveTransport = {
+      read: async () => ({ ...row }),
+      // A transport that refuses the CAS while moving NOTHING: no write can
+      // land on this row, so it is the unrepairable shape by definition.
+      write: async () => {
+        throw new CloudSaveError("conflict", "transport: revision is stuck");
+      },
+    };
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "unrepairable" });
+  });
+
+  it("one queue unit, transport-direct: a load queued beside it settles and sees the new save — no deadlock", async () => {
+    const transport = new FakeTransport();
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    const replaced = store.replace(fixture(20));
+    const observed = store.load(); // if replace enqueued through `load`, neither would settle
+
+    await expect(replaced).resolves.toEqual({ outcome: "saved" });
+    await expect(observed).resolves.toEqual(fixture(20));
+  });
+
+  it("the write advances the observation — a following plain save CASes forward, not into the past", async () => {
+    const transport = new FakeTransport();
+    seed(transport, JSON.stringify(fixture(20)));
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "saved" });
+    await expect(store.save(fixture(40))).resolves.toBeUndefined();
+    expect(transport.slots.get("save-slot-1")!.text).toBe(JSON.stringify(fixture(40)));
+  });
+
+  it("a transport failure still rejects — offline is never dressed up as 'unrepairable'", async () => {
+    const transport = new FakeTransport();
+    transport.failing = "network";
+    const store = new CloudSaveStore(transport, "save-slot-1");
+
+    await expectFailure(store.replace(fixture(20)), "network");
+    expect(transport.slots.has("save-slot-1")).toBe(false);
   });
 });

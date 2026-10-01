@@ -10,6 +10,7 @@ import type {
   WorldRuntime,
   WorldState,
 } from "@sexymud/core";
+import type { CloudSaveRecord } from "../src/game/cloudSaveStore.js";
 
 /**
  * Shared rig pieces for the host tests: the synthetic commands, their verb
@@ -126,4 +127,16 @@ export function memoryStorage(): Storage {
       map.set(key, value);
     },
   };
+}
+
+/**
+ * A cloud record whose REVISION anchor is damaged — the read hands out a
+ * non-string token, so no CAS can ever be armed against it (#32's "bad
+ * revision row"; the sibling "bad text row" is seeded as plain unparsable
+ * text). A DIRECTLY CONSTRUCTED fake transport row, never a knob reaching
+ * through the store (#32 D6) — both store-level and sync-level suites seed
+ * damage this way.
+ */
+export function anchorDamaged(text: string): CloudSaveRecord {
+  return { text, revision: 17 as unknown as string };
 }

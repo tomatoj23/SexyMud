@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SaveStore, Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
 import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
-import { LocalSaveStore } from "../src/game/localSaveStore.js";
+import { LocalSaveStore, LocalSaveUnavailableError } from "../src/game/localSaveStore.js";
 import { CloudSync, type SlotView } from "../src/game/cloudSync.js";
-import { memoryStorage, snapshotFixture } from "./support.js";
+import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
 
 /**
  * The host's cloud-sync surface (#30): the sync STATUS ("saved / not saved /
@@ -29,39 +32,44 @@ import { memoryStorage, snapshotFixture } from "./support.js";
  * content, read by the machine (`upload()` takes no argument) — and the
  * read is the action's very front, so an empty slot ("local-empty") or a
  * damaged one ("local-corrupt") never reaches the backend at all.
+ *
+ * #32 moves the observe-write-adjudicate dance into the store: `upload()`
+ * makes ONE `replace` call and only translates its three-way verdict. The
+ * tests therefore feed the store DIRECTLY CONSTRUCTED raw rows (a damaged
+ * revision anchor, a damaged text — never a knob through the store's
+ * back), and the local side's storage trouble reads "unavailable", not
+ * "corrupt" and not "quota".
  */
 
 /** A RAM transport keeping the contract's law: `write` is an atomic CAS. */
 class FakeTransport implements CloudSaveTransport {
-  readonly slots = new Map<string, { text: string; revision: number }>();
+  /**
+   * Raw rows exactly as `read` hands them out — a damaged one is seeded
+   * AS-IS (bad `revision` or bad `text`), the store's own verdicts being the
+   * seam here (#32 D6).
+   */
+  readonly slots = new Map<string, CloudSaveRecord>();
   /** When set, both operations reject with this error — the offline / auth-expiry paths. */
   failing: Error | null = null;
   /** When set, only `write` rejects — the session dying mid-flow. */
   failWrite: Error | null = null;
   /** Fires once right after a read — "another device wrote just now". */
   onceAfterRead: (() => void) | null = null;
-  /** When set, reads hand this out as the revision — a damaged record anchor. */
-  revisionDamage: unknown = null;
   /** Call accounting — "no retries, no store pokes" must be provable. */
   reads = 0;
   writes = 0;
+  private minted = 0;
 
   async read(key: string): Promise<CloudSaveRecord | null> {
     this.reads += 1;
     if (this.failing) throw this.failing;
     const slot = this.slots.get(key);
-    const record = slot
-      ? {
-          text: slot.text,
-          revision: (this.revisionDamage ?? String(slot.revision)) as string,
-        }
-      : null;
     const hook = this.onceAfterRead;
     if (hook) {
       this.onceAfterRead = null;
       hook();
     }
-    return record;
+    return slot ? { ...slot } : null;
   }
 
   async write(key: string, text: string, expectedRevision: string | null): Promise<string> {
@@ -69,13 +77,13 @@ class FakeTransport implements CloudSaveTransport {
     if (this.failing) throw this.failing;
     if (this.failWrite) throw this.failWrite;
     const slot = this.slots.get(key);
-    const current = slot ? String(slot.revision) : null;
+    const current = slot ? slot.revision : null;
     if (current !== expectedRevision) {
-      throw new CloudSaveError("conflict", `transport: revision is ${current}, expected ${expectedRevision}`);
+      throw new CloudSaveError("conflict", `transport: revision is ${String(current)}, expected ${String(expectedRevision)}`);
     }
-    const revision = (slot?.revision ?? 0) + 1;
+    const revision = `rev-${++this.minted}`;
     this.slots.set(key, { text, revision });
-    return String(revision);
+    return revision;
   }
 }
 
@@ -98,7 +106,7 @@ function remoteText(transport: FakeTransport): string | undefined {
 
 /** Seeds the remote slot directly — the state some other device left behind. */
 function seedRemote(transport: FakeTransport, snapshot: Snapshot): void {
-  transport.slots.set(KEY, { text: JSON.stringify(snapshot), revision: 1 });
+  transport.slots.set(KEY, { text: JSON.stringify(snapshot), revision: "seed" });
 }
 
 afterEach(() => {
@@ -163,7 +171,7 @@ describe("CloudSync — probe shows both sides; sync is never automatic (decisio
   it("a corrupt remote is a VISIBLE damage, not a probe failure — the player sees what is there", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, sync } = rig();
-    transport.slots.set(KEY, { text: "{not json", revision: 1 });
+    transport.slots.set(KEY, { text: "{not json", revision: "1" });
 
     await sync.probe();
 
@@ -253,7 +261,7 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
   it("upload over a CORRUPT cloud save lands — the repair path #29 deliberately kept open", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, local, sync } = rig();
-    transport.slots.set(KEY, { text: "{not json", revision: 1 });
+    transport.slots.set(KEY, { text: "{not json", revision: "1" });
     const snapshot = snapshotFixture({ nowTick: 20 });
     await local.save(snapshot);
 
@@ -270,7 +278,7 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
     await local.save(snapshotFixture({ nowTick: 20 }));
     // The world moves between our observe and our write — exactly the CAS race.
     transport.onceAfterRead = () => {
-      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 2 });
+      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: "theirs" });
     };
 
     await sync.upload();
@@ -298,37 +306,69 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, local, sync } = rig();
     const theirs = snapshotFixture({ nowTick: 99 });
-    transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 1 });
+    // The damage is in the revision ANCHOR (bad revision row, seeded raw):
+    // nothing can CAS against it, so no write can land — the upload must say
+    // THAT, not "another device updated the cloud save".
+    transport.slots.set(KEY, anchorDamaged(JSON.stringify(theirs)));
     await local.save(snapshotFixture({ nowTick: 20 }));
-    // The damage is in the revision ANCHOR: the store cannot arm it (#29), so
-    // no write can CAS against this row — the upload must say THAT.
-    transport.revisionDamage = 17;
 
     await sync.upload();
 
     expect(sync.state).toEqual({ phase: "failed", failure: "corrupt", action: "upload" });
     expect(remoteText(transport)).toBe(JSON.stringify(theirs)); // nothing overwrote the damage
+    expect(sync.remoteView).toEqual({ kind: "corrupt" }); // the damage, visible in the view
   });
 
   it("anchor damage PLUS a real race is the RACE — a healthy save appearing mid-flow wins the 'conflict' verdict, not 'corrupt'", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, local, sync } = rig();
     const theirs = snapshotFixture({ nowTick: 99 });
-    transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 1 });
+    transport.slots.set(KEY, anchorDamaged(JSON.stringify(theirs)));
     await local.save(snapshotFixture({ nowTick: 20 }));
-    // Our observe sees the damaged anchor (nothing armed); between observe and
-    // write another session REPLACES the row with a healthy one — the re-observe
-    // then sees a save, so this is the race, reported as the conflict it is.
-    transport.revisionDamage = 17;
+    // Our observe sees the damaged anchor; between observe and write another
+    // session REPLACES the row with a healthy one — the verdict is the race.
     transport.onceAfterRead = () => {
-      transport.revisionDamage = null;
-      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 2 });
+      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: "theirs" });
     };
 
     await sync.upload();
 
     expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
     expect(sync.remoteView).toEqual({ kind: "save", snapshot: theirs });
+  });
+
+  it("a race that writes a NEW damaged row is the RACE — 'conflict' with the damage visible in the view (decision D3 edge)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    transport.slots.set(KEY, anchorDamaged(JSON.stringify(snapshotFixture({ nowTick: 99 }))));
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    // The racing session's NEW row is broken too — but the damage is theirs,
+    // and "somebody wrote" is the truth first: never 'corrupt' pretending
+    // nothing happened.
+    transport.onceAfterRead = () => {
+      transport.slots.set(KEY, anchorDamaged("{their broken row"));
+    };
+
+    await sync.upload();
+
+    expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
+    expect(sync.remoteView).toEqual({ kind: "corrupt" }); // the damage shows AFTER the race
+  });
+
+  it("a race that DELETES the row is the race too — deleting is somebody writing (decision D3 edge)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    transport.onceAfterRead = () => {
+      transport.slots.delete(KEY);
+    };
+
+    await sync.upload();
+
+    expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
+    expect(sync.remoteView).toEqual({ kind: "empty" }); // the vanished slot, visible in the view
+    expect(transport.slots.has(KEY)).toBe(false); // the delete stands — nothing re-created it
   });
 
   it("an unclassified rejection is 'network' — the host's defensive reading of the unknown", async () => {
@@ -467,7 +507,7 @@ describe("CloudSync — download: cloud into the local slot", () => {
   it("a corrupt cloud save cannot be downloaded — loud 'corrupt', local untouched", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, local, sync } = rig();
-    transport.slots.set(KEY, { text: "{not json", revision: 1 });
+    transport.slots.set(KEY, { text: "{not json", revision: "1" });
     const mine = snapshotFixture({ nowTick: 20 });
     await local.save(mine);
 
@@ -547,7 +587,7 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
     const theirs = snapshotFixture({ nowTick: 99 });
     // The world moves between our observe and our write — the CAS race.
     transport.onceAfterRead = () => {
-      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: 2 });
+      transport.slots.set(KEY, { text: JSON.stringify(theirs), revision: "theirs" });
     };
     await sync.upload();
     expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
@@ -647,5 +687,100 @@ describe("CloudSync — the comparison views carry what the dialog shows", () =>
       expect(view.snapshot.version).toBe(snapshot.version);
       expect(view.snapshot.data).toMatchObject({ nowTick: 42 });
     }
+  });
+});
+
+describe("CloudSync — unreachable storage is its own word, on both paths (#32 D4)", () => {
+  /** A `Storage` that throws on access — storage disabled / privacy mode. */
+  function disabledStorage(): Storage {
+    return {
+      get length(): number {
+        throw new DOMException("denied", "SecurityError");
+      },
+      clear: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+      getItem: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+      key: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+      removeItem: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+      setItem: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+    };
+  }
+
+  it("the probe shows 'unavailable', not 'corrupt' — a disabled store is not a damaged save", async () => {
+    vi.stubGlobal("localStorage", disabledStorage());
+    const { sync } = rig();
+
+    await sync.probe();
+
+    expect(sync.state.phase).toBe("idle"); // the probe shows it; it does not fail on it
+    expect(sync.localView).toEqual({ kind: "unavailable" });
+  });
+
+  it("upload's front half reports 'local-unavailable' with ZERO backend calls — no bytes, no payload (#31 D2 dual)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, cloud } = rig();
+    const unreachable: SaveStore = {
+      load: () => Promise.reject(new LocalSaveUnavailableError("local save: storage is not accessible")),
+      save: () => Promise.reject(new Error("unreachable")),
+    };
+    const sync = new CloudSync(cloud, unreachable, { markExpired: () => undefined });
+
+    await sync.upload();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "upload" });
+    expect(transport.reads).toBe(0); // never reaches the backend at all
+    expect(transport.writes).toBe(0);
+  });
+
+  it("a non-parse load rejection (「load 抛非解析错误」) from the REAL LocalSaveStore reads 'unavailable', never 'local-corrupt'", async () => {
+    vi.stubGlobal("localStorage", disabledStorage());
+    const { transport, sync } = rig();
+
+    await sync.upload(); // LocalSaveStore.load() rejects with LocalSaveUnavailableError
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "upload" });
+    expect(transport.reads).toBe(0);
+    expect(transport.writes).toBe(0);
+  });
+
+  it("a download whose local write cannot reach the storage reports 'local-unavailable', not quota-worded 'local'", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, cloud } = rig();
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    const unreachable: SaveStore = {
+      load: () => Promise.resolve(null),
+      save: () => Promise.reject(new LocalSaveUnavailableError("local save: storage is not accessible")),
+    };
+    const sync = new CloudSync(cloud, unreachable, { markExpired: () => undefined });
+
+    await sync.download();
+
+    expect(sync.state).toEqual({ phase: "failed", failure: "local-unavailable", action: "download" });
+    expect(sync.last).not.toBe("downloaded");
+  });
+});
+
+describe("CloudSync — the store's knowledge stays in the store (#32 AC1)", () => {
+  it("cloudSync.ts never re-enacts the CAS arming rules — no anchor vocabulary lives up here", () => {
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../src/game/cloudSync.ts"),
+      "utf8",
+    );
+    // The observe-write-adjudicate dance is the store's business (#32 D1):
+    // a caller that could re-derive the arming rules is a caller that WILL,
+    // and then the two derivations drift. This scan makes the drift
+    // unwritable — the vocabulary simply cannot appear here.
+    expect(source).not.toMatch(/revision/i);
+    expect(source).not.toMatch(/武装/);
+    expect(source).not.toMatch(/\barm(?:ed|ing|s)?\b/i);
   });
 });

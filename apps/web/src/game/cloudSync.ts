@@ -1,5 +1,6 @@
 import type { SaveStore, Snapshot } from "@sexymud/core";
-import { CloudSaveError } from "./cloudSaveStore.js";
+import { CloudSaveError, type ReplaceResult } from "./cloudSaveStore.js";
+import { LocalSaveUnavailableError } from "./localSaveStore.js";
 
 /**
  * The host's cloud-sync surface (#30, spec/04 §1.6, ADR-0037): the sync
@@ -17,22 +18,21 @@ import { CloudSaveError } from "./cloudSaveStore.js";
  * can never be a payload.
  *
  * **Adjudication has three exits (decision D7)**: keep local (the deliberate
- * replace — `load` first observes, then `save` CAS-overwrites the other
- * device's save), take remote (download it into the local slot), or dismiss
- * and play on locally. "Keep both" is not one of them: forking save slots is
- * a slot-management feature this project does not have (#29 refused the same
- * route); the escape hatch is the export path (ADR-0002 §21).
+ * replace — one `replace` call CAS-overwrites the other device's save), take
+ * remote (download it into the local slot), or dismiss and play on locally.
+ * "Keep both" is not one of them: forking save slots is a slot-management
+ * feature this project does not have (#29 refused the same route); the
+ * escape hatch is the export path (ADR-0002 §21).
  *
  * **Failures are loud and untouched (decision D8)**: a refused save reports
  * "not saved" with BOTH stores exactly as they were — no silent local
- * fallback, no retry loop. The one deliberate exception is upload over a
- * CORRUPT cloud save: the store's load arms the revision even when the TEXT
- * is damaged (#29's repair path), so upload proceeds and replaces the
- * damage — but when the record's REVISION anchor is the damage, no write can
- * CAS against it and upload reports the corruption instead of a phantom
- * conflict. An `auth` failure ends the INSTANCE (decision D6): the re-login
- * guide comes up and every further action refuses without a backend call —
- * the player's re-login rebuilds the transport around the new session.
+ * fallback, no retry loop. What the cloud side decides about its own rows is
+ * its own business (#32): `replace` returns the verdict (`saved` /
+ * `conflict` / `unrepairable`) and this machine only translates it into
+ * states — it never re-derives what the store already ruled. An `auth`
+ * failure ends the INSTANCE (decision D6): the re-login guide comes up and
+ * every further action refuses without a backend call — the player's
+ * re-login rebuilds the transport around the new session.
  */
 
 /** What one side's slot holds — the comparison the panel renders. */
@@ -40,7 +40,9 @@ export type SlotView =
   | { kind: "unknown" }
   | { kind: "empty" }
   | { kind: "save"; snapshot: Snapshot }
-  | { kind: "corrupt" };
+  | { kind: "corrupt" }
+  /** The storage itself could not be reached (#32 D4) — there are no bytes to show. */
+  | { kind: "unavailable" };
 
 /** What a READ of a slot can produce — `unknown` is "never read", not a read result. */
 type ReadSlotView = Exclude<SlotView, { kind: "unknown" }>;
@@ -75,10 +77,13 @@ export type SyncState =
       /**
        * `local` is the rare one: the local write itself refused (quota).
        * `local-corrupt` is the upload's front half (#31): the local slot's
-       * text is damaged, so there is no payload to send — separate from
-       * `corrupt` (cloud damage), whose repair path IS the upload.
+       * text is damaged, so there is no payload to send. `local-unavailable`
+       * is the same front half — or the download's write — when the STORAGE
+       * cannot be reached at all (#32 D4): its own word, because "check
+       * settings" and "repair the save" are opposite advice. `corrupt` names
+       * cloud damage (whose repair path IS the upload).
        */
-      failure: "network" | "corrupt" | "local" | "local-corrupt";
+      failure: "network" | "corrupt" | "local" | "local-corrupt" | "local-unavailable";
       action: SyncAction;
     }
   | { phase: "auth-expired" };
@@ -86,6 +91,18 @@ export type SyncState =
 /** The narrow slice of {@link CloudAuth} this machine needs — a dead session is its business. */
 export interface SessionExpiry {
   markExpired(): void;
+}
+
+/**
+ * The host-side cloud seam (#32, decision D5): the port's `load` plus the
+ * store's `replace` — the observe-write-adjudicate dance is the store's own
+ * knowledge and is never re-enacted here. (`save` stays on `CloudSaveStore`
+ * as its `SaveStore` port method; this surface swaps it out for `replace` —
+ * a shape swap, not a widening.)
+ */
+export interface CloudSlot {
+  load(): Promise<Snapshot | null>;
+  replace(snapshot: Snapshot): Promise<ReplaceResult>;
 }
 
 export class CloudSync {
@@ -103,7 +120,7 @@ export class CloudSync {
   private listeners = new Set<() => void>();
 
   constructor(
-    private readonly cloud: SaveStore,
+    private readonly cloud: CloudSlot,
     private readonly local: SaveStore,
     private readonly session?: SessionExpiry,
   ) {}
@@ -134,10 +151,10 @@ export class CloudSync {
   }
 
   /**
-   * Shows both sides (decision D3): empty / save / corrupt per slot. Two
-   * byte-equal saves are "in-sync"; two different ones go to the compare
-   * conflict — the probe never picks a winner by itself. The verdict is
-   * this comparison's own answer: "in-sync" or nothing — a fresh probe
+   * Shows both sides (decision D3): empty / save / corrupt / unavailable per
+   * slot. Two byte-equal saves are "in-sync"; two different ones go to the
+   * compare conflict — the probe never picks a winner by itself. The verdict
+   * is this comparison's own answer: "in-sync" or nothing — a fresh probe
    * never leaves an older verdict contradicting what it just read.
    */
   probe(): Promise<SyncState> {
@@ -158,20 +175,22 @@ export class CloudSync {
 
   /**
    * Uploads the LOCAL SLOT's current save into the cloud slot — create or
-   * the DELIBERATE replace (decision D8: observe first, then CAS). This is
-   * also the "keep local" exit of a conflict: same observe-then-write, same
-   * explicit overwrite the confirm dialog already named.
+   * the DELIBERATE replace, one store call either way (#32: the store owns
+   * the whole observe-write-adjudicate dance). This is also the "keep local"
+   * exit of a conflict: same explicit overwrite the confirm dialog already
+   * named.
    *
    * **The payload is the slot's current content, read HERE (#31 D1)**:
    * `upload()` takes no argument, so no display view can be the payload
    * source — "thought it saved, saved the stale one" dies at the signature.
    * Acquisition is the action's very front, before any backend call (#31
    * D2): an empty slot is `"local-empty"` (absence is not failure — the dual
-   * of `"remote-empty"`), a damaged one is `failed`/`"local-corrupt"` for
-   * the player to repair locally. Neither is a network problem and neither
-   * pretends to be an "another device" conflict. The read IS the view
-   * refresh (#31 D3): every upload re-reads the local view, success or
-   * failure — `download()` refreshes the same view on its success path.
+   * of `"remote-empty"`), a damaged one is `failed`/`"local-corrupt"`, and
+   * an unreachable one `failed`/`"local-unavailable"` (#32 D4). None is a
+   * network problem and none pretends to be an "another device" conflict.
+   * The read IS the view refresh (#31 D3): every upload re-reads the local
+   * view, success or failure — `download()` refreshes the same view on its
+   * success path.
    */
   upload(): Promise<SyncState> {
     return this.run("upload", async () => {
@@ -180,44 +199,28 @@ export class CloudSync {
       if (view.kind === "corrupt") {
         return { phase: "failed", failure: "local-corrupt", action: "upload" };
       }
+      if (view.kind === "unavailable") {
+        return { phase: "failed", failure: "local-unavailable", action: "upload" };
+      }
       if (view.kind === "empty") {
         this.outcome = "local-empty";
         return { phase: "idle" };
       }
       const snapshot = view.snapshot;
-      let damage: CloudSaveError | null = null;
-      try {
-        await this.cloud.load(); // observe: arm the CAS, see what is there
-      } catch (error) {
-        // A corrupt cloud save USUALLY still armed its revision (#29's repair
-        // path) and the write below replaces the damage. When the damage is
-        // in the record's revision anchor nothing is armed, and the write
-        // would CAS-create into an occupied slot — the conflict-refresh below
-        // tells the two apart and reports the damage honestly instead.
-        if (!(error instanceof CloudSaveError && error.kind === "corrupt")) throw error;
-        damage = error;
+      const result = await this.cloud.replace(snapshot);
+      if (result.outcome === "saved") {
+        this.views.remote = { kind: "save", snapshot };
+        this.outcome = "saved";
+        return { phase: "idle" };
       }
-      try {
-        await this.cloud.save(snapshot);
-      } catch (error) {
-        if (error instanceof CloudSaveError && error.kind === "conflict") {
-          // Another session wrote under us: show ITS save and let the player
-          // choose (decision D7). The refresh re-observes, which is exactly
-          // what a later deliberate replace needs anyway.
-          this.views.remote = await this.remoteViewToleratingCorrupt();
-          if (damage && this.views.remote.kind === "corrupt") {
-            // No session wrote — the row is still damaged: its revision anchor
-            // was never armed, so no write can CAS against it. Say THAT, not
-            // a phantom "another device updated the cloud save".
-            throw damage;
-          }
-          return { phase: "conflict", cause: "save" };
-        }
-        throw error;
-      }
-      this.views.remote = { kind: "save", snapshot };
-      this.outcome = "saved";
-      return { phase: "idle" };
+      // Either refusal shows the remote as it NOW stands — damage included —
+      // and then names which one it was (decision D2/D3): a real race goes to
+      // adjudication (decision D7), a row that refuses every write reports
+      // the damage. The two never impersonate each other.
+      this.views.remote = await this.remoteViewToleratingCorrupt();
+      return result.outcome === "conflict"
+        ? { phase: "conflict", cause: "save" }
+        : { phase: "failed", failure: "corrupt", action: "upload" };
     });
   }
 
@@ -240,8 +243,14 @@ export class CloudSync {
       }
       try {
         await this.local.save(record);
-      } catch {
-        return { phase: "failed", failure: "local", action: "download" };
+      } catch (error) {
+        // The local write's own classification (#32 D4): unreachable storage
+        // is its own word — "check settings" is not "free some space".
+        return {
+          phase: "failed",
+          failure: error instanceof LocalSaveUnavailableError ? "local-unavailable" : "local",
+          action: "download",
+        };
       }
       this.views.local = this.views.remote;
       this.outcome = "downloaded";
@@ -290,10 +299,11 @@ export class CloudSync {
   /**
    * The one failure verdict (decision D5/D6): `auth` ends the instance (the
    * session is told by {@link run} once the state has landed); `corrupt`
-   * names the damage; everything else — every unknown error included — is
-   * `network` (retryable is the safe reading). A `conflict` here is
-   * unreachable (upload intercepts its own), mapped to `network` only so
-   * the taxonomy stays closed.
+   * names cloud damage (defensive — the flows map their own damage verdicts
+   * today); everything else — every unknown error included — is `network`
+   * (retryable is the safe reading). A `conflict` never arrives here (the
+   * store hands its race verdict back as a result), mapped to `network` only
+   * so the taxonomy stays closed.
    */
   private failureState(error: unknown, action: SyncAction): SyncState {
     if (error instanceof CloudSaveError && error.kind === "auth") {
@@ -317,13 +327,19 @@ export class CloudSync {
     }
   }
 
-  /** The local slot's view — any local read failure is visible damage. */
+  /**
+   * The local slot's view, by the local store's OWN error classes (#32 D4):
+   * unreachable storage is `unavailable`, anything else — damaged text
+   * included — stays visible damage (the old blanket reading, kept for
+   * stores that do not classify). Never "empty": a read that failed did not
+   * find nothing.
+   */
   private async readLocalView(): Promise<ReadSlotView> {
     try {
       const record = await this.local.load();
       return record === null ? { kind: "empty" } : { kind: "save", snapshot: record };
-    } catch {
-      return { kind: "corrupt" };
+    } catch (error) {
+      return { kind: error instanceof LocalSaveUnavailableError ? "unavailable" : "corrupt" };
     }
   }
 

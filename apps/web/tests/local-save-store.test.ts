@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LocalSaveStore } from "../src/game/localSaveStore.js";
+import {
+  LocalSaveCorruptError,
+  LocalSaveStore,
+  LocalSaveUnavailableError,
+} from "../src/game/localSaveStore.js";
 import { memoryStorage, snapshotFixture } from "./support.js";
 
 /**
@@ -20,6 +24,35 @@ import { memoryStorage, snapshotFixture } from "./support.js";
  * store's writes are compare-and-swap instead (decision D2). "Corrupt" reads
  * the SAME in both stores — one envelope check for both (saveText.ts).
  */
+
+/**
+ * A `Storage` that is THERE but throws on the chosen half — the browser with
+ * storage disabled (SecurityError) or a full quota (#32 D4). The difference
+ * is the point: a disabled store and a damaged save point at opposite doors.
+ */
+function brokenStorage(options: { read?: unknown; write?: unknown }): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear: () => {
+      map.clear();
+    },
+    getItem: (key) => {
+      if (options.read) throw options.read;
+      return map.get(key) ?? null;
+    },
+    key: (index) => [...map.keys()][index] ?? null,
+    removeItem: (key) => {
+      map.delete(key);
+    },
+    setItem: (key, value) => {
+      if (options.write) throw options.write;
+      map.set(key, value);
+    },
+  };
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -64,5 +97,52 @@ describe("LocalSaveStore — the localStorage string seam (G6)", () => {
     await store.save(snapshotFixture({ flags: ["first"] }));
     await store.save(snapshotFixture({ flags: ["second"] }));
     await expect(store.load()).resolves.toEqual(snapshotFixture({ flags: ["second"] }));
+  });
+});
+
+describe("LocalSaveStore — storage trouble and text trouble are different doors (#32 D4)", () => {
+  it("a non-parse load rejection (「load 抛非解析错误」) is the UNAVAILABLE class — a disabled store is not a damaged save", async () => {
+    vi.stubGlobal("localStorage", brokenStorage({ read: new DOMException("denied", "SecurityError") }));
+    const store = new LocalSaveStore("save-slot-1");
+
+    const error: unknown = await store.load().then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(LocalSaveUnavailableError);
+    expect(error).not.toBeInstanceOf(LocalSaveCorruptError);
+  });
+
+  it("parse damage is the CORRUPT class, keeping its loud message — the two kinds stay tellable apart", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const store = new LocalSaveStore("save-slot-1");
+    localStorage.setItem("save-slot-1", "{oops");
+
+    const error: unknown = await store.load().then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(LocalSaveCorruptError);
+    expect(error).not.toBeInstanceOf(LocalSaveUnavailableError);
+    expect((error as Error).message).toBe("save: stored text is not JSON");
+  });
+
+  it("the write path classifies the same: a disabled store refuses the save as UNAVAILABLE", async () => {
+    vi.stubGlobal("localStorage", brokenStorage({ write: new DOMException("denied", "SecurityError") }));
+    const store = new LocalSaveStore("save-slot-1");
+
+    await expect(store.save(snapshotFixture())).rejects.toBeInstanceOf(LocalSaveUnavailableError);
+  });
+
+  it("a FULL store is not 'unavailable': the quota signal keeps its own exit (delete saves vs change settings)", async () => {
+    vi.stubGlobal("localStorage", brokenStorage({ write: new DOMException("full", "QuotaExceededError") }));
+    const store = new LocalSaveStore("save-slot-1");
+
+    const error: unknown = await store.save(snapshotFixture()).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(DOMException); // quota flows through unclassified…
+    expect(error).not.toBeInstanceOf(LocalSaveUnavailableError); // …never the "check settings" door
   });
 });

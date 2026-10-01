@@ -37,6 +37,7 @@ function slotSummary(view: SlotView): string {
   if (view.kind === "unknown") return "未检查";
   if (view.kind === "empty") return "无存档";
   if (view.kind === "corrupt") return "存档损坏";
+  if (view.kind === "unavailable") return "存储不可访问";
   const nowTick = (view.snapshot.data as { nowTick?: unknown }).nowTick;
   const progress = typeof nowTick === "number" ? ` · 进度 ${nowTick} tick` : "";
   return `存档 v${view.snapshot.version}${progress}`;
@@ -117,6 +118,9 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   /** The mirror warning: a download overwrites the LOCAL slot, cache or not. */
   function downloadWarning(): string {
     if (sync.localView.kind === "save") return "本地存档将被云端存档覆盖（可先导出本地存档保底）。";
+    // Unreachable storage has its own advice (#32 D4): change settings, not
+    // repair a save — and the write will not land, overwrite or not.
+    if (sync.localView.kind === "unavailable") return "本地存储当前不可访问——下载将无法写入，请先检查浏览器设置（重试无用）。";
     return "本地当前显示无存档（显示可能过期）——若本地实际已有存档，下载将覆盖它（可先导出保底）。";
   }
 
@@ -135,7 +139,10 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
 
       {state.phase === "failed" && (
         <p style={{ color: "#b91c1c" }}>
-          {state.action === "upload" && state.failure !== "local-corrupt" && "没存上："}
+          {state.action === "upload" &&
+            state.failure !== "local-corrupt" &&
+            state.failure !== "local-unavailable" &&
+            "没存上："}
           {state.action === "download" && "没下载到本地："}
           {state.action === "probe" && "检查失败："}
           {state.failure === "network" && "网络不通或后端无响应。两端存档均未改动。"}
@@ -145,6 +152,10 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               : "云端存档损坏，无法下载——若损坏仅在内容，上传本地存档可修复它。")}
           {state.failure === "local" && "本地写入失败（可能空间不足）。"}
           {state.failure === "local-corrupt" && "本地存档损坏，无法上传——先修复或重置本地存档。"}
+          {state.failure === "local-unavailable" &&
+            (state.action === "upload"
+              ? "本地存储不可访问，无法上传——请检查浏览器设置或退出隐私模式（重试无用）。"
+              : "本地存储不可访问——请检查浏览器设置或退出隐私模式（重试无用）。")}
         </p>
       )}
 

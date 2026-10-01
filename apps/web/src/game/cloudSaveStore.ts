@@ -72,6 +72,20 @@ export interface CloudSaveRecord {
 }
 
 /**
+ * What {@link CloudSaveStore.replace} decided — the verdict rides the RESULT
+ * (#32, decision D2), never an exception: `saved` covers create, deliberate
+ * replace AND damage repair (whether it repaired is visible in the view);
+ * `conflict` is a real race and nothing else; `unrepairable` is a row that
+ * refuses every write and did not move — no save can ever land on it. One
+ * channel, one vocabulary — judgment and dance never split across a return
+ * value and a throw.
+ */
+export type ReplaceResult =
+  | { outcome: "saved" }
+  | { outcome: "conflict" }
+  | { outcome: "unrepairable" };
+
+/**
  * The seam between the store and whatever backend carries it (CloudBase for
  * cloud save, per ADR-0002 §2 — its adapter lands with the Auth ticket).
  * One transport is bound to ONE owner's session at construction (decision
@@ -124,24 +138,38 @@ export class CloudSaveStore implements SaveStore {
     return result;
   }
 
+  /**
+   * Arms the CAS anchor from a raw record — the #29 rule in ONE place (#32):
+   * a usable revision is armed, and kept even when the text is damaged (that
+   * is the repair path); an unusable one arms NOTHING — it cannot anchor a
+   * CAS, and it does not DISARM either (an earlier observation stands until a
+   * readable row replaces it); an absent row arms "empty", so the next write
+   * may only CREATE.
+   */
+  private arm(record: CloudSaveRecord | null): void {
+    if (record === null) {
+      this.revision = null;
+      return;
+    }
+    if (typeof record.revision === "string") this.revision = record.revision;
+  }
+
   load(): Promise<Snapshot | null> {
     return this.enqueue(async () => {
       const record = await this.transport.read(this.key);
-      if (record === null) {
-        this.revision = null;
-        return null;
-      }
+      // A usable revision is armed BEFORE parsing, and kept even when the
+      // text is unusable: a corrupt cloud save must still be repairable by
+      // the next write (the reset path), and a CAS against "absent" would
+      // refuse exactly that.
+      this.arm(record);
+      if (record === null) return null;
       // The record is a claim about the backend row, checked like one: a
       // revision that is not a string cannot anchor a CAS, so NOTHING is
-      // armed and the read fails loudly instead of half-trusting the row.
+      // armed (see {@link arm}) and the read fails loudly instead of
+      // half-trusting the row.
       if (typeof record.revision !== "string") {
         throw new CloudSaveError("corrupt", "cloud save: stored record has no usable revision");
       }
-      // A usable revision is armed BEFORE parsing, and kept even when the
-      // text is unusable: a corrupt cloud save must still be repairable by
-      // the next `save` (the reset path), and a CAS against "absent" would
-      // refuse exactly that.
-      this.revision = record.revision;
       if (typeof record.text !== "string") {
         throw new CloudSaveError("corrupt", "cloud save: stored record text is not a string");
       }
@@ -170,4 +198,55 @@ export class CloudSaveStore implements SaveStore {
       this.revision = revision;
     });
   }
+
+  /**
+   * The observe-write-adjudicate dance as ONE call (#32, decision D1):
+   * create, deliberate replace and damage repair are the same operation, and
+   * what happened rides the result — a caller never re-enacts the arming
+   * rules, because they never leave this class.
+   *
+   * A refused write is adjudicated by re-observing the RAW row (decision D3):
+   * the same row — revision token and text both unchanged — means nothing
+   * moved and nothing ever CAN land (`unrepairable`); anything else — a new
+   * row, even a damaged one, or a vanished slot — is somebody writing, i.e. a
+   * real `conflict`. That identity is the ONLY exception; there is no gray
+   * zone where damage impersonates a race or a race impersonates damage.
+   *
+   * One enqueue unit (the #29 serialization law) that talks to the transport
+   * DIRECTLY — never the public `load`/`save`, whose own enqueue would park
+   * behind this very call and deadlock it, and whose interleaving would break
+   * "`conflict` is another session's doing".
+   */
+  replace(snapshot: Snapshot): Promise<ReplaceResult> {
+    return this.enqueue(async () => {
+      const text = JSON.stringify(snapshot);
+      const observed = await this.transport.read(this.key);
+      this.arm(observed);
+      try {
+        const revision = await this.transport.write(this.key, text, this.revision);
+        this.revision = revision;
+        return { outcome: "saved" };
+      } catch (error) {
+        if (!(error instanceof CloudSaveError && error.kind === "conflict")) throw error;
+        const now = await this.transport.read(this.key);
+        this.arm(now);
+        if (sameRow(observed, now)) return { outcome: "unrepairable" };
+        return { outcome: "conflict" };
+      }
+    });
+  }
+}
+
+/**
+ * The identity of a raw row — decision D3's verdict key: the SAME row means
+ * token and text BOTH unchanged. Anything else (a re-minted token, different
+ * text, or a vanished slot) is somebody writing.
+ */
+function sameRow(before: CloudSaveRecord | null, now: CloudSaveRecord | null): boolean {
+  return (
+    before !== null &&
+    now !== null &&
+    now.revision === before.revision &&
+    now.text === before.text
+  );
 }
