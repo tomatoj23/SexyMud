@@ -94,8 +94,8 @@ describe("v1 → v2: the world scalars arrive (ADR-0033 §2–§3)", () => {
       }),
     );
 
-    // The default is `nowTick` (ADR-0033 §3) — and nowTick's default is 0, so
-    // a v1 save records "never settled", exactly as it should.
+    // The recorded fact is "never settled" (a constant 0 — ADR-0033 §3's
+    // "= nowTick" wording predates #22 and holds only while nowTick is 0).
     expect(out.entities["player-1"]!.lastSeenTick).toBe(0);
     expect(out.entities["player-2"]!.lastSeenTick).toBe(0);
   });
@@ -161,6 +161,22 @@ describe("v1 → v2: the world scalars arrive (ADR-0033 §2–§3)", () => {
         data: { entities: { "player-1": "gone" } },
       } as Snapshot),
     ).toThrow(/entity "player-1" is not an object/);
+  });
+
+  it("keeps a record the migration had nothing to fill — identity and all", () => {
+    // data-in, data-out: a record that already carries its defaults is not
+    // rebuilt for nothing (the current-version pass-through is the same
+    // rule at the snapshot level).
+    const carried = {
+      id: "player-1",
+      locationId: "room-a",
+      flags: [],
+      lastSeenTick: 777,
+    };
+
+    const out = migrateSnapshot<SaveDataV2>(v1({ "player-1": carried }));
+
+    expect(out.entities["player-1"]).toBe(carried);
   });
 });
 

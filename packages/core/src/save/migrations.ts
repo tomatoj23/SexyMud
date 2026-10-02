@@ -30,11 +30,13 @@ const migrations: Record<number, (data: Record<string, unknown>) => Record<strin
    *
    * - `nowTick = 0`, `rngState = 0`, `due = []`: a v1 save predates all
    *   three, so "never written" is the truth being recorded.
-   * - `lastSeenTick` defaults to `nowTick` (0) **only when the record omits
-   *   it** — v1 saves written after #22 DO carry it, and overwriting 777
-   *   with 0 would hand that player a whole world of offline catch-up they
-   *   never earned. ADR-0033 §3 predates #22 and assumes the field is always
-   *   absent; the rule above is what actually governs.
+   * - `lastSeenTick` records "never settled" (the table's constant 0) **only
+   *   when the record omits it** — v1 saves written after #22 DO carry it,
+   *   and overwriting 777 with 0 would hand that player a whole world of
+   *   offline catch-up they never earned. ADR-0033 §3 predates #22 and wrote
+   *   the default as `= nowTick`; the fill is a constant, so that wording
+   *   holds only while the just-recorded `nowTick` is 0 — the rule above is
+   *   what actually governs.
    *
    * Both bullets are rows in `state/slot-rules.ts` now (the `absent.migrate`
    * flag), filled only where the save left the slot absent.
@@ -60,7 +62,11 @@ const migrations: Record<number, (data: Record<string, unknown>) => Record<strin
         entities[id] = record;
         continue;
       }
-      entities[id] = { ...record, ...fillMigrationDefaults(record, SLOT_RULES.entity) };
+      const fills = fillMigrationDefaults(record, SLOT_RULES.entity);
+      // Nothing to fill leaves the record as-is: a migration is data-in,
+      // data-out (the pass-through above is the same rule for a record that
+      // is not even an object).
+      entities[id] = Object.keys(fills).length === 0 ? record : { ...record, ...fills };
     }
     return { ...withScalars, entities };
   },

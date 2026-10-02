@@ -86,5 +86,11 @@ describe("one row, three readers (the add-a-slot drill)", () => {
     expect(() => validateSlots({ locationId: "room-a" }, SLOT_RULES.entity, label)).toThrow(
       /entity "player-1"\.flags is not a list of strings/,
     );
+    // A required row's PRESENT value rides along in the resolved view too:
+    // `WorldMeta` is built from fillAbsentSlots' object alone, so a row may
+    // not go missing from it.
+    expect(fillAbsentSlots({ locationId: "room-a" }, SLOT_RULES.entity).locationId).toBe(
+      "room-a",
+    );
   });
 });

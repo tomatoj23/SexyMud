@@ -1,4 +1,4 @@
-import type { EntityRecord, WorldMeta } from "./snapshot.js";
+import type { EntityRecord, SaveDataV1, SaveDataV2, WorldMeta } from "./snapshot.js";
 
 /**
  * SLOT_RULES — the ONE table declaring, per save slot, the four tolerances
@@ -49,6 +49,20 @@ import type { EntityRecord, WorldMeta } from "./snapshot.js";
 export type SlotValidator = (value: unknown, what: string) => void;
 
 /**
+ * A slot default is what stands in for a slot the save wrote nothing for —
+ * so it is JSON-shaped, like the save itself. Anything richer (a Date, a
+ * class instance) could not survive the JSON boundary the save crosses, and
+ * `freshDefault` would copy it into a bare object.
+ */
+export type SlotDefault =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly SlotDefault[]
+  | { readonly [key: string]: SlotDefault };
+
+/**
  * One slot's tolerance policy. A `required` row's validator runs even on
  * `undefined` — its kind check doubles as its presence check (`flags` is "a
  * list of strings", and absent is neither), which is exactly the error class
@@ -60,7 +74,7 @@ export type SlotRule =
   | {
       absent: {
         /** The ONE declaration of the default — both fill sites read it. */
-        default: unknown;
+        default: SlotDefault;
         /** The migration records this absence too (v1→v2 does, for its four). */
         migrate?: true;
       };
@@ -69,6 +83,19 @@ export type SlotRule =
 
 /** Slots by name, in declaration order — the order the readers answer in. */
 export type SlotRuleTable<K extends string = string> = Record<K, SlotRule>;
+
+/**
+ * The world slots are named TWICE — once on the wire (`SaveDataV2`) and once
+ * on the hand-off (`WorldMeta`) — and the table keys off `WorldMeta`. This
+ * asserts the two name sets never drift apart: a field added to either type
+ * alone fails compilation here, and one added to both still needs its table
+ * row (the annotation on SLOT_RULES.world below) and its `serializeWorld`
+ * write (its return type). Every edit path is compiler-guarded.
+ */
+type WorldSlot = Exclude<keyof SaveDataV2, keyof SaveDataV1>;
+type Assert<T extends true> = T;
+type SameKeys<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type _WorldMetaNamesEveryWorldSlot = Assert<SameKeys<WorldSlot, keyof WorldMeta>>;
 
 /** An object, or a loud failure. A save crossed a process boundary: every
  * field in it is a CLAIM about the world, not a fact, and a claim that does
@@ -225,8 +252,11 @@ function freshDefault(value: unknown): unknown {
 /**
  * restoreWorld's half: every tolerated absence filled from its row's ONE
  * declared default (AC5 — the defensive double-fill at two sites dissolves
- * into one declaration here). Returns exactly the fillable rows, resolved;
- * a `required` row needs no fill (validateSlots already enforced presence).
+ * into one declaration here). Returns every row's RESOLVED value: present
+ * values as-is — a `required` row included, since consumers like `WorldMeta`
+ * build from this object alone and no PRESENT row may go missing from it
+ * (its presence is validateSlots' guarantee, so an absent one is simply not
+ * written) — and fillable absences filled with a fresh copy of the default.
  */
 export function fillAbsentSlots<K extends string>(
   values: object,
@@ -235,7 +265,10 @@ export function fillAbsentSlots<K extends string>(
   const slots = values as Record<string, unknown>;
   const filled = {} as Record<K, unknown>;
   for (const [slot, rule] of Object.entries(rules) as [K, SlotRule][]) {
-    if (rule.absent === "required") continue;
+    if (rule.absent === "required") {
+      if (slots[slot] !== undefined) filled[slot] = slots[slot];
+      continue;
+    }
     filled[slot] = slots[slot] === undefined ? freshDefault(rule.absent.default) : slots[slot];
   }
   return filled;

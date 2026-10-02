@@ -487,7 +487,8 @@ describe("absence is not corruption (#40)", () => {
 
     const { state, meta } = restoreWorld(bare);
 
-    expect(state.entities["player-1"]).toEqual({
+    // toStrictEqual: a fill that wrote an undefined-valued key is a miss too.
+    expect(state.entities["player-1"]).toStrictEqual({
       id: "player-1",
       locationId: "room-a",
       flags: [],
@@ -495,7 +496,7 @@ describe("absence is not corruption (#40)", () => {
       lastSeenTick: 0,
       cooldowns: {},
     });
-    expect(meta).toEqual({ nowTick: 0, rngState: 0, due: [] });
+    expect(meta).toStrictEqual({ nowTick: 0, rngState: 0, due: [] });
   });
 
   it("tolerates absence and refuses malformation on the very same slot", () => {

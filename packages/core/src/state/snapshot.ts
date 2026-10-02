@@ -308,6 +308,8 @@ function readSaveData(data: unknown): SaveDataV2 {
     // The map key and the record's own id state one fact twice; a
     // disagreement (a hand-edited save, a migration that lost track) has no
     // answer the engine could guess, so it fails instead of picking one.
+    // Identity is answered BEFORE the slot rows: a record that is not who
+    // it claims to be gets that named first, whatever else is wrong with it.
     if (entry.id !== undefined && entry.id !== id) {
       throw new Error(`snapshot: entity "${id}" carries a mismatched id "${String(entry.id)}"`);
     }

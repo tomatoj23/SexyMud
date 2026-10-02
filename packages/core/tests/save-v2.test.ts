@@ -197,6 +197,8 @@ describe("the world scalars travel beside the tree (O9, spec/04 §1.5)", () => {
     expect(() => restoreWorld(withNowTick("late"))).toThrow(
       /data\.nowTick is not a non-negative safe integer/,
     );
+    // `null` is malformed, not absent: only `undefined` reads as the default.
+    expect(() => restoreWorld(withNowTick(null))).toThrow(/data\.nowTick is not/);
     expect(() => restoreWorld(withNowTick(Number.NaN))).toThrow(/data\.nowTick is not/);
     expect(() => restoreWorld(withNowTick(-1))).toThrow(/data\.nowTick is not/);
     expect(() => restoreWorld(withNowTick(1.5))).toThrow(/data\.nowTick is not/);
