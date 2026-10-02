@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import type { ChangeEvent } from "react";
 import { CloudSyncError } from "../game/cloudSync.js";
 import type { CloudSync, DestructiveAction, SlotView, StatusView, SyncOutcome } from "../game/cloudSync.js";
@@ -126,7 +126,13 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   );
   /** Two-step confirms: the destructive exits say their cost first (decision D7). */
   const [confirming, setConfirming] = useState<"upload" | "download" | "import" | null>(null);
-  /** The machine's refusal words (#45 D3) — shown, never swallowed (AuthPanel's law). */
+  /**
+   * The machine's refusal words (#45 D3) — shown, never swallowed (AuthPanel's
+   * law). The line is a verdict on the LAST GESTURE ("此操作未执行…"), so it is
+   * retired by the player's NEXT gesture and by nothing else (#45 复查: a
+   * machine move is the wrong signal — it both killed live notices mid-wait
+   * and let dead ones linger under a fresh confirm row).
+   */
   const [refusal, setRefusal] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   // The export gate reads the VIEW's kind (#34 D2): available whenever the
@@ -137,11 +143,16 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   // remedy — so the gate stays a view gate and no guard lives here.)
   const exportDisabled = sync.localView.kind === "empty" || sync.localView.kind === "unavailable";
 
-  // A refusal is about a gesture that just died — it must not outlive the
-  // machine move that made it irrelevant (AuthPanel's law).
-  useEffect(() => {
+  /** Opening a confirm row IS a gesture — it retires the previous verdict. */
+  function openConfirm(next: "upload" | "download" | "import"): void {
     setRefusal(null);
-  }, [state]);
+    setConfirming(next);
+  }
+
+  function cancelConfirm(): void {
+    setRefusal(null);
+    setConfirming(null);
+  }
 
   async function run(action: () => Promise<unknown>): Promise<void> {
     setConfirming(null);
@@ -198,7 +209,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
     if (!picked) return; // picker cancelled — silent, no state change (#33 D5)
     await run(async () => {
       const staged = await sync.beginImport(picked);
-      if (staged.phase === "idle") setConfirming("import");
+      if (staged.phase === "idle") openConfirm("import");
     });
   }
 
@@ -270,7 +281,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
           <div style={rowStyle}>
             <button
               style={buttonStyle}
-              onClick={() => setConfirming("upload")}
+              onClick={() => openConfirm("upload")}
               disabled={sync.localView.kind !== "save"}
             >
               以本地为准（覆盖云端）
@@ -304,7 +315,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                 warning={costWarning("upload")}
                 confirmLabel="确认覆盖"
                 onConfirm={() => void run(() => sync.upload())}
-                onCancel={() => setConfirming(null)}
+                onCancel={cancelConfirm}
               />
             </div>
           )}
@@ -318,14 +329,14 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               warning={costWarning("upload")}
               confirmLabel="确认上传"
               onConfirm={() => void run(() => sync.upload())}
-              onCancel={() => setConfirming(null)}
+              onCancel={cancelConfirm}
             />
           ) : confirming === "download" ? (
             <ConfirmButtons
               warning={costWarning("download")}
               confirmLabel="确认下载"
               onConfirm={() => void run(() => sync.download())}
-              onCancel={() => setConfirming(null)}
+              onCancel={cancelConfirm}
             />
           ) : confirming === "import" ? (
             // The cost notice verbatim (#33 D3): 覆盖当前本地存档、
@@ -335,7 +346,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
               warning={costWarning("import")}
               confirmLabel="确认导入"
               onConfirm={() => void run(() => sync.commitImport())}
-              onCancel={() => setConfirming(null)}
+              onCancel={cancelConfirm}
             />
           ) : (
             <>
@@ -347,14 +358,14 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                   this layer is the judged-elsewhere shape the ticket kills. */}
               <button
                 style={buttonStyle}
-                onClick={() => setConfirming("upload")}
+                onClick={() => openConfirm("upload")}
                 disabled={sync.localView.kind !== "save"}
               >
                 上传到云端
               </button>
               <button
                 style={buttonStyle}
-                onClick={() => setConfirming("download")}
+                onClick={() => openConfirm("download")}
                 disabled={sync.remoteView.kind !== "save"}
               >
                 下载云端存档
@@ -376,7 +387,13 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
                   the BUTTONS but never the CONFIRM above (D7). Conflict never
                   reaches this row (its own block owns that phase), so the
                   conflict gate here is the block split above. */}
-              <button style={buttonStyle} onClick={() => fileInput.current?.click()}>
+              <button
+                style={buttonStyle}
+                onClick={() => {
+                  setRefusal(null); // a gesture — the picker retires the last verdict too
+                  fileInput.current?.click();
+                }}
+              >
                 导入本地存档
               </button>
             </>

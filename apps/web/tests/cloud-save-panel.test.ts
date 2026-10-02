@@ -88,12 +88,24 @@ class FakeLocal implements LocalSlot {
 class FakeCloud implements CloudSlot {
   snapshot: Snapshot | null = null;
   failing: Error | null = null;
-  /** Never resolves — the machine parks on `busy` and stays there. */
+  /** While true, `load` parks — the machine sits on `busy` until {@link release}. */
   hung = false;
+  private wake: (() => void) | null = null;
+
+  /** Lets a parked `load` land (with the current snapshot). */
+  release(): void {
+    const wake = this.wake;
+    this.wake = null;
+    wake?.();
+  }
 
   load(): Promise<Snapshot | null> {
     if (this.failing) return Promise.reject(this.failing);
-    if (this.hung) return new Promise<Snapshot | null>(() => undefined);
+    if (this.hung) {
+      return new Promise<Snapshot | null>((resolve) => {
+        this.wake = () => resolve(this.snapshot);
+      });
+    }
     return Promise.resolve(this.snapshot);
   }
 
@@ -153,13 +165,53 @@ describe("CloudSavePanel — rendered discipline (#45 W6: the judgments are the 
   it("the machine's refusal words reach the error line whatever the kind — the panel adapts at ONE place", async () => {
     const { panel, local, sync } = mountRig();
     await panel.pickFile(JSON.stringify(snapshotFixture({ nowTick: 7 })));
-    await sync.commitImport(); // the confirm's own answer, run behind the row — the staged payload is spent
+    // The confirm's own answer, run behind the row — the staged payload is spent.
+    await panel.drive(() => sync.commitImport());
     expect(local.snapshot).not.toBeNull();
 
     await panel.click("确认导入"); // the row still stands; the machine refuses
 
     // The machine's OWN words for the refusal, shown — never invented here.
     expect(panel.text()).toContain("没有待确认的导入");
+  });
+
+  it("the refusal line is the LAST gesture's verdict — a machine move never retires it, a new gesture always does", async () => {
+    const { panel, local, cloud } = mountRig();
+    const same = snapshotFixture({ nowTick: 20 });
+    local.snapshot = same;
+    local.text = JSON.stringify(same);
+    cloud.snapshot = same;
+    await panel.click("重新检查"); // the views are known — in-sync, idle
+    cloud.hung = true;
+    await panel.click("重新检查"); // parks the machine on busy
+    await panel.click("重新检查"); // refused — the verdict is on the line
+
+    expect(panel.text()).toContain("此操作未执行");
+    cloud.hung = false;
+    await panel.drive(() => {
+      cloud.release(); // the in-flight probe lands — a machine move
+      return Promise.resolve();
+    });
+    // The verdict belongs to the refused GESTURE (#45 复查): it outlives the
+    // machine move that followed it — "误清" was the bug this pins away.
+    expect(panel.text()).toContain("此操作未执行");
+
+    await panel.click("上传到云端"); // a NEW gesture — the verdict retires
+    expect(panel.text()).not.toContain("此操作未执行"); // "赖着" under a fresh confirm row is the other half
+  });
+
+  it("D7 the download's cost names the slot the MACHINE says dies — the mirror of the upload notice", async () => {
+    const { panel, local, cloud, sync } = mountRig();
+    const same = snapshotFixture({ nowTick: 20 });
+    local.snapshot = same;
+    local.text = JSON.stringify(same);
+    cloud.snapshot = same;
+    await panel.click("重新检查"); // in-sync, idle — the main row renders
+    expect(sync.destructive.download.overwrites).toBe("local"); // the judgment is the machine's
+
+    await panel.click("下载云端存档");
+
+    expect(panel.text()).toContain("本地存档将被云端存档覆盖"); // …and the copy names exactly that slot
   });
 
   it("D8 a failure covers the old verdict — the line says what did NOT happen, never a stale ✓", async () => {

@@ -565,9 +565,14 @@ export class CloudSync {
    * the slot, the views and the last verdict are all as they were.
    */
   commitImport(): Promise<SyncState> {
+    // The instance guards outrank the precondition (#45 复查): a busy or dead
+    // machine refuses EVERY action and must say THAT — never "nothing staged",
+    // which would send the player hunting for a file while the truth is "wait".
+    const refusal = this.instanceRefusal();
+    if (refusal) return Promise.reject(refusal);
     const snapshot = this.pendingImport;
     if (!snapshot) {
-      return Promise.reject(new CloudSyncError("no-staged-import", "没有待确认的导入——请重新选择文件。"));
+      return Promise.reject(new CloudSyncError("no-staged-import", "此操作未执行：没有待确认的导入——请重新选择文件。"));
     }
     return this.run("import", async () => {
       this.pendingImport = null;
@@ -592,8 +597,12 @@ export class CloudSync {
    * the synchronous throw is gone: one machine, one refusal shape.
    */
   dismiss(): Promise<SyncState> {
+    // Guards first (#45 复查, same ordering as `commitImport`): a busy machine
+    // says "busy", not "nothing to dismiss" — the refusals name the REAL reason.
+    const refusal = this.instanceRefusal();
+    if (refusal) return Promise.reject(refusal);
     if (this.current.phase !== "conflict") {
-      return Promise.reject(new CloudSyncError("nothing-to-dismiss", "当前没有待裁决的冲突。"));
+      return Promise.reject(new CloudSyncError("nothing-to-dismiss", "此操作未执行：当前没有待裁决的冲突。"));
     }
     this.settle("dismissed", "dismiss");
     return Promise.resolve(this.transition({ phase: "idle" }));
@@ -619,20 +628,33 @@ export class CloudSync {
     );
   }
 
-  private ensureRunnable(action: SyncAction): void {
+  /**
+   * The instance-wide refusals (#45 复查): busy and a dead session refuse
+   * EVERY action — they outrank any precondition (`commitImport`'s escrow,
+   * `dismiss`'s standing conflict) so a refusal always names the real reason.
+   * The message is a verdict on the GESTURE ("此操作未执行…"), which is why it
+   * may outlive the situation that caused it.
+   */
+  private instanceRefusal(): CloudSyncError | null {
     if (this.current.phase === "busy") {
-      throw new CloudSyncError("busy", "上一个同步操作还在进行——稍候再试。");
+      return new CloudSyncError("busy", "此操作未执行：上一个同步操作还在进行——稍候再试。");
     }
     if (this.current.phase === "auth-expired") {
-      throw new CloudSyncError("auth-expired", "登录已过期，此操作未执行——重新登录后继续云存档。");
+      return new CloudSyncError("auth-expired", "登录已过期，此操作未执行——重新登录后继续云存档。");
     }
+    return null;
+  }
+
+  private ensureRunnable(action: SyncAction): void {
+    const refusal = this.instanceRefusal();
+    if (refusal) throw refusal;
     // Importing may not move the stakes mid-adjudication (#33 D3 — the
     // ADR-0037 D7 law that adjudication is among deliberate exits): an
     // import swaps the very slot the conflict is comparing. The panel's
     // disabled button is a display gate reading this same state — this
     // refusal is the only insurance.
     if (this.current.phase === "conflict" && action === "import") {
-      throw new CloudSyncError("adjudicating", "冲突待裁决——请先选择以哪边继续。");
+      throw new CloudSyncError("adjudicating", "此操作未执行：冲突待裁决——请先选择以哪边继续。");
     }
   }
 

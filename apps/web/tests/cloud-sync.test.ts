@@ -682,6 +682,10 @@ describe("CloudSync — an auth failure ends the instance (decision D6)", () => 
     await expectRefusal(sync.download(), "auth-expired");
     await expectRefusal(sync.probe(), "auth-expired");
     await expectRefusal(sync.exportLocal(), "auth-expired");
+    // The guards outrank the preconditions here too: a dead session says so,
+    // it never sends the player looking for a staged file or a standing conflict.
+    await expectRefusal(sync.commitImport(), "auth-expired");
+    await expectRefusal(sync.dismiss(), "auth-expired");
 
     expect(transport.reads).toBe(readsBefore); // zero further backend calls
     await expect(local.load()).resolves.toBeNull();
@@ -711,6 +715,22 @@ describe("CloudSync — busy is a refusal, not a queue", () => {
     await expectRefusal(sync.dismiss(), "nothing-to-dismiss");
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("none");
+  });
+
+  it("the instance guards outrank the preconditions (#45 复查): a busy machine says 'busy', never 'nothing staged' / 'nothing to dismiss'", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+
+    const first = sync.upload();
+    // Nothing is staged and no conflict stands — yet the refusal names the
+    // INSTANCE state first: "why this cannot run" outranks "what it lacks",
+    // or the player is sent hunting for a file when the truth is "wait".
+    await expectRefusal(sync.commitImport(), "busy");
+    await expectRefusal(sync.dismiss(), "busy");
+    await first;
+
+    expect(sync.last).toBe("saved");
   });
 });
 

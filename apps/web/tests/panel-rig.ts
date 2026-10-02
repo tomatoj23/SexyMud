@@ -30,12 +30,23 @@ export interface PanelRig {
   click(label: string): Promise<void>;
   /** The pick: hand the hidden file input a save's text, as the picker would. */
   pickFile(text: string): Promise<void>;
+  /**
+   * A test-only gesture: drive the machine directly (a state the panel cannot
+   * reach on its own) INSIDE `act` — the panel subscribes to the machine, so
+   * a bare call would leave React's "not wrapped in act" warning as the only
+   * trace of the re-render.
+   */
+  drive(work: () => Promise<unknown>): Promise<void>;
   unmount(): void;
 }
 
-/** Lets every pending machine await settle before the act scope closes. */
-function turn(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Lets every pending machine await settle before the act scope closes: a few
+ * macrotask turns, not one — the machine's chains are microtasks today, and
+ * the rig must not go quietly wrong the day one of them takes a real turn.
+ */
+async function turn(): Promise<void> {
+  for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 export function mountPanel(sync: CloudSync): PanelRig {
@@ -76,6 +87,12 @@ export function mountPanel(sync: CloudSync): PanelRig {
         const file = new File([text], "sexymud-save.json", { type: "application/json" });
         Object.defineProperty(input, "files", { value: [file], configurable: true });
         input.dispatchEvent(new Event("change", { bubbles: true }));
+        await turn();
+      });
+    },
+    async drive(work: () => Promise<unknown>): Promise<void> {
+      await act(async () => {
+        await work();
         await turn();
       });
     },

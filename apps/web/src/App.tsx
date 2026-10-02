@@ -56,7 +56,11 @@ function CloudShell({ cloud }: { cloud: CloudStack }) {
     }
     const instance = cloud.openSync(authState.session);
     setSync(instance);
-    void instance.probe(); // decision D3: show both sides, sync nothing
+    // Decision D3: show both sides, sync nothing. A fresh instance is idle, so
+    // this call cannot trigger a guard refusal (and work failures land as
+    // machine state the panel renders) — the catch only keeps a future refusal
+    // from surfacing as an unhandled rejection.
+    void instance.probe().catch(() => undefined);
     return () => setSync(null);
   }, [cloud, authState]);
 
