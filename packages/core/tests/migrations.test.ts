@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SAVE_VERSION, migrateSnapshot } from "../src/save/migrations.js";
+import { restoreWorld } from "../src/state/snapshot.js";
 import type { SaveDataV2 } from "../src/state/snapshot.js";
 import type { Snapshot } from "../src/types.js";
 
@@ -141,6 +142,25 @@ describe("v1 → v2: the world scalars arrive (ADR-0033 §2–§3)", () => {
     const out = migrateSnapshot<SaveDataV2>({ version: 1, data: { entities: "gone" } });
 
     expect(out.entities).toBe("gone");
+  });
+
+  it("keeps a non-object record's corruption class — no fabricated 'missing locationId' (#40)", () => {
+    // The step used to swap a non-object record for `{ lastSeenTick: 0 }`,
+    // and the load then answered "locationId is not a non-empty string" — a
+    // class the save never carried. The original goes through untouched, so
+    // the load names the damage for what it is (error-class fidelity).
+    const out = migrateSnapshot<SaveDataV2>(
+      v1({ "player-1": "gone", "player-2": ["not", "a", "record"] }),
+    );
+
+    expect(out.entities["player-1"]).toBe("gone");
+    expect(out.entities["player-2"]).toEqual(["not", "a", "record"]);
+    expect(() =>
+      restoreWorld({
+        version: 1,
+        data: { entities: { "player-1": "gone" } },
+      } as Snapshot),
+    ).toThrow(/entity "player-1" is not an object/);
   });
 });
 

@@ -4,6 +4,13 @@ import { assertTick } from "../clock.js";
 import { SAVE_VERSION, migrateSnapshot } from "../save/migrations.js";
 import { DERIVED_ENTITY_KEYS, recomputeEntityDerived, stripDerived } from "./derived.js";
 import type { DerivedEntityKey, RecomputeDerived } from "./derived.js";
+import {
+  asId,
+  asRecord,
+  fillAbsentSlots,
+  SLOT_RULES,
+  validateSlots,
+} from "./slot-rules.js";
 import type { EntityState, WorldState } from "./tree.js";
 import type { DueItem } from "../time/due.js";
 
@@ -61,6 +68,12 @@ import type { DueItem } from "../time/due.js";
  * gives it a migration default, so a post-v2 save should carry it — but
  * "absent" is still read as tick 0, never as corruption). `cooldowns` is the
  * third (#23): "absent" means empty, never "the cooldowns were lost".
+ *
+ * Each optional slot's tolerance is one row in `state/slot-rules.ts`, and
+ * the reader half of that row says one thing: a late optional slot is
+ * tolerated when ABSENT and refused when MALFORMED. `id` is the one field
+ * here with no row — its copy must agree with the map key, a cross-field
+ * check rather than a tolerance (spec/04 §1.4).
  */
 export type EntityRecord = Omit<
   EntityState,
@@ -83,7 +96,9 @@ export interface SaveDataV1 {
  * All four are REQUIRED in the type and all four are read as "absent means
  * empty" (ADR-0033 §4: no special-casing for v2's new slots). That asymmetry
  * is deliberate: the type describes what the engine WRITES, the reader
- * describes what it TOLERATES.
+ * describes what it TOLERATES — and a late optional slot's reader tolerates
+ * ABSENCE only, never malformation (#40: a `nowTick`/`rngState`/`due` that
+ * is present but the wrong kind of thing fails at load).
  */
 export interface SaveDataV2 extends SaveDataV1 {
   /** The engine's high-water mark — without it, time runs backwards (§1.5). */
@@ -238,12 +253,13 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
  * "not yet", and without `rngState` the stream starts over.
  *
  * ⚠️ The scalars are read "absent means empty" like every other late slot
- * (ADR-0033 §4), which has a cost worth stating out loud: a v2 save whose
- * `nowTick` is missing or corrupt does NOT fail — the game carries on from
- * tick 0, so `nowTick >= dueTick` is false for every pending cooldown and
- * they are not "broken", they simply never come due. That is worse than a
- * loud failure, but it is a recoverable "time went backwards", and cheaper
- * than a special-case validation rule (ADR-0033 §4).
+ * (ADR-0033 §4): a v2 save whose `nowTick` is MISSING still reads as tick 0,
+ * so `nowTick >= dueTick` is false for every pending cooldown and they are
+ * not "broken", they simply never come due. What does NOT pass any more is a
+ * `nowTick` that is present but corrupt — the reader tolerates absence only,
+ * never malformation (#40, D2 — ADR-0033 §4's "cheaper without a detector"
+ * tradeoff is overturned; the string that used to flow silently into `meta`
+ * now fails at load).
  */
 export function restoreWorld(snapshot: Snapshot, options: RestoreOptions = {}): RestoredWorld {
   const data = readSaveData(migrateSnapshot<SaveDataV2>(snapshot));
@@ -253,107 +269,49 @@ export function restoreWorld(snapshot: Snapshot, options: RestoreOptions = {}): 
     // The record is the persisted half, taken as-is — the save is its truth,
     // and re-deriving it would be a second opinion nobody asked for. `id`
     // comes from the map key (the record's own copy was validated to agree
-    // with it). `tags`, `lastSeenTick` and `cooldowns` are the ONLY fields
-    // named here, and only because they were added after v1's first save: an
-    // older save omits them, and "omitted" means "empty" (ADR-0022), not
-    // "recompute will fill it in". Every slot that lands after the version it
-    // joins costs exactly one line — growing the tree is not free, but it
-    // costs no revalidation.
+    // with it). Every other tolerated absence — the slots that landed after
+    // v1's first save, where "omitted" means "empty" (ADR-0022), not
+    // "recompute will fill it in" — fills from its row's one declared
+    // default in the slot table, so growing the tree costs one row there and
+    // no revalidation here.
     const record = data.entities[id]!;
-    const state: EntityState = {
-      ...record,
-      id,
-      tags: record.tags ?? {},
-      lastSeenTick: record.lastSeenTick ?? 0,
-      cooldowns: record.cooldowns ?? {},
-    };
+    const state = Object.assign(
+      { ...record, id } as EntityState,
+      fillAbsentSlots(record, SLOT_RULES.entity),
+    );
     recomputeDerived(state);
     entities[id] = state;
   }
   return {
     state: { entities },
-    meta: {
-      nowTick: data.nowTick ?? 0,
-      rngState: data.rngState ?? 0,
-      due: data.due ?? [],
-    },
+    meta: fillAbsentSlots(data, SLOT_RULES.world) as WorldMeta,
   };
 }
 
 /**
- * An object, or a loud failure. A save crossed a process boundary: every
- * field in it is a CLAIM about the world, not a fact, and a claim that does
- * not fit the current shape is answered here — at load — rather than three
- * hours later as a player standing in a room that does not exist.
+ * readSaveData — the payload's shape answered at load. Every absence policy
+ * and kind check is a row in `state/slot-rules.ts`; what stays hand-written
+ * here is the STRUCTURE around the rows: the root, the entity map, the map
+ * key, and the key/record identity agreement (a cross-field check no slot
+ * row can express).
  */
-function asRecord(value: unknown, what: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`snapshot: ${what} is not an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-/** A non-empty string, or a loud failure (an empty id locates nothing). */
-function asId(value: unknown, what: string): string {
-  if (typeof value !== "string" || value === "") {
-    throw new Error(`snapshot: ${what} is not a non-empty string`);
-  }
-  return value;
-}
-
 function readSaveData(data: unknown): SaveDataV2 {
   const root = asRecord(data, "data");
   const entities = asRecord(root.entities, "data.entities");
-  // The world scalars are NOT validated: ADR-0033 §4 says a v2 slot gets no
-  // special-casing on the way in, so "missing" reads as the default and only
-  // "present but the wrong KIND of thing" is answered here. `due` is the one
-  // that can be: a non-list cannot be handed to the bucket's restore() at
-  // all, so it fails at load with a message that names it (the `tags`
-  // precedent — written in, so it must be legal).
-  if (root.due !== undefined && !Array.isArray(root.due)) {
-    throw new Error("snapshot: data.due is not a list");
-  }
+  // The rows carry their own kind checks (the `tags` precedent generalized):
+  // present but the wrong KIND is answered here — "missing" reads as the
+  // row's default and is never answered at all.
+  validateSlots(root, SLOT_RULES.world, (slot) => `data.${slot}`);
   for (const [id, record] of Object.entries(entities)) {
     asId(id, "an entity key in data.entities");
     const entry = asRecord(record, `entity "${id}"`);
-    asId(entry.locationId, `entity "${id}".locationId`);
     // The map key and the record's own id state one fact twice; a
     // disagreement (a hand-edited save, a migration that lost track) has no
     // answer the engine could guess, so it fails instead of picking one.
     if (entry.id !== undefined && entry.id !== id) {
       throw new Error(`snapshot: entity "${id}" carries a mismatched id "${String(entry.id)}"`);
     }
-    // `flags` is REQUIRED: every v1 save ever written carries it (spec/04
-    // §1.4). `tags` is OPTIONAL for the opposite reason — no save written
-    // before M3-T5 has it, so demanding it would reject every old save for
-    // nothing. Present but malformed is still rejected: a save is a claim
-    // about the world, and a half-typed one is worse than none.
-    const flags = entry.flags;
-    if (!Array.isArray(flags) || flags.some((flag) => typeof flag !== "string")) {
-      throw new Error(`snapshot: entity "${id}".flags is not a list of strings`);
-    }
-    if (entry.tags !== undefined) {
-      const tags = asRecord(entry.tags, `entity "${id}".tags`);
-      for (const [dimension, keys] of Object.entries(tags)) {
-        if (!Array.isArray(keys) || keys.some((key) => typeof key !== "string")) {
-          throw new Error(`snapshot: entity "${id}".tags["${dimension}"] is not a list of strings`);
-        }
-      }
-    }
-    // A cooldown is a tick, and a tick that is not a tick does not merely
-    // misjudge: `NaN >= dueTick` is false for EVERY dueTick, so a skill armed
-    // with it would never come back. Same class as malformed tags — written
-    // in, so it must be legal (spec/04 §1.4, ninth corruption class).
-    if (entry.cooldowns !== undefined) {
-      const cooldowns = asRecord(entry.cooldowns, `entity "${id}".cooldowns`);
-      for (const [key, dueTick] of Object.entries(cooldowns)) {
-        if (typeof dueTick !== "number" || !Number.isSafeInteger(dueTick) || dueTick < 0) {
-          throw new Error(
-            `snapshot: entity "${id}".cooldowns["${key}"] is not a non-negative safe integer`,
-          );
-        }
-      }
-    }
+    validateSlots(entry, SLOT_RULES.entity, (slot) => `entity "${id}".${slot}`);
   }
   return data as SaveDataV2;
 }

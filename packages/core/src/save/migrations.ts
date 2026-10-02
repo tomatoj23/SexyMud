@@ -1,4 +1,5 @@
 import type { Snapshot } from "../types.js";
+import { fillMigrationDefaults, SLOT_RULES } from "../state/slot-rules.js";
 
 export const SAVE_VERSION = 2;
 
@@ -15,7 +16,12 @@ export const SAVE_VERSION = 2;
  *   "this field did not exist when the save was written" — it does not guess
  *   what the player's state was. Overwriting a field the old save actually
  *   carried would destroy a fact, which is the one thing a migration must
- *   never do.
+ *   never do. And it never repairs SHAPE either: a record that is not an
+ *   object goes through as-is, so the validator answers with the corruption
+ *   class the save actually carries instead of one the migration fabricated.
+ *
+ * What each step fills is a row in `state/slot-rules.ts` (`absent.migrate`)
+ * — the same table `readSaveData` and `restoreWorld` read their halves off.
  */
 const migrations: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {
   /**
@@ -29,14 +35,12 @@ const migrations: Record<number, (data: Record<string, unknown>) => Record<strin
    *   with 0 would hand that player a whole world of offline catch-up they
    *   never earned. ADR-0033 §3 predates #22 and assumes the field is always
    *   absent; the rule above is what actually governs.
+   *
+   * Both bullets are rows in `state/slot-rules.ts` now (the `absent.migrate`
+   * flag), filled only where the save left the slot absent.
    */
   1: (data) => {
-    const withScalars = {
-      ...data,
-      nowTick: data.nowTick ?? 0,
-      rngState: data.rngState ?? 0,
-      due: data.due ?? [],
-    };
+    const withScalars = { ...data, ...fillMigrationDefaults(data, SLOT_RULES.world) };
     const raw = data.entities;
     // Walked only when it really is a record: a save whose `entities` is
     // missing or the wrong shape must still fail LOUDLY in readSaveData. A
@@ -47,9 +51,16 @@ const migrations: Record<number, (data: Record<string, unknown>) => Record<strin
     }
     const entities: Record<string, unknown> = {};
     for (const [id, record] of Object.entries(raw as Record<string, unknown>)) {
-      const entry = typeof record === "object" && record !== null ? record : {};
-      const typed = entry as Record<string, unknown>;
-      entities[id] = typed.lastSeenTick === undefined ? { ...typed, lastSeenTick: 0 } : typed;
+      // A record that is not an object is NOT repaired into `{}` or into a
+      // `lastSeenTick: 0` shell: the original goes through untouched, so
+      // readSaveData answers with the corruption class the save actually
+      // carries ("entity X is not an object"), not a fabricated "missing
+      // locationId" (error-class fidelity).
+      if (typeof record !== "object" || record === null || Array.isArray(record)) {
+        entities[id] = record;
+        continue;
+      }
+      entities[id] = { ...record, ...fillMigrationDefaults(record, SLOT_RULES.entity) };
     }
     return { ...withScalars, entities };
   },

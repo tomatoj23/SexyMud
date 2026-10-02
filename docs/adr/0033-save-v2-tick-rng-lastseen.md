@@ -41,6 +41,8 @@ v1 → v2：`nowTick = 0`、`rngState = 0`、`lastSeenTick = nowTick`。
 
 > ⚠️ 代价（措辞要准）：v2 存档若 `nowTick` 丢失或损坏**不会报错**，游戏当成第 0 tick 继续跑 ⇒ 判定 `nowTick >= dueTick` 恒为假，**冷却不是「失效」，而是永远不到期**（技能要再等满 `dueTick` 个 tick）。这比「失效」更糟，但仍属「时间回到过去」这一类可恢复的问题，且比多养一条检测规则便宜。
 
+> **勘误（2026-10-02，#40 D2）**：上面这条权衡被推翻一半。**「缺即空」不变**——`nowTick` 丢失仍读 0；但**损坏不再容忍**：`nowTick`／`rngState`／`lastSeenTick` 畸形即拒（`spec/04` §1.4 第十至十二类损坏载荷）。理由是「被告诉载入成功就必须真能玩」优先于「多养一条检测规则便宜」，pre-release 是收紧的最后窗口；「维持本节便宜口径」的路线在 #40 决策稿中留痕为被否路线。当前口径以 `spec/04` §1.5 约定 2 为准。
+
 ### 5. 顶层槽的进出通道是一个签名问题
 
 今天 `serializeWorld(world)` 只收一个 world、`restoreWorld(snapshot) → WorldState` 只返一棵树（`WorldState = { entities }`），而高水位按 ADR-0031 住在**驱动世界的那一侧**，不在 `WorldState` 里。于是 `nowTick`／`rngState` 既写不进也读不出。三个选项见 `spec/04` §1.5 第 3 条，倾向 `serializeWorld(world, meta)` ／ `restoreWorld → { state, meta }`。**实现前必须选一个，否则 T6 卡住。**

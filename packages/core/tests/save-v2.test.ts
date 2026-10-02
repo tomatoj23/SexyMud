@@ -164,10 +164,11 @@ describe("the world scalars travel beside the tree (O9, spec/04 §1.5)", () => {
   });
 
   it("reads missing scalars as empty — no special case for v2's new slots", () => {
-    // ADR-0033 §4. The cost is worth stating out loud, and this is where it
-    // is pinned: a `nowTick` that is missing or corrupt does NOT fail. The
-    // game carries on from tick 0, so `nowTick >= dueTick` is false for every
-    // pending cooldown and they are not "broken" — they never come due.
+    // ADR-0033 §4 (as narrowed by #40): ABSENCE is what is tolerated here. A
+    // missing `nowTick` still reads as tick 0, so `nowTick >= dueTick` is
+    // false for every pending cooldown and they are not "broken" — they
+    // never come due. Corruption is the other half of the rule, and it does
+    // fail: the reader tolerates absence only, never malformation.
     const v2WithoutScalars = {
       version: 2,
       data: { entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [] } } },
@@ -176,6 +177,48 @@ describe("the world scalars travel beside the tree (O9, spec/04 §1.5)", () => {
     const { meta } = restoreWorld(v2WithoutScalars);
 
     expect(meta).toEqual({ nowTick: 0, rngState: 0, due: [] });
+  });
+
+  it("rejects a malformed nowTick instead of playing on from nowhere (#40)", () => {
+    // ADR-0033 §4's "cheaper without a detector" tradeoff is overturned: a
+    // `nowTick` that is present but not a tick used to flow silently into
+    // meta — the game then judged `nowTick >= dueTick` against whatever came
+    // back. Same law as malformed tags: written in, so it must be legal
+    // (spec/04 §1.4, tenth corruption class).
+    const withNowTick = (nowTick: unknown) =>
+      ({
+        version: 2,
+        data: {
+          entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [] } },
+          nowTick,
+        },
+      }) as Snapshot;
+
+    expect(() => restoreWorld(withNowTick("late"))).toThrow(
+      /data\.nowTick is not a non-negative safe integer/,
+    );
+    expect(() => restoreWorld(withNowTick(Number.NaN))).toThrow(/data\.nowTick is not/);
+    expect(() => restoreWorld(withNowTick(-1))).toThrow(/data\.nowTick is not/);
+    expect(() => restoreWorld(withNowTick(1.5))).toThrow(/data\.nowTick is not/);
+  });
+
+  it("rejects a malformed rngState — the stream cannot resume from a lie (#40)", () => {
+    // mulberry32's whole state is one uint32, and `rng.ts` coerces anything
+    // else through `>>> 0`: a hand-edited save would resume silently on a
+    // stream that is not the saved one (eleventh corruption class).
+    const withRngState = (rngState: unknown) =>
+      ({
+        version: 2,
+        data: {
+          entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [] } },
+          rngState,
+        },
+      }) as Snapshot;
+
+    expect(() => restoreWorld(withRngState("seed"))).toThrow(/data\.rngState is not a uint32/);
+    expect(() => restoreWorld(withRngState(Number.NaN))).toThrow(/data\.rngState is not/);
+    expect(() => restoreWorld(withRngState(2 ** 32))).toThrow(/data\.rngState is not/);
+    expect(() => restoreWorld(withRngState(1.5))).toThrow(/data\.rngState is not/);
   });
 
   it("rejects a due field that is present but not a list", () => {

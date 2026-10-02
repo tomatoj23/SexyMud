@@ -449,6 +449,74 @@ describe("loud failures", () => {
       /entity "player-1" carries a mismatched id "player-9"/,
     );
   });
+
+  it("rejects a malformed lastSeenTick — a record's clock slot is a tick (#40)", () => {
+    // `lastSeenTick` used to get no validation of its own; a string one
+    // flowed into the tree and the two-layer advance settled against it.
+    // The reader tolerates absence only, never malformation (twelfth
+    // corruption class, spec/04 §1.4).
+    const payload = (lastSeenTick: unknown) => ({
+      entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [], lastSeenTick } },
+    });
+
+    expect(() => load({ version: SAVE_VERSION, data: payload("late") })).toThrow(
+      /entity "player-1"\.lastSeenTick is not a non-negative safe integer/,
+    );
+    expect(() => load({ version: SAVE_VERSION, data: payload(Number.NaN) })).toThrow(
+      /entity "player-1"\.lastSeenTick is not/,
+    );
+    expect(() => load({ version: SAVE_VERSION, data: payload(-1) })).toThrow(
+      /entity "player-1"\.lastSeenTick is not/,
+    );
+    expect(() => load({ version: SAVE_VERSION, data: payload(1.5) })).toThrow(
+      /entity "player-1"\.lastSeenTick is not/,
+    );
+  });
+});
+
+describe("absence is not corruption (#40)", () => {
+  it("fills every late slot from its declared default when a save omits it — zero change", () => {
+    // The regression pin AC4 asks for: the defensive double-fill (the
+    // migration's and restore's hard-coded defaults) collapsed into one
+    // declaration per row in state/slot-rules.ts, and a save that omits the
+    // slots still lands on exactly the defaults it always did.
+    const bare = {
+      version: 2,
+      data: { entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [] } } },
+    } as Snapshot;
+
+    const { state, meta } = restoreWorld(bare);
+
+    expect(state.entities["player-1"]).toEqual({
+      id: "player-1",
+      locationId: "room-a",
+      flags: [],
+      tags: {},
+      lastSeenTick: 0,
+      cooldowns: {},
+    });
+    expect(meta).toEqual({ nowTick: 0, rngState: 0, due: [] });
+  });
+
+  it("tolerates absence and refuses malformation on the very same slot", () => {
+    // The slogan in one slot: `lastSeenTick` missing reads as tick 0, and
+    // the same slot carrying a string fails the load. Either half loosening
+    // is the drift this rule exists to end.
+    const withLastSeenTick = (lastSeenTick: unknown) =>
+      ({
+        version: 2,
+        data: {
+          entities: {
+            "player-1": { id: "player-1", locationId: "room-a", flags: [], lastSeenTick },
+          },
+        },
+      }) as Snapshot;
+
+    expect(
+      restoreWorld(withLastSeenTick(undefined)).state.entities["player-1"]!.lastSeenTick,
+    ).toBe(0);
+    expect(() => restoreWorld(withLastSeenTick("late"))).toThrow(/lastSeenTick/);
+  });
 });
 
 describe("NPCs stay out of the save (ADR-0028 §1)", () => {
