@@ -47,6 +47,15 @@ import { parseSnapshotText } from "./saveText.js";
  * failure ends the INSTANCE (decision D6): the re-login guide comes up and
  * every further action refuses without a backend call — the player's
  * re-login rebuilds the transport around the new session.
+ *
+ * **Judgment lives HERE (#45 D1/D2)**: the panel is a thin binding — thin
+ * means NO business judgment. What is destructive and its cost ELEMENTS
+ * ({@link destructive}), what the status speaks and in what precedence
+ * ({@link statusView}), and every guard are this machine's own; the panel
+ * draws and reports gestures. A refused action rejects through ONE channel
+ * ({@link CloudSyncError}, decision D3 — the old `dismiss` throw was the
+ * second shape) and the panel SHOWS the refusal the way AuthPanel does, so
+ * no click dies silently behind a greyed-out guess.
  */
 
 /** What one side's slot holds — the comparison the panel renders. */
@@ -74,6 +83,80 @@ export type SyncOutcome =
   | "in-sync"; // both sides byte-equal
 
 export type SyncAction = "probe" | "upload" | "download" | "import" | "export";
+
+/** What a FAILED phase names — the word the loud failure speaks with (#32 D4). */
+export type SyncFailure =
+  | "network"
+  | "corrupt"
+  | "local"
+  | "local-corrupt"
+  | "local-unavailable"
+  | "file"
+  | "file-corrupt"
+  | "file-version";
+
+/**
+ * The destructive exits of the adjudication (decision D7's judgment, #45 D1):
+ * which actions are destructive is a FACT of the machine — the panel only
+ * words it.
+ */
+export type DestructiveAction = "upload" | "download" | "import";
+
+/**
+ * One destructive action's cost ELEMENTS (#45 D1): the slot it overwrites and
+ * what that slot currently holds. The words a confirm quotes are the render
+ * layer's own (engine-purity law); the facts those words hang on live here,
+ * so no panel can invent what a button destroys — and no stale reading can
+ * make the destroy list itself differ from the machine's (decision D4: the
+ * semantics are unchanged, only their HOME moved).
+ */
+export interface DestructiveView {
+  /** The slot the action overwrites — the thing its cost line must name. */
+  overwrites: "local" | "remote";
+  /**
+   * The overwritten slot as last known — a display cache, so its kind is a
+   * CLAIM (#31): it may shape the wording, never skip the notice.
+   */
+  target: SlotView;
+}
+
+/**
+ * What the status line must speak, in decision D8's precedence (#45 D1): the
+ * PHASE first — a standing failure covers the old verdict, the loud-failure
+ * law's last sentence — and only then the verdict pair. The precedence IS the
+ * judgment; it lives here so a panel cannot re-order it.
+ */
+export type StatusView =
+  | { kind: "busy"; action: SyncAction }
+  | { kind: "auth-expired" }
+  | { kind: "conflict"; cause: "save" | "compare" }
+  | { kind: "failed"; action: SyncAction; failure: SyncFailure }
+  | { kind: "verdict"; outcome: SyncOutcome; from: SyncAction | "dismiss" | null };
+
+/**
+ * A machine REFUSAL (decision D3, #45): ONE rejection shape for every refused
+ * action — the guards (busy / expired / mid-adjudication) and the misuse
+ * (commit with nothing staged, dismiss with nothing standing) alike — so a
+ * panel adapts at exactly one end. `dismiss`'s synchronous throw was the
+ * historical second shape (`dismiss` predates the `run` wording); "one
+ * machine, one refusal" is the same law as "failures are loud" (D8).
+ */
+export type SyncRefusal = "busy" | "auth-expired" | "adjudicating" | "no-staged-import" | "nothing-to-dismiss";
+
+/**
+ * The refusal, typed — same law as {@link CloudAuthError}: the message is the
+ * machine's own word and the panel SHOWS it (AuthPanel's shape), it never
+ * invents words for a judgment it does not own.
+ */
+export class CloudSyncError extends Error {
+  constructor(
+    readonly kind: SyncRefusal,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CloudSyncError";
+  }
+}
 
 /**
  * The machine's PHASE with just its contextual fields — the comparison and
@@ -110,15 +193,7 @@ export type SyncState =
        * `local-unavailable` unchanged — a full or disabled store is the same
        * exit whichever action got there.
        */
-      failure:
-        | "network"
-        | "corrupt"
-        | "local"
-        | "local-corrupt"
-        | "local-unavailable"
-        | "file"
-        | "file-corrupt"
-        | "file-version";
+      failure: SyncFailure;
       action: SyncAction;
     }
   | { phase: "auth-expired" };
@@ -226,6 +301,42 @@ export class CloudSync {
   /** The cloud slot as last known — readable in any phase. */
   get remoteView(): SlotView {
     return this.views.remote;
+  }
+
+  /**
+   * The destructive exits' description (decision D7, #45 D1): which actions
+   * are destructive and their cost ELEMENTS, straight from the machine — a
+   * panel reads this and only WORDS it, so the destroy list can never drift
+   * from what the actions actually do.
+   */
+  get destructive(): Record<DestructiveAction, DestructiveView> {
+    return {
+      upload: { overwrites: "remote", target: this.views.remote },
+      download: { overwrites: "local", target: this.views.local },
+      import: { overwrites: "local", target: this.views.local },
+    };
+  }
+
+  /**
+   * What the status line speaks (decision D8, #45 D1): the precedence is
+   * resolved HERE — the phase first (a standing failure covers the old
+   * verdict), then the verdict pair. The panel receives one of five shapes
+   * and words it; it cannot re-order the law, and `last`/`lastFrom` keep the
+   * verdict alive underneath a failure for whenever it speaks again.
+   */
+  get statusView(): StatusView {
+    switch (this.current.phase) {
+      case "busy":
+        return { kind: "busy", action: this.current.action };
+      case "auth-expired":
+        return { kind: "auth-expired" };
+      case "conflict":
+        return { kind: "conflict", cause: this.current.cause };
+      case "failed":
+        return { kind: "failed", action: this.current.action, failure: this.current.failure };
+      case "idle":
+        return { kind: "verdict", outcome: this.outcome, from: this.outcomeFrom };
+    }
   }
 
   /** Notifies on every transition; returns the unsubscribe. */
@@ -456,7 +567,7 @@ export class CloudSync {
   commitImport(): Promise<SyncState> {
     const snapshot = this.pendingImport;
     if (!snapshot) {
-      return Promise.reject(new Error("cloud sync: no import staged"));
+      return Promise.reject(new CloudSyncError("no-staged-import", "没有待确认的导入——请重新选择文件。"));
     }
     return this.run("import", async () => {
       this.pendingImport = null;
@@ -475,13 +586,17 @@ export class CloudSync {
     });
   }
 
-  /** The third exit (decision D7): play on locally, cloud untouched. */
-  dismiss(): SyncState {
+  /**
+   * The third exit (decision D7): play on locally, cloud untouched. Refuses
+   * through the SAME channel as every other refused action (decision D3) —
+   * the synchronous throw is gone: one machine, one refusal shape.
+   */
+  dismiss(): Promise<SyncState> {
     if (this.current.phase !== "conflict") {
-      throw new Error("cloud sync: nothing to dismiss");
+      return Promise.reject(new CloudSyncError("nothing-to-dismiss", "当前没有待裁决的冲突。"));
     }
     this.settle("dismissed", "dismiss");
-    return this.transition({ phase: "idle" });
+    return Promise.resolve(this.transition({ phase: "idle" }));
   }
 
   /** Runs one action through the guard and the failure mapping. */
@@ -506,10 +621,10 @@ export class CloudSync {
 
   private ensureRunnable(action: SyncAction): void {
     if (this.current.phase === "busy") {
-      throw new Error("cloud sync: another sync action is in flight");
+      throw new CloudSyncError("busy", "上一个同步操作还在进行——稍候再试。");
     }
     if (this.current.phase === "auth-expired") {
-      throw new Error("cloud sync: session expired — sign in again");
+      throw new CloudSyncError("auth-expired", "登录已过期，此操作未执行——重新登录后继续云存档。");
     }
     // Importing may not move the stakes mid-adjudication (#33 D3 — the
     // ADR-0037 D7 law that adjudication is among deliberate exits): an
@@ -517,7 +632,7 @@ export class CloudSync {
     // disabled button is a display gate reading this same state — this
     // refusal is the only insurance.
     if (this.current.phase === "conflict" && action === "import") {
-      throw new Error("cloud sync: a conflict is awaiting adjudication");
+      throw new CloudSyncError("adjudicating", "冲突待裁决——请先选择以哪边继续。");
     }
   }
 

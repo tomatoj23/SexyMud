@@ -42,5 +42,5 @@
 - `apps/web` 新增：`game/cloudAuth.ts`（`CloudAuth` 三态会话机＋`CloudAuthClient` 端口）、`game/cloudbaseTransport.ts`（`CloudBaseSaveTransport`——CAS 混合两路＋错误分类＋uid 命名空间）、`game/cloudbaseSdk.ts`（SDK 绑定：两处带注释的窄转换＋登录失败分类）、`game/cloudSync.ts`（`CloudSync`——同步状态机＋冲突裁决三出口）、`cloudSetup.ts`（每会话重建传输与同步器）＋ `ui/AuthPanel.tsx`／`ui/CloudSavePanel.tsx`（登录面＋状态指示＋裁决对话）。`packages/core` **零改动**；`@cloudbase/js-sdk` 进 `apps/web` dependencies（`corepack pnpm` 管理，`core-js-pure` 构建脚本显式 `false`）。
 - 测试：`cloud-auth.test.ts` 14 例 ＋ `cloudbase-transport.test.ts` 18 例 ＋ `cloud-sync.test.ts` 22 例（语义全由假会话／假后端钉住）＋ `cloudbase-e2e.test.ts`（**env-gated 真后端冒烟**，无 `CLOUDBASE_ENV_ID`／测试账号变量即 skip）。
 - ⚠️ **真后端冒烟未跑**（需要用户的 CloudBase 环境）：错误分类信号表（UNAUTHENTICATED 16 等）与条件更新／事务真语义是**最可能被打脸的两处**——冒烟清单与校准点写在 e2e 测试头注释；部署面两件（集合 `save_slots` 与安全规则、账密登录开关）也在清单里。
-- **UI 无渲染测试**（仓库无 jsdom）：逻辑全在可测状态机，React 面板是薄绑定。
+- **面板是薄绑定（#45 D2 修订本条）**：**薄＝无业务判定**——破坏性判定＋代价要素、失败盖过旧裁决的状态、机器守卫判定都出自机器暴露视图（`destructive`／`statusView`／机器自身守卫与拒绝），面板只画＋手势上报；交互编排（按钮／二次确认／文件选择）留面板。原句「**UI 无渲染测试**（仓库无 jsdom）：逻辑全在可测状态机，React 面板是薄绑定」已随 #45 翻转——**面板渲染测试已落地**（jsdom＋React `act`，`apps/web/tests/panel-rig.ts`＋`cloud-save-panel.test.ts`），判定纪律同时收进机器（D1）。
 - 落点：`docs/spec/04` §1.7（＋§1.6 指针刷新）、`docs/spec/01` 端口表 `SaveStore` 行、`docs/HANDBOOK.md` 当前事实与前沿、`apps/web/tests/*`。

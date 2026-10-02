@@ -6,7 +6,14 @@ import type { Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
 import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore, LocalSaveUnavailableError } from "../src/game/localSaveStore.js";
-import { CloudSync, type ImportSource, type LocalSlot, type SlotView } from "../src/game/cloudSync.js";
+import {
+  CloudSync,
+  CloudSyncError,
+  type ImportSource,
+  type LocalSlot,
+  type SlotView,
+  type SyncRefusal,
+} from "../src/game/cloudSync.js";
 import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
 
 /**
@@ -140,6 +147,20 @@ function disabledStorage(): Storage {
       throw new DOMException("denied", "SecurityError");
     },
   };
+}
+
+/**
+ * The ONE refusal channel (#45 D3): a refused action rejects — `dismiss`'s
+ * synchronous throw is gone — and names its reason as `kind` (the message is
+ * the machine's copy; the panel renders it and pins what the player reads).
+ */
+async function expectRefusal(promise: Promise<unknown>, kind: SyncRefusal): Promise<void> {
+  const error = await promise.then(
+    () => null,
+    (cause: unknown) => cause,
+  );
+  expect(error).toBeInstanceOf(CloudSyncError);
+  expect((error as CloudSyncError).kind).toBe(kind);
 }
 
 afterEach(() => {
@@ -585,7 +606,7 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, sync, remoteSnapshot } = await conflictRig();
 
-    sync.dismiss();
+    await sync.dismiss();
 
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("dismissed");
@@ -626,7 +647,7 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
     await sync.upload();
     expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
 
-    sync.dismiss();
+    await sync.dismiss();
 
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("dismissed");
@@ -657,10 +678,10 @@ describe("CloudSync — an auth failure ends the instance (decision D6)", () => 
     expect(sync.state.phase).toBe("auth-expired");
 
     const readsBefore = transport.reads;
-    await expect(sync.upload()).rejects.toThrow(/sign in again/i);
-    await expect(sync.download()).rejects.toThrow(/sign in again/i);
-    await expect(sync.probe()).rejects.toThrow(/sign in again/i);
-    await expect(sync.exportLocal()).rejects.toThrow(/sign in again/i);
+    await expectRefusal(sync.upload(), "auth-expired");
+    await expectRefusal(sync.download(), "auth-expired");
+    await expectRefusal(sync.probe(), "auth-expired");
+    await expectRefusal(sync.exportLocal(), "auth-expired");
 
     expect(transport.reads).toBe(readsBefore); // zero further backend calls
     await expect(local.load()).resolves.toBeNull();
@@ -674,7 +695,7 @@ describe("CloudSync — busy is a refusal, not a queue", () => {
     await local.save(snapshotFixture({ nowTick: 20 }));
 
     const first = sync.upload();
-    await expect(sync.upload()).rejects.toThrow(/in flight/i);
+    await expectRefusal(sync.upload(), "busy");
     await first;
 
     expect(sync.state.phase).toBe("idle"); // the first one landed normally
@@ -685,7 +706,9 @@ describe("CloudSync — busy is a refusal, not a queue", () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { sync } = rig();
 
-    expect(() => sync.dismiss()).toThrow(/nothing to dismiss/i);
+    // The refusal rides the SAME channel as every other one (#45 D3): the old
+    // synchronous throw is gone, `dismiss` rejects like `run`'s guards do.
+    await expectRefusal(sync.dismiss(), "nothing-to-dismiss");
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("none");
   });
@@ -832,7 +855,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     // Stored UNMIGRATED — v1 bytes, none of the v2 scalars added in transit.
     expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
     // A second commit finds no escrow — the confirm is answered once.
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("the classifier words the DAMAGE, never the version stamp's accident — `data: null` is 'file-corrupt' on v1 AND v2", async () => {
@@ -848,7 +871,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     await sync.beginImport(pickedFile(JSON.stringify({ version: 2, data: null })));
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
     await expect(local.load()).resolves.toBeNull(); // nothing half-written
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("a failed re-pick SPENDS the escrow — the staged payload and the last picked file can never differ", async () => {
@@ -859,7 +882,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
 
     // The earlier file must not land under a later confirm.
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
     await expect(local.load()).resolves.toBeNull();
   });
 
@@ -885,7 +908,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
     await expect(local.load()).resolves.toBeNull();
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("JSON that is not a snapshot envelope is 'file-corrupt' too — the parse seam is parseSnapshotText (AC1)", async () => {
@@ -896,7 +919,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
     await expect(local.load()).resolves.toBeNull(); // nothing half-written
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("an envelope-clean file with a DAMAGED PAYLOAD is still refused 'file-corrupt' — restoreWorld is the gate, not just the parse (H3 regression)", async () => {
@@ -910,7 +933,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     await sync.beginImport(pickedFile(envelopeClean));
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("a save the migration chain cannot walk is 'file-version' — its own word, never blurred into 'file-corrupt' (AC4)", async () => {
@@ -934,7 +957,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file-corrupt", action: "import" });
     await expect(local.load()).resolves.toBeNull(); // nothing half-written
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("a file that cannot be READ is 'file' — the source's own failure, not save damage (AC4)", async () => {
@@ -945,7 +968,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     await sync.beginImport(unreadable);
 
     expect(sync.state).toEqual({ phase: "failed", failure: "file", action: "import" });
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("a failure covers the old verdict (decision D8): 'imported' is still the LAST verdict but the phase speaks first", async () => {
@@ -981,7 +1004,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     expect(sync.localView.kind).toBe("unknown"); // and the view is not half-refreshed either
     // The confirm was ANSWERED — the attempt spends the escrow even though
     // the write did not land; re-importing is the retry.
-    await expect(sync.commitImport()).rejects.toThrow("no import staged");
+    await expectRefusal(sync.commitImport(), "no-staged-import");
   });
 
   it("commitImport takes NO payload — a smuggled snapshot cannot even be expressed (type pin, the #31 law mirrored)", () => {
@@ -1020,7 +1043,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     await sync.probe();
     expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
 
-    await expect(sync.beginImport(pickedFile(V1_TEXT))).rejects.toThrow("conflict");
+    await expectRefusal(sync.beginImport(pickedFile(V1_TEXT)), "adjudicating");
 
     // The refusal changes nothing — the adjudication stands untouched.
     expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
@@ -1036,10 +1059,10 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
     await sync.probe();
     expect(sync.state.phase).toBe("conflict");
 
-    await expect(sync.commitImport()).rejects.toThrow("conflict");
+    await expectRefusal(sync.commitImport(), "adjudicating");
     await expect(local.load()).resolves.toEqual(mine); // no half-write under the refusal
 
-    sync.dismiss();
+    await sync.dismiss();
     await sync.commitImport();
 
     expect(sync.last).toBe("imported");
@@ -1305,7 +1328,7 @@ describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34
     expect(sync.state.phase).toBe("conflict");
     expect([sync.last, sync.lastFrom]).toEqual(["none", "probe"]);
 
-    sync.dismiss();
+    await sync.dismiss();
     expect([sync.last, sync.lastFrom]).toEqual(["dismissed", "dismiss"]);
 
     await sync.upload(); // keep-local lands a real save verdict
@@ -1354,9 +1377,70 @@ describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34
     await local.save(snapshotFixture({ nowTick: 20 }));
 
     const first = sync.upload();
-    await expect(sync.exportLocal()).rejects.toThrow(/in flight/i);
+    await expectRefusal(sync.exportLocal(), "busy");
     await first;
 
     expect(sync.last).toBe("saved");
+  });
+});
+
+describe("CloudSync — the judgment faces a thin panel renders from (#45 D1)", () => {
+  it("D7 the destructive face is the whole destroy list, and each entry names the slot it OVERWRITES", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+
+    // The judgment — WHICH actions are destructive — is the machine's: the
+    // map's keys are exactly the destructive exits (probe / dismiss / export
+    // are absent by judgment, not by omission) and each says what it kills.
+    expect(Object.keys(sync.destructive).sort()).toEqual(["download", "import", "upload"]);
+    expect(sync.destructive.upload.overwrites).toBe("remote");
+    expect(sync.destructive.download.overwrites).toBe("local");
+    expect(sync.destructive.import.overwrites).toBe("local");
+  });
+
+  it("D7 the cost ELEMENT is the overwritten slot as last known — a claim, so a cost line words it conditionally", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+
+    expect(sync.destructive.upload.target).toEqual({ kind: "unknown" });
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict"); // both slots known, and they differ
+
+    expect(sync.destructive.upload.target).toEqual(sync.remoteView);
+    expect(sync.destructive.download.target).toEqual(sync.localView);
+    expect(sync.destructive.import.target).toEqual(sync.localView);
+    expect(sync.destructive.upload.target.kind).toBe("save");
+  });
+
+  it("D8 the status view resolves the precedence — a standing FAILURE covers the old verdict (the loud-failure law)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    await sync.upload();
+    expect(sync.statusView).toEqual({ kind: "verdict", outcome: "saved", from: "upload" });
+
+    transport.failing = new Error("backend down");
+    await sync.probe();
+
+    // The phase speaks first — and the verdict pair survives underneath, for
+    // the day it may speak again (a fresh verdict replaces, never the reverse).
+    expect(sync.statusView).toEqual({ kind: "failed", action: "probe", failure: "network" });
+    expect(sync.last).toBe("saved");
+    expect(sync.lastFrom).toBe("upload");
+  });
+
+  it("D8 busy speaks before anything else — the phase, not the verdict, is what the line reads", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+
+    const first = sync.upload();
+    expect(sync.statusView).toEqual({ kind: "busy", action: "upload" });
+    await first;
+
+    expect(sync.statusView).toEqual({ kind: "verdict", outcome: "saved", from: "upload" });
   });
 });
