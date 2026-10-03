@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { customEvent } from "../src/events.js";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -203,7 +204,7 @@ describe("broadcastMessage — at_msg_receive is a first-class citizen (spec/03 
 
     broadcastMessage(
       runtime,
-      { locationId: "room-a", draft: { type: "ambient", tier: 2 } },
+      { locationId: "room-a", draft: customEvent("ambient", { tier: 2 }) },
       ports,
     );
 
@@ -283,7 +284,7 @@ describe("broadcastMessage — at_msg_receive is a first-class citizen (spec/03 
     // locates the copy by key, exactly like err_* fields. fromObj is null.
     broadcastMessage(
       runtime,
-      { locationId: "room-a", draft: { type: "systemNotice", noticeKey: "night-falls" } },
+      { locationId: "room-a", draft: customEvent("systemNotice", { noticeKey: "night-falls" }) },
       ports,
     );
 
@@ -309,7 +310,7 @@ describe("broadcastMessage — at_msg_receive is a first-class citizen (spec/03 
     );
     const { ports, emissions } = makePorts();
 
-    broadcastMessage(runtime, { locationId: "room-a", draft: { type: "ping" } }, ports);
+    broadcastMessage(runtime, { locationId: "room-a", draft: customEvent("ping") }, ports);
 
     expect(emissions).toEqual([{ to: "alpha", draft: { type: "ping" } }]);
   });
@@ -320,7 +321,7 @@ describe("broadcastMessage — at_msg_receive is a first-class citizen (spec/03 
     runtime.addEntity(createEntity("stowaway-1"), "box-1");
     const { ports, emissions } = makePorts();
 
-    broadcastMessage(runtime, { locationId: "box-1", draft: { type: "whisper" } }, ports);
+    broadcastMessage(runtime, { locationId: "box-1", draft: customEvent("whisper") }, ports);
 
     expect(emissions).toEqual([{ to: "stowaway-1", draft: { type: "whisper" } }]);
   });
@@ -329,7 +330,7 @@ describe("broadcastMessage — at_msg_receive is a first-class citizen (spec/03 
     const runtime = makeRuntime();
     const { ports } = makePorts();
     expect(() =>
-      broadcastMessage(runtime, { locationId: "nowhere", draft: { type: "ping" } }, ports),
+      broadcastMessage(runtime, { locationId: "nowhere", draft: customEvent("ping") }, ports),
     ).toThrow(/neither a loaded room nor a registered entity/);
   });
 });
@@ -501,7 +502,7 @@ describe("the say factory adapter over real content (ADR-0028 §2)", () => {
     // broadcastMessage itself, the same primitive say rides on.
     broadcastMessage(
       runtime,
-      { locationId: "room-lq-003", draft: { type: "systemNotice", noticeKey: "dusk-falls" } },
+      { locationId: "room-lq-003", draft: customEvent("systemNotice", { noticeKey: "dusk-falls" }) },
       ports,
     );
 

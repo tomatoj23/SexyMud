@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent, customCode } from "../src/events.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import { parseCommand, runCommand } from "../src/command/pipeline.js";
 import { createCommandHarness, createTestClock } from "../src/command/testing.js";
@@ -25,7 +26,7 @@ function probeSpec(seen: number[]): CommandSpec<TestWorld> {
     key: "tickProbe",
     func: (ctx) => {
       seen.push(ctx.clock.nowTick());
-      ctx.emit("actor-1", { type: "probed", at: ctx.clock.nowTick() });
+      ctx.emit("actor-1", customEvent("probed", { at: ctx.clock.nowTick() }));
     },
   };
 }
@@ -69,7 +70,7 @@ describe("command tick through the pipeline (spec/04 §2.2)", () => {
       key: "backwards",
       func: (ctx) => {
         seen.push(ctx.clock.nowTick());
-        ctx.emit("actor-1", { type: "ran", tick: ctx.command.tick });
+        ctx.emit("actor-1", customEvent("ran", { tick: ctx.command.tick }));
       },
     };
 
@@ -124,7 +125,7 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
       ok: false,
       seq: 1,
       kind: "rejected",
-      reason: "gateClosed",
+      reason: customCode("gateClosed"),
     });
     expect(afterRejected.nowTick()).toBe(50);
 
@@ -144,7 +145,7 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
       ok: false,
       seq: 1,
       kind: "transport",
-      reason: "notDelivered",
+      reason: customCode("notDelivered"),
     });
     expect(afterTransport.nowTick()).toBe(10);
   });
@@ -152,12 +153,12 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
   it("pins it end to end: spamming invalid input cannot fast-forward the world", () => {
     const broken: CommandSpec<TestWorld> = {
       key: "broken",
-      parse: () => ({ ok: false, reason: "badInput" }),
+      parse: () => ({ ok: false, reason: customCode("badInput") }),
       func: () => {},
     };
     const fine: CommandSpec<TestWorld> = {
       key: "fine",
-      func: (ctx) => ctx.emit("actor-1", { type: "ran" }),
+      func: (ctx) => ctx.emit("actor-1", customEvent("ran")),
     };
     const harness = createCommandHarness<TestWorld>({
       world: { rooms: {} },
@@ -179,7 +180,7 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
   it("a rejected command still advances the world — it is game content, not a parse failure", () => {
     const vetoed: CommandSpec<TestWorld> = {
       key: "vetoed",
-      at_pre_cmd: (ctx) => ctx.veto("gateClosed"),
+      at_pre_cmd: (ctx) => ctx.veto(customCode("gateClosed")),
       func: () => {},
     };
     const harness = createCommandHarness<TestWorld>({
@@ -203,7 +204,7 @@ describe("seq and tick are independent (spec/04 §6 O2)", () => {
       key: "probe",
       func: (ctx) => {
         seen.push({ seq: ctx.command.seq, now: ctx.clock.nowTick(), tick: ctx.command.tick });
-        ctx.emit("actor-1", { type: "probed" });
+        ctx.emit("actor-1", customEvent("probed"));
       },
     };
     const harness = createCommandHarness<TestWorld>({
@@ -225,3 +226,4 @@ describe("seq and tick are independent (spec/04 §6 O2)", () => {
     ]);
   });
 });
+

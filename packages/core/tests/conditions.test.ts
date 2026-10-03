@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { customCode } from "../src/events.js";
+import { customEvent } from "../src/events.js";
 import {
   checkAccess,
   createPredicateRegistry,
@@ -307,19 +309,19 @@ describe("access map (spec/02 §5.2)", () => {
 
   it("evaluates an expression-valued default for undeclared accessTypes", () => {
     const gated: AccessRules = { default: { has_flag: "member" } };
-    expect(checkAccess(gated, "edit", subjectWith({ flags: ["member"] }))).toEqual({ ok: true });
-    expect(checkAccess(gated, "edit", subjectOf(ACTOR))).toEqual({
+    expect(checkAccess(gated, customCode("edit"), subjectWith({ flags: ["member"] }))).toEqual({ ok: true });
+    expect(checkAccess(gated, customCode("edit"), subjectOf(ACTOR))).toEqual({
       ok: false,
-      accessType: "edit",
+      accessType: customCode("edit"),
       errKey: "err_default",
     });
   });
 
   it("accepts boolean leaves as hard open/closed gates per accessType", () => {
-    expect(checkAccess(rules, "edit", subjectOf(ACTOR))).toEqual({ ok: true });
+    expect(checkAccess(rules, customCode("edit"), subjectOf(ACTOR))).toEqual({ ok: true });
     expect(
-      checkAccess({ default: true, learn: false }, "learn", subjectOf(ACTOR)),
-    ).toEqual({ ok: false, accessType: "learn", errKey: "err_learn" });
+      checkAccess({ default: true, learn: false }, customCode("learn"), subjectOf(ACTOR)),
+    ).toEqual({ ok: false, accessType: customCode("learn"), errKey: "err_learn" });
   });
 });
 
@@ -350,7 +352,7 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
       key: entry.key,
       argForm: entry.argForm,
       access: { rules: entry.preconditions, accessType: "use" },
-      func: (ctx) => ctx.emit(ctx.command.actorId, { type: "rested" }),
+      func: (ctx) => ctx.emit(ctx.command.actorId, customEvent("rested")),
     };
   }
 
@@ -372,7 +374,7 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
       },
       func: (ctx) => {
         order.push("func");
-        ctx.emit(ctx.command.actorId, { type: "rested" });
+        ctx.emit(ctx.command.actorId, customEvent("rested"));
       },
     };
 
@@ -406,15 +408,15 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
     const out = harnessWith({ ...ACTOR }).call(specFromEntry(restEntry), "歇息");
 
     expect(out.result.ok).toBe(true);
-    expectMessageSequence(out.messages, [{ to: "actor-1", event: { type: "rested" } }]);
+    expectMessageSequence(out.messages, [{ to: "actor-1", event: customEvent("rested") }]);
   });
 
   it("reports err_default when the default gate denies an undeclared accessType", () => {
     const spec: CommandSpec<ActorWorld> = {
       key: "cmd-admin",
       argForm: "none",
-      access: { rules: { default: false }, accessType: "edit" },
-      func: (ctx) => ctx.emit(ctx.command.actorId, { type: "administered" }),
+      access: { rules: { default: false }, accessType: customCode("edit") },
+      func: (ctx) => ctx.emit(ctx.command.actorId, customEvent("administered")),
     };
 
     const out = harnessWith({ ...ACTOR }).call(spec, "administer");
@@ -441,7 +443,7 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
       key: "cmd-delve",
       argForm: "none",
       access: { rules: { default: false, use: { wears: "boots" } }, accessType: "use" },
-      func: (ctx) => ctx.emit(ctx.command.actorId, { type: "delved" }),
+      func: (ctx) => ctx.emit(ctx.command.actorId, customEvent("delved")),
     };
 
     const options = (actor: ActorFixture) => ({
@@ -460,7 +462,7 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
     const booted = createCommandHarness<ActorWorld>(options({ ...ACTOR, tags: { wears: ["boots"] } }));
     const out = booted.call(spec, "delve");
     expect(out.result.ok).toBe(true);
-    expectMessageSequence(out.messages, [{ to: "actor-1", event: { type: "delved" } }]);
+    expectMessageSequence(out.messages, [{ to: "actor-1", event: customEvent("delved") }]);
   });
 });
 
@@ -502,3 +504,4 @@ describe("forEachHasTag: every tag pair a condition tree references", () => {
     expect(collect(undefined)).toEqual([]);
   });
 });
+

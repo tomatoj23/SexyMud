@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AccessTypeCode } from "../src/types.js";
 import type { CommandEntry } from "../src/command/entry.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
@@ -161,7 +162,10 @@ describe("commandSpecFromEntry (spec/02 §5.5: entry data becomes pipeline shape
     ).toThrow(/cmd-probe.*declares preconditions but no accessType/);
     expect(() =>
       commandSpecFromEntry(entry({ preconditions: { default: true } }), {
-        accessType: "",
+        // Damage fixture (the `anchorDamaged` precedent): an EMPTY ask is
+        // malformed wiring, deliberately outside the code face — cast to get
+        // it past the type and under the loud guard.
+        accessType: "" as unknown as AccessTypeCode,
         func: (): void => {},
       }),
     ).toThrow(/no accessType/);

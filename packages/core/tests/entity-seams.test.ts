@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent } from "../src/events.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import { mergeCmdSets } from "../src/command/cmdset.js";
 import type { CmdSetSource } from "../src/command/cmdset.js";
@@ -595,7 +596,7 @@ describe("the creation two-layer seam (spec/03 §7.8)", () => {
     const runtime = makeRuntime();
     const entity = createEntity("obj-1", {
       at_object_post_creation: (ctx) => {
-        ctx.emit("obj-1", { type: "objectCreated", entityId: ctx.entityId });
+        ctx.emit("obj-1", customEvent("objectCreated", { entityId: ctx.entityId }));
       },
     });
     const { ports, emissions } = makePorts();
@@ -804,3 +805,4 @@ describe("the dynamic cmdset seam (spec/03 §7.9)", () => {
     expect(() => assembleSources(runtime, "ghost", BASE_SOURCES)).toThrow(/unknown entity/);
   });
 });
+

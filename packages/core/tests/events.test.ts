@@ -6,20 +6,30 @@ import {
   appearanceEvent,
   arrivedEvent,
   commandRefusedEvent,
+  customCode,
   customEvent,
   departedEvent,
   sayEvent,
+  stampEvent,
 } from "../src/events.js";
+import type { EventDraft, GameEvent } from "../src/index.js";
+import type { ExpectedEvent } from "../src/command/testing.js";
 
 /**
- * The event construction face (issue #41, spec/01 §5): one factory per engine
- * event type — commandRefused / say / appearance / departed / arrived — plus
- * the extension arm customEvent(type, fields) for synthetic and host events.
- * The factory unifies ONLY `type`, and stamps it last; the skeleton
- * (seq/actorId/tick) belongs to the stampers (the pipeline stamps its
- * command's seq/actorId and the now it saw, spec/01 §2.2 and §5.0; the
+ * The event construction face (issues #41 + #47, spec/01 §5): one factory per
+ * engine event type — commandRefused / say / appearance / departed / arrived —
+ * plus the extension arm customEvent(type, fields) for synthetic and host
+ * events, plus stampEvent, the one construction where a draft becomes a
+ * delivered event. The factory unifies ONLY `type`, and stamps it last; the
+ * skeleton (seq/actorId/tick) belongs to the stampers (the pipeline stamps
+ * its command's seq/actorId and the now it saw, spec/01 §2.2 and §5.0; the
  * settler stamps the due tick, ADR-0034 §3) and is never invented here — a
  * factory returns exactly the fields handed in plus the type.
+ *
+ * #47 tightens what a factory ACCEPTS: each takes its arm's own field type,
+ * so a misspelled engine field, a smuggled `type` or a skeleton key is a
+ * compile error (the pins at the bottom hold it). `customEvent`'s fields
+ * stay wide on purpose.
  */
 
 describe("the per-type factories (construction in one place — type is the only field they unify)", () => {
@@ -42,9 +52,9 @@ describe("the per-type factories (construction in one place — type is the only
   });
 
   it("carries the minimal pre-veto shape — type plus reason, nothing invented", () => {
-    expect(commandRefusedEvent({ reason: "gateClosed" })).toEqual({
+    expect(commandRefusedEvent({ reason: customCode("gateClosed") })).toEqual({
       type: "commandRefused",
-      reason: "gateClosed",
+      reason: customCode("gateClosed"),
     });
   });
 
@@ -58,16 +68,16 @@ describe("the per-type factories (construction in one place — type is the only
     expect(
       appearanceEvent({
         roomId: "room-1",
-        exits: [{ id: "exit-north" }],
-        staticPresence: [{ id: "npc-1" }],
-        occupants: [{ id: "pc-2" }],
+        exits: [{ exitId: "exit-north", direction: "北", verbs: ["北"] }],
+        staticPresence: [{ id: "npc-1", count: 1 }],
+        occupants: ["pc-2"],
       }),
     ).toEqual({
       type: "appearance",
       roomId: "room-1",
-      exits: [{ id: "exit-north" }],
-      staticPresence: [{ id: "npc-1" }],
-      occupants: [{ id: "pc-2" }],
+      exits: [{ exitId: "exit-north", direction: "北", verbs: ["北"] }],
+      staticPresence: [{ id: "npc-1", count: 1 }],
+      occupants: ["pc-2"],
     });
   });
 
@@ -78,7 +88,7 @@ describe("the per-type factories (construction in one place — type is the only
       toLocationId: "room-2",
       moveType: "traverse",
       viaExitId: "exit-north",
-    };
+    } as const;
     expect(departedEvent(move)).toEqual({ type: "departed", ...move });
     expect(arrivedEvent(move)).toEqual({ type: "arrived", ...move });
   });
@@ -86,15 +96,46 @@ describe("the per-type factories (construction in one place — type is the only
 
 describe("the factory owns `type`", () => {
   it("a type smuggled into fields never wins — the stamp is the factory's alone", () => {
-    const builds: Array<[typeof commandRefusedEvent, string]> = [
-      [commandRefusedEvent, "commandRefused"],
-      [sayEvent, "say"],
-      [appearanceEvent, "appearance"],
-      [departedEvent, "departed"],
-      [arrivedEvent, "arrived"],
+    // Smuggled through a spread on purpose: a literal `type` in fields is a
+    // COMPILE error now (the pin below), and the spread is the non-literal
+    // path no pin sees — so this stays the runtime half of the same claim.
+    const smuggled: Record<string, unknown> = { type: "bogus", marker: 1 };
+    const builds: Array<[EventDraft, string]> = [
+      [commandRefusedEvent({ ...smuggled, reason: "accessDenied" }), "commandRefused"],
+      [sayEvent({ ...smuggled, speakerId: "pc-1", text: "hi", locationId: "room-1" }), "say"],
+      [
+        appearanceEvent({
+          ...smuggled,
+          roomId: "room-1",
+          exits: [],
+          staticPresence: [],
+          occupants: [],
+        }),
+        "appearance",
+      ],
+      [
+        departedEvent({
+          ...smuggled,
+          entityId: "pc-1",
+          fromLocationId: "room-1",
+          toLocationId: "room-2",
+          moveType: "traverse",
+        }),
+        "departed",
+      ],
+      [
+        arrivedEvent({
+          ...smuggled,
+          entityId: "pc-1",
+          fromLocationId: "room-1",
+          toLocationId: "room-2",
+          moveType: "traverse",
+        }),
+        "arrived",
+      ],
     ];
-    for (const [build, type] of builds) {
-      expect(build({ type: "bogus", marker: 1 }).type).toBe(type);
+    for (const [draft, type] of builds) {
+      expect(draft.type).toBe(type);
     }
   });
 
@@ -124,7 +165,7 @@ describe("the skeleton is stamped downstream (EventDraft contract, spec/01 §2.2
       expect(key in draft).toBe(false);
     }
     for (const draft2 of [
-      commandRefusedEvent({ reason: "gateClosed" }),
+      commandRefusedEvent({ reason: customCode("gateClosed") }),
       appearanceEvent({ roomId: "room-1", exits: [], staticPresence: [], occupants: [] }),
       departedEvent({ entityId: "pc-1", fromLocationId: "room-1", toLocationId: "room-2", moveType: "traverse", viaExitId: null }),
       arrivedEvent({ entityId: "pc-1", fromLocationId: "room-1", toLocationId: "room-2", moveType: "traverse", viaExitId: null }),
@@ -148,6 +189,77 @@ describe("customEvent — the extension arm's construction point", () => {
 
   it("allows a bare synthetic event with no semantic fields", () => {
     expect(customEvent("pong")).toEqual({ type: "pong" });
+  });
+
+  it("a free field on the extension arm is open carrying — a typo is the deliberate cost (no pin here)", () => {
+    // Deliberately NOT a @ts-expect-error pin: the extension arm carries
+    // content freedom, so a misspelled free field compiles by design. What
+    // is pinned is the skeleton and the ENGINE arms (below).
+    expect(customEvent("damageDealt", { ammount: 12 })).toEqual({
+      type: "damageDealt",
+      ammount: 12,
+    });
+  });
+});
+
+describe("stampEvent — the one construction where a draft becomes a delivered event", () => {
+  it("adds exactly the skeleton, and the skeleton wins over a draft's own keys", () => {
+    const draft: EventDraft = customEvent("exploded", {
+      seq: 99,
+      actorId: "forged",
+      tick: -1,
+      blast: 3,
+    });
+    const event = stampEvent(draft, { seq: 2, tick: 300, actorId: "" });
+    expect(event).toEqual({ seq: 2, tick: 300, actorId: "", type: "exploded", blast: 3 });
+    expect(Object.keys(event).sort()).toEqual(["actorId", "blast", "seq", "tick", "type"]);
+  });
+
+  it("keeps engine drafts and custom drafts alike — no value is ever altered", () => {
+    const fields = {
+      reason: "accessDenied",
+      commandKey: "cmd-look",
+      errKey: "err_use",
+    } as const;
+    const event = stampEvent(commandRefusedEvent(fields), {
+      seq: 7,
+      tick: 40,
+      actorId: "jia",
+    });
+    expect(event).toEqual({ ...fields, type: "commandRefused", seq: 7, tick: 40, actorId: "jia" });
+  });
+});
+
+describe("compile-time pins (typecheck-only — `@ts-expect-error` is the assertion)", () => {
+  it("rejects a misspelled engine-arm field, a smuggled type and a skeleton key", () => {
+    // Each call is ONE line so the directive binds to the whole call; the
+    // runtime calls are harmless constructions. If any face loosens, the
+    // now-unused directive makes typecheck itself go red.
+    // @ts-expect-error — engine arm fields are spelled for you (commandKey)
+    commandRefusedEvent({ reason: "accessDenied", comandKey: "cmd-look" });
+    // @ts-expect-error — `type` is the factory's alone, never a field's
+    commandRefusedEvent({ reason: "accessDenied", type: "say" });
+    // @ts-expect-error — the skeleton is the stampers' to give, never a factory's
+    commandRefusedEvent({ reason: "accessDenied", seq: 1 });
+    // @ts-expect-error — say's fields are speakerId/text/locationId
+    sayEvent({ speakerId: "pc-1", text: "hi", location: "room-1" });
+    // @ts-expect-error — an exit digest carries exitId/direction/verbs
+    appearanceEvent({ roomId: "room-1", exits: [{ id: "x" }], staticPresence: [], occupants: [] });
+    // @ts-expect-error — moveType is the engine's fixed vocabulary
+    departedEvent({ entityId: "pc-1", fromLocationId: "room-1", toLocationId: "room-2", moveType: "walked" });
+    // @ts-expect-error — the skeleton is not a factory field here either
+    arrivedEvent({ entityId: "pc-1", fromLocationId: "room-1", toLocationId: "room-2", moveType: "traverse", tick: 3 });
+    // @ts-expect-error — a bare string is not a semantic code; customCode() brands it
+    commandRefusedEvent({ reason: "gateClosed" });
+  });
+
+  it("keeps a hand-written literal out of every arm — the extension arm is brand-only", () => {
+    // @ts-expect-error — no brand: a bare literal matches neither arm of ExpectedEvent
+    const expectation: ExpectedEvent = { type: "pong" };
+    // @ts-expect-error — and a deliverable GameEvent cannot be typed up by hand
+    const delivered: GameEvent = { seq: 1, tick: 0, actorId: "jia", type: "pong" };
+    expect(expectation).toBeDefined();
+    expect(delivered).toBeDefined();
   });
 });
 

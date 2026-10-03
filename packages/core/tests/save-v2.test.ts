@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent } from "../src/events.js";
 import { createSeededRng } from "../src/rng.js";
 import { restoreWorld, serializeWorld } from "../src/state/snapshot.js";
 import type { SaveDataV2, WorldMeta } from "../src/state/snapshot.js";
@@ -261,7 +262,7 @@ describe("the host's save/load loop, end to end (spec/04 §1.5)", () => {
     const rng = createSeededRng(42);
     rng.next();
     const bucket = createDueBucket({
-      fire: (item, emit) => emit("broadcast", { type: "wentOff", id: item.payload }),
+      fire: (item, emit) => emit("broadcast", customEvent("wentOff", { id: item.payload })),
     });
     bucket.schedule(900, "bomb");
 
@@ -281,7 +282,7 @@ describe("the host's save/load loop, end to end (spec/04 §1.5)", () => {
       snapshot: wire,
       registry: registry(),
       bucket: createDueBucket({
-        fire: (item, emit) => emit("broadcast", { type: "wentOff", id: item.payload }),
+        fire: (item, emit) => emit("broadcast", customEvent("wentOff", { id: item.payload })),
       }),
       entities: [createEntity("player-1")],
     });
@@ -331,3 +332,4 @@ describe("the host's save/load loop, end to end (spec/04 §1.5)", () => {
     });
   });
 });
+

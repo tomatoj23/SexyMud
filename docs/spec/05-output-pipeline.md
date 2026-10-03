@@ -23,6 +23,7 @@ TerminalView.appendOutput()  ← 各端自己实现
 render(event: GameEvent, observerState: ObserverState): OutputLine[]
 ```
 
+- **事件形状**（spec/01 §5，#47）：`GameEvent` 是封闭联合 `EngineEvent | CustomEvent`——渲染层按 `type` 分派各臂的渲染函数、读该臂的语义字段（引擎臂字段已分型；判别只在引擎五型之间收窄，扩展臂 `type` 是开放串，跨臂读字段走 `in`/字段检查）。扩展臂（合成／宿主事件）的自由 fields 开放承载（`unknown`），渲染层按自己的约定读。事件零已渲染文本（spec/01 §5.1）：拒绝文案一律经语义码＋`errKey` 回内容数据取。
 - **同样事件 + 同样观察者状态 ⇒ 同样输出**（契合 ADR-0017 确定性）
 - **必须按接收者逐一遍历**。若做成「先渲染成字符串再群发」，中文的「你／他／她／它」与按观者的可见性差异**永远补不回来**
 - 文本模板里**只有引用，不写死名字**，渲染时按每个观察者替换成他认识的那个名字（借自 rpsystem 的 sdesc/recog）

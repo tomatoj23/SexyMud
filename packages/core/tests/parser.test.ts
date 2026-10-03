@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent } from "../src/events.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import { runCommand } from "../src/command/pipeline.js";
 import { createCommandHarness } from "../src/command/testing.js";
@@ -312,7 +313,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
       argForm: "target-ordinal",
       func: (ctx) => {
         seen.push(ctx.args);
-        ctx.emit("actor-1", { type: "attacked" });
+        ctx.emit("actor-1", customEvent("attacked"));
       },
     };
     const table = createVerbTable([
@@ -330,7 +331,7 @@ describe("pipeline parse stage integration (issue #2: 接入 M1-T1 管线)", () 
     const spec: CommandSpec<TestWorld> = {
       key: "cmd-laugh",
       argForm: "none",
-      func: (ctx) => ctx.emit("actor-1", { type: "shouldNotHappen" }),
+      func: (ctx) => ctx.emit("actor-1", customEvent("shouldNotHappen")),
     };
     const table = createVerbTable([
       { verb: "笑", commandKey: "cmd-laugh" },
@@ -412,7 +413,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
       argForm: "target-ordinal",
       func: (ctx) => {
         seen.push(ctx.args);
-        ctx.emit("actor-1", { type: "attackLaunched", args: ctx.args });
+        ctx.emit("actor-1", customEvent("attackLaunched", { args: ctx.args }));
       },
     };
   }
@@ -451,7 +452,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
       argForm: "none",
       func: (ctx) => {
         laughRan.push("ran");
-        ctx.emit("actor-1", { type: "laughed" });
+        ctx.emit("actor-1", customEvent("laughed"));
       },
     };
     const swordplay: CommandSpec<TestWorld> = {
@@ -459,7 +460,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
       argForm: "none",
       func: (ctx) => {
         swordplayRan.push("ran");
-        ctx.emit("actor-1", { type: "swordplay" });
+        ctx.emit("actor-1", customEvent("swordplay"));
       },
     };
     const harness = createCommandHarness<TestWorld>({
@@ -505,7 +506,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
       argForm: "none",
       func: (ctx) => {
         seen.push("moved");
-        ctx.emit("actor-1", { type: "moved", to: "room-2" });
+        ctx.emit("actor-1", customEvent("moved", { to: "room-2" }));
       },
     };
     const harness = createCommandHarness<TestWorld>({
@@ -519,3 +520,4 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
     expect(seen).toEqual(["moved", "moved"]);
   });
 });
+

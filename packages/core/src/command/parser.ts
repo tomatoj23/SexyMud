@@ -1,4 +1,5 @@
 import type { ParseOutcome } from "./pipeline.js";
+import type { VerbReason } from "../types.js";
 
 /**
  * The Chinese-first command parser (spec/02 §1, ADR-0024 §1).
@@ -31,7 +32,7 @@ export interface VerbEntry {
  */
 export type VerbMatch =
   | { ok: true; verb: string; commandKey: string; rawArgs: string }
-  | { ok: false; reason: "emptyInput" | "unknownVerb" };
+  | { ok: false; reason: VerbReason };
 
 /**
  * The verb table: all verbs available for one dispatch, pre-sorted.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { commandRefusedEvent, customCode, customEvent, stampEvent } from "../src/events.js";
 import type { CmdSetSource } from "../src/command/cmdset.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import {
@@ -33,7 +34,7 @@ describe("command test harness (ADR-0023 §1)", () => {
       },
       func: (ctx) => {
         order.push("func");
-        ctx.emit("actor-1", { type: "pong" });
+        ctx.emit("actor-1", customEvent("pong"));
       },
       at_post_cmd: () => {
         order.push("post");
@@ -58,14 +59,14 @@ describe("command test harness (ADR-0023 §1)", () => {
     const order: string[] = [];
     const spec: CommandSpec<TestWorld> = {
       key: "gate",
-      at_pre_cmd: (ctx) => ctx.veto("gateClosed"),
+      at_pre_cmd: (ctx) => ctx.veto(customCode("gateClosed")),
       parse: () => {
         order.push("parse");
         return { ok: true, args: null };
       },
       func: (ctx) => {
         order.push("func");
-        ctx.emit("actor-1", { type: "shouldNotHappen" });
+        ctx.emit("actor-1", customEvent("shouldNotHappen"));
       },
       at_post_cmd: () => {
         order.push("post");
@@ -76,11 +77,11 @@ describe("command test harness (ADR-0023 §1)", () => {
     const out = harness.call(spec, "gate");
 
     expect(order).toEqual([]);
-    expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "gateClosed" });
+    expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: customCode("gateClosed") });
     expect(out.messages).toEqual([
       {
         to: "actor-1",
-        event: { seq: 1, tick: 0, type: "commandRefused", actorId: "actor-1", reason: "gateClosed" },
+        event: { seq: 1, tick: 0, type: "commandRefused", actorId: "actor-1", reason: customCode("gateClosed") },
       },
     ]);
   });
@@ -89,7 +90,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     const spec: CommandSpec<TestWorld> = {
       key: "gate",
       at_pre_cmd: () => false,
-      func: (ctx) => ctx.emit("actor-1", { type: "shouldNotHappen" }),
+      func: (ctx) => ctx.emit("actor-1", customEvent("shouldNotHappen")),
     };
 
     const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: ["actor-1"] });
@@ -104,7 +105,7 @@ describe("command test harness (ADR-0023 §1)", () => {
       at_pre_cmd: () => {
         // side effects only, no return value
       },
-      func: (ctx) => ctx.emit("actor-1", { type: "pong" }),
+      func: (ctx) => ctx.emit("actor-1", customEvent("pong")),
     };
 
     const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: ["actor-1"] });
@@ -117,10 +118,10 @@ describe("command test harness (ADR-0023 §1)", () => {
     const order: string[] = [];
     const spec: CommandSpec<TestWorld> = {
       key: "num",
-      parse: () => ({ ok: false, reason: "expectedANumber" }),
+      parse: () => ({ ok: false, reason: customCode("expectedANumber") }),
       func: (ctx) => {
         order.push("func");
-        ctx.emit("actor-1", { type: "shouldNotHappen" });
+        ctx.emit("actor-1", customEvent("shouldNotHappen"));
       },
       at_post_cmd: () => {
         order.push("post");
@@ -130,7 +131,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: ["actor-1"] });
     const out = harness.call(spec, "num abc");
 
-    expect(out.result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: "expectedANumber" });
+    expect(out.result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: customCode("expectedANumber") });
     // No event carries seq 1: an invalid command consumes nothing, so the
     // caller knows it may reissue with a corrected input (spec/01 §4).
     expect(out.messages).toEqual([]);
@@ -141,10 +142,10 @@ describe("command test harness (ADR-0023 §1)", () => {
     const spec: CommandSpec<TestWorld> = {
       key: "shout",
       func: (ctx) => {
-        ctx.emit("actor-1", { type: "heardOwnShout" });
-        ctx.emit("bystander-1", { type: "heardShout" });
-        ctx.emit("unlisted", { type: "dropped" });
-        ctx.emit("actor-1", { type: "heardEcho" });
+        ctx.emit("actor-1", customEvent("heardOwnShout"));
+        ctx.emit("bystander-1", customEvent("heardShout"));
+        ctx.emit("unlisted", customEvent("dropped"));
+        ctx.emit("actor-1", customEvent("heardEcho"));
       },
     };
 
@@ -155,39 +156,46 @@ describe("command test harness (ADR-0023 §1)", () => {
     const out = harness.call(spec, "shout");
 
     expectMessageSequence(out.messages, [
-      { to: "actor-1", event: { type: "heardOwnShout" } },
-      { to: "bystander-1", event: { type: "heardShout" } },
-      { to: "actor-1", event: { type: "heardEcho" } },
+      { to: "actor-1", event: customEvent("heardOwnShout") },
+      { to: "bystander-1", event: customEvent("heardShout") },
+      { to: "actor-1", event: customEvent("heardEcho") },
     ]);
   });
 
   it("matches expected fields as a subset, tolerating extra semantic fields", () => {
+    // A delivered synthetic event is the extension arm plus the stamped
+    // skeleton — built through the engine's own delivery construction
+    // (customEvent + stampEvent), the one way a draft becomes a GameEvent.
     const messages = [
       {
         to: "actor-1",
-        event: { seq: 1, tick: 7, type: "damageDealt", actorId: "actor-1", amount: 12, tier: "medium" },
+        event: stampEvent(customEvent("damageDealt", { amount: 12, tier: "medium" }), {
+          seq: 1,
+          tick: 7,
+          actorId: "actor-1",
+        }),
       },
     ];
 
     expectMessageSequence(messages, [
-      { to: "actor-1", event: { type: "damageDealt", tier: "medium" } },
+      { to: "actor-1", event: customEvent("damageDealt", { tier: "medium" }) },
     ]);
   });
 
   it("asserts the message count, not just the prefixes (ADR-0023 §1e)", () => {
     // Prefix matching alone would let one extra wrong message slip through.
     const messages = [
-      { to: "actor-1", event: { seq: 1, tick: 0, type: "a", actorId: "actor-1" } },
-      { to: "actor-1", event: { seq: 1, tick: 0, type: "b", actorId: "actor-1" } },
+      { to: "actor-1", event: stampEvent(customEvent("a"), { seq: 1, tick: 0, actorId: "actor-1" }) },
+      { to: "actor-1", event: stampEvent(customEvent("b"), { seq: 1, tick: 0, actorId: "actor-1" }) },
     ];
 
     expect(() =>
-      expectMessageSequence(messages, [{ to: "actor-1", event: { type: "a" } }]),
+      expectMessageSequence(messages, [{ to: "actor-1", event: customEvent("a") }]),
     ).toThrow(/1 message\(s\) but recorded 2/);
     expect(() =>
       expectMessageSequence(messages, [
-        { to: "actor-1", event: { type: "a" } },
-        { to: "actor-1", event: { type: "WRONG" } },
+        { to: "actor-1", event: customEvent("a") },
+        { to: "actor-1", event: customEvent("WRONG") },
       ]),
     ).toThrow(/message 1 does not match/);
   });
@@ -200,7 +208,7 @@ describe("command test harness (ADR-0023 §1)", () => {
         // The command carries its own tick (ADR-0031); the engine reads the
         // high-water mark back through ctx.clock.
         seenTicks.push(ctx.command.tick);
-        ctx.emit("actor-1", { type: "probed" });
+        ctx.emit("actor-1", customEvent("probed"));
       },
     };
 
@@ -290,9 +298,13 @@ describe("command test harness (ADR-0023 §1)", () => {
       func: (ctx) => {
         order.push("func");
         // The executor owns the refusal semantics: gates beyond the entry's
-        // own, hook vetoes — it emits the event itself, with full context.
-        ctx.emit("actor-1", { type: "commandRefused", reason: "targetMissing", commandKey: "strike" });
-        return { kind: "rejected", reason: "targetMissing" };
+        // own, hook vetoes — it emits the event itself, with full context,
+        // through the engine's own factory (construction in one place).
+        ctx.emit(
+          "actor-1",
+          commandRefusedEvent({ reason: customCode("targetMissing"), commandKey: "strike" }),
+        );
+        return { kind: "rejected", reason: customCode("targetMissing") };
       },
       at_post_cmd: () => {
         order.push("post");
@@ -302,7 +314,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: ["actor-1"] });
     const out = harness.call(spec, "strike");
 
-    expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "targetMissing" });
+    expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: customCode("targetMissing") });
     // Exactly the func's own refusal — the pipeline words no second one.
     expect(out.messages).toEqual([
       {
@@ -312,7 +324,7 @@ describe("command test harness (ADR-0023 §1)", () => {
           tick: 0,
           type: "commandRefused",
           actorId: "actor-1",
-          reason: "targetMissing",
+          reason: customCode("targetMissing"),
           commandKey: "strike",
         },
       },
@@ -465,7 +477,7 @@ describe("one assembly across per-dispatch verb sources (issue #36)", () => {
       key: "probe",
       argForm: "none",
       func: (ctx) => {
-        ctx.emit(ctx.command.actorId, { type: "probed" });
+        ctx.emit(ctx.command.actorId, customEvent("probed"));
       },
     };
     const harness = createCommandHarness<TestWorld>({
@@ -496,7 +508,7 @@ describe("one assembly across per-dispatch verb sources (issue #36)", () => {
     const spec: CommandSpec<TestWorld> = {
       key: "ping",
       func: (ctx) => {
-        ctx.emit(ctx.command.actorId, { type: "pong" });
+        ctx.emit(ctx.command.actorId, customEvent("pong"));
       },
     };
     // Runtime half: the input descriptor is the whole call surface.

@@ -6,8 +6,80 @@
  * implementations.
  *
  * This file is the contract layer described in docs/spec/01-engine-contract.md
- * and the six cross-cutting contracts it lists (§7).
+ * and the six cross-cutting contracts it lists (§7). It also holds the event
+ * union (§5) and the semantic-code value faces — the two closed vocabularies
+ * every port below speaks.
  */
+
+import type { MoveType } from "./world/entity.js";
+import type { ExitDigest, StaticPresence } from "./world/look.js";
+import type { MoveVetoStage } from "./world/move.js";
+import type { SayVetoStage } from "./world/say.js";
+
+/**
+ * A host-authored semantic CODE, made by `customCode()` (events.ts). The
+ * brand is TYPE-ONLY (a phantom): no runtime property is added — a branded
+ * value IS the plain string it was made from.
+ *
+ * A bare string reaches no code slot on purpose. A typo like `"accessDenyed"`
+ * is a compile error there instead of a rendering gap that surfaces three
+ * weeks later as a player-facing mystery, while a host's own vocabulary
+ * ("gateClosed", "learn") stays first-class — it just has to say so once.
+ */
+declare const customCodeBrand: unique symbol;
+
+export type CustomCode = string & { readonly [customCodeBrand]: "customCode" };
+
+/** Engine-produced reason codes — the `rejected` half (a refusal is content). */
+export type RefusalReason =
+  | "accessDenied"
+  | "vetoed"
+  | "notVisible"
+  | "sayVetoed"
+  | "moveVetoed";
+
+/** The verb matcher's failure vocabulary — the narrowest parse slot. */
+export type VerbReason = "emptyInput" | "unknownVerb";
+
+/** Engine-produced reason codes — the `invalid` half (malformed input). */
+export type ParseReason =
+  | VerbReason
+  | "verbMismatch"
+  | "unexpectedArg"
+  | "missingTarget"
+  | "badOrdinal"
+  | "missingNoun";
+
+/**
+ * The reason value face — ONE home (spec/02 §5.4: refusal wording is data,
+ * and the code is what the renderer maps to copy). Covers both failure
+ * halves: an event's `reason`, a `rejected` result and an `invalid` result
+ * speak the same language.
+ */
+export type ReasonCode = RefusalReason | ParseReason | CustomCode;
+
+/**
+ * The accessType value face: the vocabulary a gate map is ASKED with. The
+ * four literals are the engine's own asks (commands gate "use", exits
+ * "traverse", rooms "enter"/"look" — the collections' fixed vocabulary,
+ * spec/02 §4.1, spec/03 §2); anything else is content-side ("learn") and
+ * says so through `customCode()`. The engine only carries the word through
+ * to the gate map and back out on the refusal event.
+ */
+export type AccessTypeCode = "use" | "traverse" | "enter" | "look" | CustomCode;
+
+/**
+ * Three failure classes with different retry semantics (ADR-0025 §1.2):
+ * - `rejected`: the engine legitimately refused (not enough resource, gate
+ *   closed). The seq IS consumed; the refusal is returned to the player as an
+ *   event, because it is game content rather than an error.
+ * - `invalid`: malformed or unparseable. seq NOT consumed.
+ * - `transport`: not delivered. seq NOT consumed; safe to retry.
+ */
+export type DispatchFailure =
+  | { kind: "rejected"; reason: ReasonCode }
+  | { kind: "invalid"; reason: ReasonCode }
+  | { kind: "transport"; reason: ReasonCode };
 
 /**
  * The engine's reading of "now": the high-water mark of command ticks.
@@ -71,19 +143,6 @@ export interface Command {
 }
 
 /**
- * Three failure classes with different retry semantics (ADR-0025 §1.2):
- * - `rejected`: the engine legitimately refused (not enough resource, gate
- *   closed). The seq IS consumed; the refusal is returned to the player as an
- *   event, because it is game content rather than an error.
- * - `invalid`: malformed or unparseable. seq NOT consumed.
- * - `transport`: not delivered. seq NOT consumed; safe to retry.
- */
-export type DispatchFailure =
-  | { kind: "rejected"; reason: string }
-  | { kind: "invalid"; reason: string }
-  | { kind: "transport"; reason: string };
-
-/**
  * Dispatch outcome for one command. `seq` identifies which command this
  * result answers (spec/01 §2.2): on `rejected` the seq IS consumed — an
  * event carrying it was emitted — while on `invalid`/`transport` no event
@@ -92,14 +151,15 @@ export type DispatchFailure =
 export type CommandResult =
   | { ok: true; seq: number; events: GameEvent[] }
   | ({ ok: false; seq: number } & DispatchFailure);
+
 /**
- * A single engine occurrence.
- *
- * Pure semantics — NEVER rendered text. Rendering happens outside the engine
- * boundary, per receiver, so that a Chinese reader sees the second-person
- * pronoun where an observer sees a name (ADR-0006, docs/spec/05-output-pipeline.md).
+ * The skeleton every DELIVERED event carries — the part no factory invents
+ * (spec/01 §5): the stampers own it. A command's events are stamped by the
+ * pipeline (its seq/actorId and the now that command saw, §2.2 + §5.0); a
+ * settlement event by the settler (seq/actorId) with its `tick` coming from
+ * the due bucket's `dueTick` (ADR-0034 §3).
  */
-export interface GameEvent {
+export interface EventSkeleton {
   seq: number;
   /**
    * The tick this event is FOR (O1, spec/01 §5): the world time at which it
@@ -115,10 +175,115 @@ export interface GameEvent {
    *   in first, and replay would stop being deterministic.
    */
   tick: number;
-  type: string;
   actorId: string;
+}
+
+/**
+ * A `commandRefused` event: the semantic refusal. `reason` says WHICH
+ * refusal; the remaining fields LOCATE the content copy the renderer reads
+ * (`commandKey`'s `err_*` field named by `errKey`, spec/02 §5.4) and are
+ * each optional — a pre-stage veto has only the reason to give.
+ */
+export interface CommandRefusedEvent extends EventSkeleton {
+  type: "commandRefused";
+  reason: ReasonCode;
+  /** The command entry whose copy words this refusal. */
+  commandKey?: string;
+  /** The gate vocabulary this refusal came from, when it came from a gate. */
+  accessType?: AccessTypeCode;
+  /** The ENTRY field the renderer reads the copy from (`err_*`, spec/02 §5.4). */
+  errKey?: string;
+  /** The room whose gate denied, when a room gate was the refuser. */
+  roomId?: string;
+  /** The refusing hook, when a movement/speech hook vetoed. */
+  stage?: MoveVetoStage | SayVetoStage;
+}
+
+/** A `say` event: the spoken text verbatim, addressed to a location. */
+export interface SayEvent extends EventSkeleton {
+  type: "say";
+  speakerId: string;
+  text: string;
+  locationId: string;
+}
+
+/**
+ * An `appearance` event: one room's digest for one viewer — the look
+ * outcome. Ids and lists only: the names and copy stay in content data
+ * (spec/01 §5.1), reached by id exactly like `err_*` text.
+ */
+export interface AppearanceEvent extends EventSkeleton {
+  type: "appearance";
+  roomId: string;
+  exits: readonly ExitDigest[];
+  staticPresence: readonly StaticPresence[];
+  occupants: readonly string[];
+}
+
+/** The move semantics both movement announcements carry. */
+interface MoveAnnouncement extends EventSkeleton {
+  entityId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  moveType: MoveType;
+  /** The exit traversed, when the move is a traversal; null/absent otherwise. */
+  viaExitId?: string | null;
+}
+
+/** A `departed` event: one movement announcement, the leaving half. */
+export interface DepartedEvent extends MoveAnnouncement {
+  type: "departed";
+}
+
+/** An `arrived` event: one movement announcement, the entering half. */
+export interface ArrivedEvent extends MoveAnnouncement {
+  type: "arrived";
+}
+
+/**
+ * The engine's event vocabulary — CLOSED, discriminated by `type`
+ * (spec/01 §5). Five arms are the engine's real names, the whole set: a
+ * synthetic type (`worldSettled`, `pong`) is not an engine event and does
+ * not pretend to be one. A new engine event means a new arm here, in the
+ * union, and a new factory in events.ts.
+ */
+export type EngineEvent =
+  | CommandRefusedEvent
+  | SayEvent
+  | AppearanceEvent
+  | DepartedEvent
+  | ArrivedEvent;
+
+declare const customEventBrand: unique symbol;
+
+/**
+ * The extension arm: a synthetic or host event under the caller's own type.
+ * BRANDED (type-only, no runtime property): only `customEvent()` hands these
+ * out, so a hand-written literal drops into NO arm and fails to compile —
+ * a misspelled engine field cannot hide in here. Free fields stay OPEN
+ * (`[key: string]: unknown` — content freedom): a typo'd free field is not
+ * caught, which is the deliberate price of that openness.
+ */
+export interface CustomEventDraft {
+  readonly [customEventBrand]: "customEvent";
+  type: string;
   [key: string]: unknown;
 }
+
+/** A delivered custom event: the extension arm plus the stamped skeleton. */
+export interface CustomEvent extends CustomEventDraft, EventSkeleton {}
+
+/**
+ * A single engine occurrence — the CLOSED union (spec/01 §5): either one of
+ * the engine's five, or the branded extension arm. There is no index
+ * signature to fall back on, so no event shape escapes the two construction
+ * paths (events.ts).
+ *
+ * Pure semantics — NEVER rendered text. Rendering happens outside the engine
+ * boundary, per receiver, so that a Chinese reader sees the second-person
+ * pronoun where an observer sees a name (ADR-0006, docs/spec/05-output-pipeline.md).
+ */
+export type GameEvent = EngineEvent | CustomEvent;
 
 export interface EventMeta {
   /** Inclusive seq range covered by this delivery, for gap detection. */

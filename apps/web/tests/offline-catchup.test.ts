@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { customEvent } from "@sexymud/core";
 import {
   assembleWorld,
   createContentRegistry,
@@ -76,7 +77,7 @@ describe("end-to-end: 上线 → 离线 → 回来补算", () => {
       createDueBucket({
         fire: (item, emit) => {
           fired.push(item);
-          emit("jia", { type: "fuseFired", kind: (item.payload as { kind: string }).kind });
+          emit("jia", customEvent("fuseFired", { kind: (item.payload as { kind: string }).kind }));
         },
       });
 
@@ -159,3 +160,4 @@ describe("end-to-end: 上线 → 离线 → 回来补算", () => {
     expect((second.data as SaveDataV2).due).toEqual([]);
   });
 });
+

@@ -2,8 +2,8 @@ import { assertTick } from "../clock.js";
 import type { TickClock } from "../clock.js";
 import type { Message } from "../command/pipeline.js";
 import type { EventDraft } from "../command/pipeline.js";
+import { stampEvent } from "../events.js";
 import type { WorldState } from "../state/tree.js";
-import type { GameEvent } from "../types.js";
 
 /**
  * The ONE advance function (spec/04 §4.2, ADR-0032 §4, ADR-0034).
@@ -136,7 +136,13 @@ export function createSettler(options: SettlerOptions): Settler {
       const emitter = (fallbackActorId: string): SettleEmitter =>
         (to, draft) => {
           assertTick(draft.tick, "settle event tick");
-          const event: GameEvent = { ...draft, seq: request.seq, actorId: fallbackActorId };
+          // `tick` is the draft's own (validated just above) — the settler
+          // stamps seq/actorId only; the construction is the shared one.
+          const event = stampEvent(draft, {
+            seq: request.seq,
+            actorId: fallbackActorId,
+            tick: draft.tick,
+          });
           messages.push({ to, event });
         };
 

@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { customEvent, customCode } from "../src/events.js";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -102,11 +103,10 @@ function traversalSpec<W>(exit: ExitEntry): CommandSpec<W> {
   return commandSpecFromEntry<W>(exit, {
     accessType: "traverse",
     func: (ctx) => {
-      ctx.emit(ctx.command.actorId, {
-        type: "moved",
-        toRoomId: exit.targetRoomId,
-        viaExitId: exit.id,
-      });
+      ctx.emit(
+        ctx.command.actorId,
+        customEvent("moved", { toRoomId: exit.targetRoomId, viaExitId: exit.id }),
+      );
     },
   });
 }
@@ -193,9 +193,9 @@ describe("content/rooms/ and content/npcs/ as loaded content", () => {
     const lodger = subjectOf({ flags: { "actor-1": ["inn-lodger"] } }, "actor-1");
     expect(checkAccess(yard.preconditions!, "enter", lodger)).toEqual({ ok: true });
     // An undeclared accessType falls to the default gate: deny (err_default).
-    expect(checkAccess(yard.preconditions!, "edit", lodger)).toEqual({
+    expect(checkAccess(yard.preconditions!, customCode("edit"), lodger)).toEqual({
       ok: false,
-      accessType: "edit",
+      accessType: customCode("edit"),
       errKey: "err_default",
     });
 
@@ -306,7 +306,7 @@ describe("exits as commands through the real dispatch path (spec/02 §4)", () =>
     expectMessageSequence(out.messages, [
       {
         to: "actor-1",
-        event: { type: "moved", toRoomId: "room-lq-002", viaExitId: "exit-lq-003-east" },
+        event: customEvent("moved", { toRoomId: "room-lq-002", viaExitId: "exit-lq-003-east" }),
       },
     ]);
     // An ungated exit never asks a gate: the traverse accessType was carried,
@@ -354,7 +354,7 @@ describe("exits as commands through the real dispatch path (spec/02 §4)", () =>
     }
     expectMessageSequence(
       harness.call(traversalSpec<TracerWorld>(north!), "北").messages,
-      [{ to: "actor-1", event: { type: "moved", toRoomId: "room-lq-004" } }],
+      [{ to: "actor-1", event: customEvent("moved", { toRoomId: "room-lq-004" }) }],
     );
   });
 

@@ -1,4 +1,11 @@
-import type { Command, CommandResult, GameEvent, Rng } from "../types.js";
+import type {
+  Command,
+  CommandResult,
+  CustomEventDraft,
+  EngineEvent,
+  GameEvent,
+  Rng,
+} from "../types.js";
 import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
 import { createTickClock } from "../clock.js";
@@ -340,12 +347,32 @@ function matchesSubset(expected: unknown, actual: unknown): boolean {
 }
 
 /**
+ * The recursive subset an expectation may pin (ADR-0023 §1b): every level —
+ * an arm field, a digest entry — names only what the test cares about. The
+ * type twin of `matchesSubset` below; a shallow `Partial` would force tests
+ * to pin nested digests in full, which is a different assertion than the one
+ * the matcher runs.
+ */
+export type EventSubset<T> = T extends string | number | boolean | null | undefined
+  ? T
+  : T extends readonly (infer Item)[]
+    ? readonly EventSubset<Item>[]
+    : { [K in keyof T]?: EventSubset<T[K]> };
+
+/**
  * Prefix-matching expectation (ADR-0023 §1b): pin only the fields the test
  * cares about — extra semantic fields on the recorded message are tolerated.
+ *
+ * An engine-event expectation is a recursive subset of its arm (fields are
+ * therefore spell-checked); a synthetic/host expectation goes through
+ * `customEvent()`, which is branded so `Partial` cannot swallow the brand and
+ * let any literal claim to be the extension arm.
  */
+export type ExpectedEvent = EventSubset<EngineEvent> | CustomEventDraft;
+
 export interface ExpectedMessage {
   to?: string;
-  event?: Partial<GameEvent>;
+  event?: ExpectedEvent;
 }
 
 /**

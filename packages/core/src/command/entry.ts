@@ -1,5 +1,6 @@
 import type { AccessRules } from "../conditions.js";
 import type { EntryCommon } from "../content/entry.js";
+import type { AccessTypeCode } from "../types.js";
 import type { CommandContext, CommandRejection, CommandSpec } from "./pipeline.js";
 import type { ArgForm } from "./parser.js";
 import type { CmdSetSource } from "./cmdset.js";
@@ -145,9 +146,12 @@ export interface CommandSpecOptions<W = unknown> {
    * The accessType dispatch asks of the entry's preconditions (spec/02
    * §5.2). The vocabulary is content-side (content.md: commands gate "use"),
    * so the caller supplies it — the engine carries it through, it does not
-   * own it. Required when the entry declares preconditions.
+   * own it. Required when the entry declares preconditions. An EMPTY ask is
+   * rejected loudly by the assembly check below — it is malformed wiring, and
+   * it is deliberately NOT in the code face (types.ts): the guard is what a
+   * cast or an untyped caller meets.
    */
-  accessType?: string;
+  accessType?: AccessTypeCode;
   /**
    * The command's behaviour. The engine never words game output itself; func
    * emits semantic events through the context. (A future effects pipeline
@@ -183,7 +187,7 @@ export function commandSpecFromEntry<W>(
     func: options.func,
   };
   if (entry.preconditions !== undefined) {
-    if (options.accessType === undefined || options.accessType === "") {
+    if (options.accessType === undefined || options.accessType.length === 0) {
       // Wiring bug, not player input: a declared gate is unevaluable when
       // nothing says which accessType to ask of it — fail loudly instead of
       // silently granting or denying.

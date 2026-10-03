@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent } from "../src/events.js";
 import { assembleWorld, collectMeta } from "../src/state/assembly.js";
 import { serializeWorld } from "../src/state/snapshot.js";
 import type { Snapshot } from "../src/types.js";
@@ -41,7 +42,7 @@ const registry = () => createContentRegistry({ rooms: ROOMS });
 
 const makeBucket = (): DueBucket =>
   createDueBucket({
-    fire: (item, emit) => emit("broadcast", { type: "wentOff", id: item.payload }),
+    fire: (item, emit) => emit("broadcast", customEvent("wentOff", { id: item.payload })),
   });
 
 /**
@@ -318,3 +319,4 @@ describe("the round trip through the two faces (spec/04 §1.5)", () => {
     expect(two.runtime.state.entities["player-1"]!.locationId).toBe("room-a");
   });
 });
+

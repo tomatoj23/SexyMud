@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { customEvent, customCode } from "@sexymud/core";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -83,7 +84,7 @@ function rig(
   const baseBucket = createDueBucket({
     fire: (item, emit) => {
       fired.push(item);
-      emit("jia", { type: "fuseFired", kind: (item.payload as { kind: string }).kind });
+      emit("jia", customEvent("fuseFired", { kind: (item.payload as { kind: string }).kind }));
     },
   });
   const worldSpans: SettleSpan[] = [];
@@ -149,7 +150,7 @@ describe("the local Authority runs the fixed four steps (spec/04 §4.1)", () => 
       tick: 1000,
       raw: "broken",
     });
-    expect(brokenResult).toMatchObject({ ok: false, seq: 1, kind: "invalid", reason: "badInput" });
+    expect(brokenResult).toMatchObject({ ok: false, seq: 1, kind: "invalid", reason: customCode("badInput") });
     const unknown = await r.authority.dispatch({ seq: 2, actorId: "jia", tick: 1000, raw: "nonsense" });
     expect(unknown).toMatchObject({ ok: false, seq: 2, kind: "invalid", reason: "unknownVerb" });
 
@@ -168,7 +169,7 @@ describe("the local Authority runs the fixed four steps (spec/04 §4.1)", () => 
 
     const result = await r.authority.dispatch({ seq: 7, actorId: "jia", tick: 50, raw: "veto" });
 
-    expect(result).toMatchObject({ ok: false, seq: 7, kind: "rejected", reason: "gateClosed" });
+    expect(result).toMatchObject({ ok: false, seq: 7, kind: "rejected", reason: customCode("gateClosed") });
     expect(r.worldSpans).toEqual([{ fromTick: 0, toTick: 50 }]);
     expect(r.runtime.clock.nowTick()).toBe(50);
     expect(r.deliveries).toHaveLength(1);
@@ -335,3 +336,4 @@ describe("the four-step sequence has one home (mechanical scan)", () => {
     expect(text).not.toMatch(/\[\s*\.\.\.(?:settled|settlement)\b/);
   });
 });
+

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent, customCode } from "../src/events.js";
 import { createTickClock } from "../src/clock.js";
 import type { TickClock } from "../src/clock.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
@@ -112,21 +113,21 @@ function rig(options: {
 const fine: CommandSpec<WorldState> = {
   key: "fine",
   func: (ctx) => {
-    ctx.emit(ctx.command.actorId, { type: "ran" });
+    ctx.emit(ctx.command.actorId, customEvent("ran"));
   },
 };
 
 /** An input that never becomes a command — the case that must NOT advance. */
 const broken: CommandSpec<WorldState> = {
   key: "broken",
-  parse: () => ({ ok: false, reason: "badInput" }),
+  parse: () => ({ ok: false, reason: customCode("badInput") }),
   func: () => {},
 };
 
 /** A legitimate refusal: it happened, so the world moves (spec/04 §4.1). */
 const vetoed: CommandSpec<WorldState> = {
   key: "vetoed",
-  at_pre_cmd: (ctx) => ctx.veto("gateClosed"),
+  at_pre_cmd: (ctx) => ctx.veto(customCode("gateClosed")),
   func: () => {},
 };
 
@@ -283,9 +284,9 @@ describe("the advance and the dispatch contract (spec/04 §4.1)", () => {
 describe("settlement events (ADR-0034 §3–§4)", () => {
   it("borrows the command's seq and sits in front of the command's own events", () => {
     const { harness } = rig({
-      world: (span, emit) => emit("broadcast", { type: "worldSettled", tick: span.fromTick + 1 }),
+      world: (span, emit) => emit("broadcast", customEvent("worldSettled", { tick: span.fromTick + 1 })),
       entity: (_entityId, span, emit) =>
-        emit(_entityId, { type: "caughtUp", tick: span.fromTick + 1 }),
+        emit(_entityId, customEvent("caughtUp", { tick: span.fromTick + 1 })),
     });
 
     // Burn one seq on an invalid input first (it consumes nothing but the
@@ -314,7 +315,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
     const { harness } = rig({
       world: (span, emit) => {
         if (span.fromTick <= 300 && 300 < span.toTick) {
-          emit("broadcast", { type: "exploded", tick: 300 });
+          emit("broadcast", customEvent("exploded", { tick: 300 }));
         }
       },
     });
@@ -335,7 +336,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
     // as a tick on the way out too — a number out of a payload is still a
     // number, and a NaN would poison every downstream judgement silently.
     const { settler } = rig({
-      world: (_span, emit) => emit("broadcast", { type: "exploded", tick: -1 }),
+      world: (_span, emit) => emit("broadcast", customEvent("exploded", { tick: -1 })),
     });
 
     expect(() => settler.settleTo({ toTick: 40, seq: 1 })).toThrow(/settle event tick/);
@@ -343,7 +344,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
 
   it("delivers a rejected command's settlement to the sink — the result carries no events", () => {
     const { harness } = rig({
-      world: (span, emit) => emit("broadcast", { type: "worldSettled", tick: span.toTick }),
+      world: (span, emit) => emit("broadcast", customEvent("worldSettled", { tick: span.toTick })),
     });
 
     // Burn one seq first: the rides-the-command's-seq pin must not pass on a
@@ -361,7 +362,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       // exactly like the pipeline stamps its own events; only a heartbeat,
       // which has no actor, leaves the field empty.
       { to: "broadcast", event: { seq: out.result.seq, tick: 40, type: "worldSettled", actorId: "jia" } },
-      { to: "jia", event: { seq: out.result.seq, tick: 40, type: "commandRefused", actorId: "jia", reason: "gateClosed" } },
+      { to: "jia", event: { seq: out.result.seq, tick: 40, type: "commandRefused", actorId: "jia", reason: customCode("gateClosed") } },
     ]);
   });
 });
@@ -369,7 +370,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
 describe("the host heartbeat (ADR-0034 §5)", () => {
   it("takes an explicit seq and no actor: the world layer runs, the entity layer does not", () => {
     const { harness, settler, state, worldSpans, entitySpans } = rig({
-      world: (span, emit) => emit("broadcast", { type: "worldSettled", tick: span.toTick }),
+      world: (span, emit) => emit("broadcast", customEvent("worldSettled", { tick: span.toTick })),
     });
 
     const messages = settler.settleTo({ toTick: 900, seq: 7 });
@@ -388,7 +389,7 @@ describe("the host heartbeat (ADR-0034 §5)", () => {
 
   it("emits world events with no actor rather than inventing one", () => {
     const { settler } = rig({
-      world: (span, emit) => emit("broadcast", { type: "weatherChanged", tick: span.toTick }),
+      world: (span, emit) => emit("broadcast", customEvent("weatherChanged", { tick: span.toTick })),
     });
 
     const messages = settler.settleTo({ toTick: 50, seq: 1 });
@@ -526,3 +527,4 @@ describe("O1: every GameEvent carries a tick (spec/01 §5)", () => {
     expect(out.result.events).toMatchObject([{ type: "ran", tick: 100 }]);
   });
 });
+

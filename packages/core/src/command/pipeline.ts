@@ -1,8 +1,8 @@
-import type { Clock, Command, CommandResult, GameEvent, Rng } from "../types.js";
+import type { Clock, Command, CommandResult, GameEvent, ReasonCode, Rng } from "../types.js";
 import { assertTick } from "../clock.js";
 import { checkAccess, defaultPredicateRegistry } from "../conditions.js";
 import type { AccessGate, ConditionSubject, PredicateRegistry } from "../conditions.js";
-import { commandRefusedEvent } from "../events.js";
+import { commandRefusedEvent, stampEvent } from "../events.js";
 import { parseArgForm } from "./parser.js";
 import type { ArgForm, VerbTable } from "./parser.js";
 import type { DueBucket, DueScheduler } from "../time/due.js";
@@ -87,9 +87,10 @@ export interface CommandContext<W = unknown> {
   /**
    * Vetoes the command from a pre-stage hook and returns `false` (so the
    * hook can return it directly). Records the refusal reason; the pipeline
-   * emits the refusal event, not the hook.
+   * emits the refusal event, not the hook. The reason is a semantic CODE
+   * (types.ts) — engine literals, or a host's own via `customCode()`.
    */
-  veto(reason?: string): false;
+  veto(reason?: ReasonCode): false;
   /**
    * Takes the next queued player input, FIFO (ADR-0023 §1d). Returns null
    * when the queue is empty. Evennia pops its input queue from the tail,
@@ -99,7 +100,7 @@ export interface CommandContext<W = unknown> {
 }
 
 /** Outcome of the parse stage. `ok: false` maps to the `invalid` failure. */
-export type ParseOutcome = { ok: true; args: unknown } | { ok: false; reason: string };
+export type ParseOutcome = { ok: true; args: unknown } | { ok: false; reason: ReasonCode };
 
 /**
  * The driver's pre-flight: will this input BECOME a command? (spec/04 §4.1)
@@ -190,7 +191,7 @@ export function parseCommand<W>(
  * without execution context, so the pipeline words those; an executor
  * that just checked a gate knows exactly which entry's copy to name.
  */
-export type CommandRejection = { kind: "rejected"; reason: string };
+export type CommandRejection = { kind: "rejected"; reason: ReasonCode };
 
 /**
  * A command as executable behaviour. Verbs live in content data, not here —
@@ -284,7 +285,8 @@ export interface CommandDeps<W = unknown> {
 /**
  * Reason code stamped when a hook vetoes without naming a reason. A semantic
  * code, not rendered text: the rendering layer maps codes to content-side
- * copy (spec/02 §5.4 — refusal wording is data).
+ * copy (spec/02 §5.4 — refusal wording is data). The mechanism is unchanged
+ * by the code face: an unnamed veto still words itself "vetoed".
  */
 const DEFAULT_VETO_REASON = "vetoed";
 
@@ -349,19 +351,18 @@ function parseStage<W>(
  */
 export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: CommandDeps<W>): CommandResult {
   const events: GameEvent[] = [];
-  let vetoReason: string | undefined;
+  let vetoReason: ReasonCode | undefined;
   const nowTick = effectiveNowTick(deps.nowTick, command);
 
   const ctx = createCommandContext<W>(command, deps, nowTick, {
     emit(recipientId, draft) {
       // `tick` is the now this command saw — not its raw tick, which may lie
       // in the past (spec/01 §5, O1).
-      const event: GameEvent = {
-        ...draft,
+      const event = stampEvent(draft, {
         seq: command.seq,
         actorId: command.actorId,
         tick: nowTick,
-      };
+      });
       events.push(event);
       deps.sink.emit({ to: recipientId, event });
     },

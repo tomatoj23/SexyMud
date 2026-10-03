@@ -1,4 +1,4 @@
-import { serializeWorld } from "@sexymud/core";
+import { customCode, customEvent, serializeWorld } from "@sexymud/core";
 import type {
   CmdSetSource,
   CommandSpec,
@@ -46,20 +46,20 @@ export function snapshotFixture(options: { nowTick?: number; flags?: string[] } 
 export const greet: CommandSpec<WorldRuntime> = {
   key: "greet",
   func: (ctx) => {
-    ctx.emit(ctx.command.actorId, { type: "greeted" });
+    ctx.emit(ctx.command.actorId, customEvent("greeted"));
   },
 };
 
 export const veto: CommandSpec<WorldRuntime> = {
   key: "veto",
-  at_pre_cmd: (ctx) => ctx.veto("gateClosed"),
+  at_pre_cmd: (ctx) => ctx.veto(customCode("gateClosed")),
   func: () => {},
 };
 
 /** An input that never becomes a command — must not move the world at all. */
 export const broken: CommandSpec<WorldRuntime> = {
   key: "broken",
-  parse: () => ({ ok: false, reason: "badInput" }),
+  parse: () => ({ ok: false, reason: customCode("badInput") }),
   func: () => {},
 };
 
@@ -68,7 +68,7 @@ export const arm: CommandSpec<WorldRuntime> = {
   key: "arm",
   func: (ctx) => {
     ctx.due.schedule(ctx.clock.nowTick() + 60, { kind: "fuse" });
-    ctx.emit(ctx.command.actorId, { type: "armed" });
+    ctx.emit(ctx.command.actorId, customEvent("armed"));
   },
 };
 

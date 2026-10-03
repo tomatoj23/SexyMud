@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
+import { customEvent, customCode } from "../src/events.js";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -170,7 +171,7 @@ describe("the payload is opaque (spec/04 §4.5, ADR-0034 §3)", () => {
 
   it("stamps the event with the DUE tick, and leaves the handler no way to choose one", () => {
     const bucket = createDueBucket({
-      fire: (_item, emit) => emit("broadcast", { type: "exploded" }),
+      fire: (_item, emit) => emit("broadcast", customEvent("exploded")),
     });
     bucket.schedule(300, "bomb");
 
@@ -233,7 +234,7 @@ describe("O8: the host's handler reaches the engine through a dependency (spec/0
     key: "lightFuse",
     func: (ctx) => {
       ctx.due.schedule(ctx.clock.nowTick() + 50, { roomId: "room-a" });
-      ctx.emit(ctx.command.actorId, { type: "fuseLit" });
+      ctx.emit(ctx.command.actorId, customEvent("fuseLit"));
     },
   };
 
@@ -291,7 +292,7 @@ describe("invalid input never fires the bucket (spec/04 §4.1)", () => {
 
     const broken: CommandSpec<WorldState> = {
       key: "broken",
-      parse: () => ({ ok: false, reason: "badInput" }),
+      parse: () => ({ ok: false, reason: customCode("badInput") }),
       func: () => {},
     };
     for (let i = 0; i < 5; i += 1) {
@@ -314,7 +315,7 @@ describe("the constructive guarantee (spec/04 §4.4, ADR-0032 §6)", () => {
     const bucket = createDueBucket({
       fire: (_item, emit) => {
         handlerCalls += 1;
-        emit("broadcast", { type: "wentOff" });
+        emit("broadcast", customEvent("wentOff"));
       },
     });
     bucket.schedule(250_000, 1);
@@ -367,3 +368,4 @@ describe("the constructive guarantee (spec/04 §4.4, ADR-0032 §6)", () => {
     expect(offenders).toEqual([]);
   });
 });
+

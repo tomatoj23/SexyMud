@@ -17,6 +17,8 @@
  *   (spec/01 §5.1): "refusal is narrative too" means the DATA words it.
  */
 
+import type { AccessTypeCode } from "./types.js";
+
 /**
  * A condition node. Exactly one key: a combinator (`all` / `any` / `not`) or
  * a predicate name. A bare boolean is a degenerate leaf (hard true / false),
@@ -305,9 +307,10 @@ export interface AccessGate {
   /**
    * The accessType this check asks — commands gate "use", exits "traverse",
    * learning gates "learn". The vocabulary is content-side; the engine only
-   * carries it through.
+   * carries it through — hence the code face (types.ts): the engine's own
+   * four are literals, anything else is a host's branded `customCode`.
    */
-  accessType: string;
+  accessType: AccessTypeCode;
 }
 
 /**
@@ -317,11 +320,13 @@ export interface AccessGate {
  * refusal (spec/02 §5.4) — Evennia's access() returns a bare bool and leaves
  * the digging to each call site; the errKey makes the data field first-class.
  */
-export type AccessCheck = { ok: true } | { ok: false; accessType: string; errKey: string };
+export type AccessCheck =
+  | { ok: true }
+  | { ok: false; accessType: AccessTypeCode; errKey: string };
 
 export function checkAccess(
   rules: AccessRules,
-  accessType: string,
+  accessType: AccessTypeCode,
   subject: ConditionSubject,
   registry: PredicateRegistry = defaultPredicateRegistry,
 ): AccessCheck {

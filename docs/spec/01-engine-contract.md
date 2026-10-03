@@ -86,16 +86,28 @@ interface Authority {
 ## 5. 事件流（GameEvent）
 
 ```ts
-interface GameEvent {
-  seq: number;
-  tick: number;          // 见下「§5.0 tick」
-  type: string;          // 语义类型，如 "attackResolved"
-  actorId: string;
-  // …纯语义字段（谁、对谁、做了什么、结果档位）
+type GameEvent = EngineEvent | CustomEvent;   // 封闭联合，顶层无 index signature
+
+interface EventSkeleton { seq: number; tick: number /* 见下「§5.0 tick」 */; actorId: string }
+
+// 引擎五型 = 封闭判别联合（按 type 分型声明语义字段必/可选，如 pre-veto 的
+// commandRefused 只有 type+reason、commandKey 可选）：commandRefused／say／
+// appearance／departed／arrived。worldSettled 系测试合成型，不入联合。
+interface SayEvent extends EventSkeleton {
+  type: "say";
+  speakerId: string; text: string; locationId: string;
 }
+// …其余四型同律
+
+// 扩展臂：合成／宿主事件，**品牌化**、只出自 `customEvent(type, fields?)`——
+// 手写字面量掉不进任何臂、编译报错；自由 fields 开放承载（内容自由度）。
 ```
 
-**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3）。
+**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3）。draft→已投递事件的收口构造只有一处：`stampEvent(draft, skeleton)`（pipeline 与 settler 两个盖章点都走它——开放 draft 展开进封闭联合编译不过，收口即受检边界）。
+
+**语义码取值面**（`types.ts` 单一住所，#47）：`reason`／`accessType` 是**码**不是文案——引擎自产码进字面量（拒绝面 `accessDenied`／`vetoed`／`notVisible`／`sayVetoed`／`moveVetoed`，解析面 `emptyInput`／`unknownVerb`／`verbMismatch`／`unexpectedArg`／`missingTarget`／`badOrdinal`／`missingNoun`；accessType 面 `use`／`traverse`／`enter`／`look`），自定义码经 `customCode(text)` 取**品牌**进面（`"gateClosed"`／`"learn"` 是自定义码，裸字符串进不了码位）；`DispatchFailure.reason`／`CommandRejection.reason`／`ParseOutcome.reason`／`ctx.veto(reason)`／`commandRefused.reason` 同一面。文案照旧走内容 `err_*` 数据（errKey 机制不动）。
+
+**编译期钉的诚实范围**：拼错引擎臂字段、夹带 `type`／骨架键、裸字符串码——编译报错（`tests/events.test.ts` 的 `@ts-expect-error` 钉）；**自定义事件的自由 fields 拼错不报**——开放承载的有意代价，勿给它上钉。
 
 ### 5.0 `tick`：**每个事件都带**（O1 已定案，#22）
 
@@ -127,7 +139,7 @@ Evennia 在线上传输的是**已渲染的字符串**（`data_out.text`）。�
 ```
 packages/core/          引擎（可独立发布的库，零题材词）
   src/
-    types.ts            端口与对外契约（Clock / Rng / SaveStore / Authority、GameEvent）
+    types.ts            端口与对外契约（Clock / Rng / SaveStore / Authority、GameEvent 与语义码面；事件臂分型引用 world 层 digest/move/hook 词表——仅类型引用，无运行时依赖）
     conditions.ts       条件求值与谓词注册表（独立横切契约，M1-T3 已落——不并入 effects/）
     events.ts           事件构造一处（按 type 一族 factory + 扩展臂 customEvent，#41）
     command/            解析、命令集合并、分发（M1-T1/T2 已落）

@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { customEvent } from "../src/events.js";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -68,7 +69,7 @@ function recorderSpec<W>(entry: CommandEntry, seen: unknown[]): CommandSpec<W> {
     accessType: "use",
     func: (ctx) => {
       seen.push(ctx.args);
-      ctx.emit(ctx.command.actorId, { type: "acted", commandKey: ctx.command.raw });
+      ctx.emit(ctx.command.actorId, customEvent("acted", { commandKey: ctx.command.raw }));
     },
   });
 }
@@ -208,7 +209,8 @@ describe("call() through content data (parse, merge and gates all real)", () => 
     ]);
 
     // Renderer role: the errKey locates the copy in the entry, which exists and is worded.
-    const errKey = out.messages[0]?.event.errKey;
+    const event = out.messages[0]?.event;
+    const errKey = event?.type === "commandRefused" ? event.errKey : undefined;
     expect(typeof errKey).toBe("string");
     const copy = registry.command("cmd-rest")[errKey as `err_${string}`];
     expect(typeof copy).toBe("string");
@@ -217,3 +219,4 @@ describe("call() through content data (parse, merge and gates all real)", () => 
     expect(JSON.stringify(out.messages)).not.toContain(copy);
   });
 });
+

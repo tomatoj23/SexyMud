@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customEvent } from "../src/events.js";
 import { mergeCmdSets } from "../src/command/cmdset.js";
 import type { CmdSetSource } from "../src/command/cmdset.js";
 import { createVerbTable } from "../src/command/parser.js";
@@ -366,7 +367,7 @@ describe("cmdset merge product as the parser's verb table source (issue #4)", ()
     key: "cmd-look",
     argForm: "none",
     func: (ctx) => {
-      ctx.emit(ctx.command.actorId, { type: "looked" });
+      ctx.emit(ctx.command.actorId, customEvent("looked"));
     },
   };
 
@@ -374,7 +375,7 @@ describe("cmdset merge product as the parser's verb table source (issue #4)", ()
     key: "cmd-attack",
     argForm: "target",
     func: (ctx) => {
-      ctx.emit(ctx.command.actorId, { type: "attacked" });
+      ctx.emit(ctx.command.actorId, customEvent("attacked"));
     },
   };
 
@@ -382,7 +383,7 @@ describe("cmdset merge product as the parser's verb table source (issue #4)", ()
     key: "exit-north",
     argForm: "none",
     func: (ctx) => {
-      ctx.emit(ctx.command.actorId, { type: "moved", direction: "north" });
+      ctx.emit(ctx.command.actorId, customEvent("moved", { direction: "north" }));
     },
   };
 
@@ -432,3 +433,4 @@ describe("cmdset merge product as the parser's verb table source (issue #4)", ()
   // be passed at all. The type-level guarantee is pinned at compile time in
   // command-harness.test.ts ("every way back to an options channel").
 });
+

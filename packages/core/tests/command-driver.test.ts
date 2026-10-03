@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { customCode, customEvent, stampEvent } from "../src/events.js";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -31,7 +32,7 @@ function pongSpec(world: TestWorld): CommandSpec<TestWorld> {
     key: "ping",
     func: (ctx) => {
       world.log.push("func");
-      ctx.emit("actor-1", { type: "pong" });
+      ctx.emit("actor-1", customEvent("pong"));
     },
   };
 }
@@ -44,7 +45,7 @@ function recordingSettle() {
     return [
       {
         to: "actor-1",
-        event: { type: "worldAwake", seq: request.seq, actorId: "", tick: request.toTick },
+        event: stampEvent(customEvent("worldAwake"), { seq: request.seq, actorId: "", tick: request.toTick }),
       },
     ];
   };
@@ -81,7 +82,7 @@ describe("createDispatchDriver: the four steps and their rules (spec/04 §4.1)",
     const driver = createDispatchDriver<TestWorld>({ clock, settle });
     const broken: CommandSpec<TestWorld> = {
       key: "broken",
-      parse: () => ({ ok: false, reason: "badInput" }),
+      parse: () => ({ ok: false, reason: customCode("badInput") }),
       func: () => {
         world.log.push("func");
       },
@@ -97,7 +98,7 @@ describe("createDispatchDriver: the four steps and their rules (spec/04 §4.1)",
     // input must not fast-forward the world, and its tick must not raise the
     // high-water mark (otherwise spamming garbage fast-forwards time).
     expect(requests).toEqual([]);
-    expect(result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: "badInput" });
+    expect(result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: customCode("badInput") });
     expect(settled).toEqual([]);
     expect(world.log).toEqual([]);
     expect(clock.nowTick()).toBe(0);
@@ -116,7 +117,7 @@ describe("createDispatchDriver: the four steps and their rules (spec/04 §4.1)",
       at_pre_cmd: () => {
         world.log.push("pre");
       },
-      parse: () => ({ ok: false, reason: "badInput" }),
+      parse: () => ({ ok: false, reason: customCode("badInput") }),
       func: () => {
         world.log.push("func");
       },
@@ -129,7 +130,7 @@ describe("createDispatchDriver: the four steps and their rules (spec/04 §4.1)",
     });
 
     expect(world.log).toEqual(["pre"]);
-    expect(result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: "badInput" });
+    expect(result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: customCode("badInput") });
     expect(settled).toEqual([]);
     // `invalid` moves no mark even without the pre-flight (the observe step's
     // whitelist is the fallback guard).
@@ -146,7 +147,7 @@ describe("createDispatchDriver: the four steps and their rules (spec/04 §4.1)",
       at_pre_cmd: () => {
         world.log.push("pre");
       },
-      parse: () => ({ ok: false, reason: "badInput" }),
+      parse: () => ({ ok: false, reason: customCode("badInput") }),
       func: () => {
         world.log.push("func");
       },
@@ -160,7 +161,7 @@ describe("createDispatchDriver: the four steps and their rules (spec/04 §4.1)",
 
     // Same invalid shape, but NOTHING ran: the pre-flight answered first.
     expect(world.log).toEqual([]);
-    expect(result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: "badInput" });
+    expect(result).toEqual({ ok: false, seq: 1, kind: "invalid", reason: customCode("badInput") });
   });
 
   it("the command's now is the driver's mark maxed with its own tick", () => {
@@ -272,3 +273,4 @@ describe("the four-step sequence has one home (mechanical scan)", () => {
     expect(driver).toMatch(/settlementFirst/);
   });
 });
+
