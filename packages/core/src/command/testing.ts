@@ -203,7 +203,35 @@ function isCmdSetSources(
   return Array.isArray(source);
 }
 
+/** The resolver form's per-dispatch table — re-merged every call, never cached. */
+function resolvedTableOf<W>(
+  source: HarnessOptions<W>["verbs"],
+  ctx: { world: W; actorId: string },
+): VerbTable | undefined {
+  return typeof source === "function" ? verbTableFrom(source(ctx)) : undefined;
+}
+
+/**
+ * The channels issue #36 retired. TypeScript's excess-property check only
+ * guards OBJECT LITERALS — a stale key riding a wider variable would compile
+ * and then be silently ignored, which is a wiring bug in disguise. So the
+ * retired names fail loudly even when the type checker looked the other way.
+ */
+const RETIRED_OPTIONS = ["cmdsets", "liveWorld", "seed", "nowTick"] as const;
+
+function assertNoRetiredOptions(options: object): void {
+  for (const key of RETIRED_OPTIONS) {
+    if (Object.hasOwn(options, key)) {
+      throw new Error(
+        `harness options: "${key}" was retired by issue #36 ` +
+          `(world: { live: W } / session: { clock, rng } / verbs)`,
+      );
+    }
+  }
+}
+
 export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarness<W> {
+  assertNoRetiredOptions(options);
   // The high-water mark lives on the side that drives the world — here, the
   // harness (spec/04 §2.2). The pipeline stays a pure function of its inputs.
   const clock = options.session?.clock ?? createTestClock(0);
@@ -232,6 +260,14 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
   return {
     clock,
     call(spec, input) {
+      if (typeof input === "object" && Object.hasOwn(input, "seq")) {
+        // Same species as the retired options: a non-literal descriptor can
+        // carry a stale `seq` past the checker, and silently dropping it
+        // would hide the migration. The harness owns the counter (issue #36).
+        throw new Error(
+          "harness call: seq is harness-owned (issue #36) — drop it from the input descriptor",
+        );
+      }
       const descriptor = typeof input === "string" ? { raw: input } : input;
       const command: Command = {
         seq: nextSeq++,
@@ -253,11 +289,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
         world: callWorld,
         sink,
         inputs: [...(descriptor.inputs ?? [])],
-        verbs:
-          staticTable ??
-          (typeof source === "function"
-            ? verbTableFrom(source({ world: callWorld, actorId: command.actorId }))
-            : undefined),
+        verbs: staticTable ?? resolvedTableOf(source, { world: callWorld, actorId: command.actorId }),
         subjectOf: options.access?.subjectOf,
         predicates: options.access?.predicates,
         due: options.session?.due,

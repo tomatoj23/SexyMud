@@ -288,6 +288,9 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
         emit(_entityId, { type: "caughtUp", tick: span.fromTick + 1 }),
     });
 
+    // Burn one seq on an invalid input first (it consumes nothing but the
+    // counter), so the borrow pin below cannot pass on a hardcoded 1.
+    harness.call(broken, "乱码");
     const out = harness.call(fine, { raw: "go", actorId: "jia", tick: 1000 });
     if (!out.result.ok) {
       throw new Error("expected an ok result");
@@ -300,6 +303,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       "caughtUp",
       "ran",
     ]);
+    expect(out.result.seq).toBe(2);
     expect(out.result.events.every((event) => event.seq === out.result.seq)).toBe(true);
   });
 
@@ -342,9 +346,13 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       world: (span, emit) => emit("broadcast", { type: "worldSettled", tick: span.toTick }),
     });
 
+    // Burn one seq first: the rides-the-command's-seq pin must not pass on a
+    // hardcoded 1.
+    harness.call(broken, "乱码");
     const out = harness.call(vetoed, { raw: "go", actorId: "jia", tick: 40 });
 
     expect(out.result).toMatchObject({ ok: false, kind: "rejected" });
+    expect(out.result.seq).toBe(2);
     // `rejected` results carry no event list at all (spec/01 §2.2), so the
     // sink is where a refused command's settlement is seen; it still comes
     // first, and it still rides the command's seq.

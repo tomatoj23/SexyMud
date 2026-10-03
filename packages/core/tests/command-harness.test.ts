@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CmdSetSource } from "../src/command/cmdset.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import {
   createCommandHarness,
@@ -517,5 +518,35 @@ describe("one assembly across per-dispatch verb sources (issue #36)", () => {
       createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], seed: 7, nowTick: 3 });
     };
     expect(typeof neverRun).toBe("function");
+  });
+
+  it("retired channels fail loudly even through a non-literal (复查钉)", () => {
+    // The compile pin above only guards OBJECT LITERALS. A stale key riding
+    // a wider variable compiles — so the checker's blind spot is covered by
+    // a loud runtime answer, the same species as the old XOR throw.
+    const stale = { world: { rooms: {} }, receivers: [], cmdsets: [] };
+    expect(() => createCommandHarness<TestWorld>(stale)).toThrow(/"cmdsets" was retired/);
+    const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [] });
+    const spec: CommandSpec<TestWorld> = { key: "ping", func: () => {} };
+    const wide = { raw: "ping", seq: 99 };
+    expect(() => harness.call(spec, wide)).toThrow(/seq is harness-owned/);
+  });
+
+  it("merges static sources once at creation and loud; the resolver defers to the dispatch", () => {
+    const broken: CmdSetSource[] = [{ priority: 1.5, commands: [] }];
+    // Static form: a wiring mistake answers at harness creation, not on the
+    // third call of a session.
+    expect(() =>
+      createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], verbs: broken }),
+    ).toThrow(/priority must be a safe integer/);
+    // Resolver form: creation is quiet — the merge is the dispatch's own.
+    const harness = createCommandHarness<TestWorld>({
+      world: { rooms: {} },
+      receivers: [],
+      verbs: () => broken,
+    });
+    expect(() => harness.call({ key: "probe", func: () => {} }, "x")).toThrow(
+      /priority must be a safe integer/,
+    );
   });
 });

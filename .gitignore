@@ -19,3 +19,6 @@ docs/research/ui-mockups/archive/
 
 # 设计访谈的临时工作稿（定案后由 /to-tickets 消费，票拆完即删）
 .scratch/
+# 本机 agent 工具状态（防 git add -A 误卷入）
+.codebuddy/
+.zcode/
