@@ -86,13 +86,33 @@ describe("the per-type factories (construction in one place — type is the only
 
 describe("the factory owns `type`", () => {
   it("a type smuggled into fields never wins — the stamp is the factory's alone", () => {
-    const draft = commandRefusedEvent({ type: "bogus", reason: "gateClosed" });
-    expect(draft.type).toBe("commandRefused");
-    expect(sayEvent({ type: "bogus", speakerId: "pc-1", text: "hi", locationId: "room-1" }).type).toBe("say");
+    const builds: Array<[typeof commandRefusedEvent, string]> = [
+      [commandRefusedEvent, "commandRefused"],
+      [sayEvent, "say"],
+      [appearanceEvent, "appearance"],
+      [departedEvent, "departed"],
+      [arrivedEvent, "arrived"],
+    ];
+    for (const [build, type] of builds) {
+      expect(build({ type: "bogus", marker: 1 }).type).toBe(type);
+    }
   });
 
   it("customEvent's type argument wins over any type in fields", () => {
     expect(customEvent("pong", { type: "say" })).toEqual({ type: "pong" });
+  });
+});
+
+describe("the factory returns a fresh object", () => {
+  it("never aliases or rewrites the caller's fields, and adds no key beyond `type`", () => {
+    const fields = { speakerId: "pc-1", text: "hi", locationId: "room-1" };
+    const snapshot = { ...fields };
+    const draft = sayEvent(fields);
+    expect(draft).not.toBe(fields);
+    expect(fields).toEqual(snapshot);
+    // Exact key set — `toEqual` alone would let an injected `foo: undefined`
+    // through (vitest's equals ignores keys whose value is undefined).
+    expect([...Object.keys(draft)].sort()).toEqual([...Object.keys(fields), "type"].sort());
   });
 });
 
@@ -142,14 +162,21 @@ describe("engine construction stays in one place (src scan)", () => {
           walk(path);
           continue;
         }
-        if (!name.endsWith(".ts") || name === "events.ts") continue;
+        if (!name.endsWith(".ts")) continue;
+        // Skip by FULL PATH: a basename exemption would silently cover a
+        // future `world/events.ts` wholesale.
+        if (path === join(srcRoot, "events.ts")) continue;
         // `[{,]` precedes an object-literal stamp (a param ANNOTATION is
         // preceded by `(` — `type: "departed" | "arrived"` stays out) and the
-        // `(?=…)` demands the quote run end at a comma or brace. ANY type
-        // string, not a closed list: "construction in one place" must hold
-        // for the engine event type added next year too (a NON-event `type:`
-        // literal would need its own documented exemption here).
-        const pattern = /[{,]\s*type:\s*"[^"]*"(?=\s*[,}])/g;
+        // `(?=…)` demands the quote run end at a comma or brace (an `as const`
+        // between them is allowed). ANY type string, not a closed list:
+        // "construction in one place" must hold for the engine event type
+        // added next year too (a NON-event `type:` literal would need its own
+        // documented exemption here). Documented blind spots: template or
+        // computed values (`type: \`${x}\``, `type: someVar`), quoted
+        // template forms, and post-hoc assignment (`.type = "x"`) — only a
+        // literal stamp is this scan's claim.
+        const pattern = /[{,]\s*["']?type["']?\s*:\s*["'][^"']*["'](?=\s*(?:as\s+const\s*)?[,}])/g;
         for (const match of readFileSync(path, "utf8").matchAll(pattern)) {
           offenders.push(`${path.slice(srcRoot.length + 1)}: ${match[0]}`);
         }

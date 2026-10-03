@@ -95,7 +95,7 @@ interface GameEvent {
 }
 ```
 
-**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由 pipeline／settler 盖章（§2.2、§5.0），factory 不出骨架。
+**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3）。
 
 ### 5.0 `tick`：**每个事件都带**（O1 已定案，#22）
 

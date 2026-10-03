@@ -7,8 +7,9 @@ import type { EventDraft } from "./command/pipeline.js";
  *
  * The factory unifies ONLY `type`, and it stamps it last: the skeleton
  * (seq/actorId/tick) belongs to the stampers — the pipeline stamps its
- * command's seq/actorId and the now that command saw (spec/01 §2.2, §5.0),
- * the settler stamps the due tick (ADR-0034 §3) — and is never invented here.
+ * command's seq/actorId/tick and the now that command saw (spec/01 §2.2,
+ * §5.0); on the settlement path the settler stamps seq/actorId and the due
+ * bucket stamps the due tick (ADR-0034 §3) — and is never invented here.
  * What comes back is an `EventDraft`: exactly the fields handed in plus the
  * type, which is the emit port's whole contract.
  *
