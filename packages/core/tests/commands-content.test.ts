@@ -5,8 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ConditionSubject } from "../src/conditions.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
-import { createVerbTable } from "../src/command/parser.js";
-import { mergeCmdSets } from "../src/command/cmdset.js";
+import { verbTableFrom } from "../src/command/resolve.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
@@ -97,7 +96,7 @@ describe("content/commands/ entries through the real dispatch path", () => {
 
   it("reaches every command from its own verbs via the real merge + verb table", () => {
     const registry = createContentRegistry({ commands: loadCommandEntries() });
-    const table = createVerbTable(mergeCmdSets(commandSetSources(registry.commands)).verbEntries());
+    const table = verbTableFrom(commandSetSources(registry.commands));
 
     expect(registry.commands.map((command) => command.id)).toEqual([
       "cmd-examine",

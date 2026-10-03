@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import Ajv from "ajv";
 import { commandSetSources } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
-import { mergeCmdSets } from "../src/command/cmdset.js";
-import { createVerbTable } from "../src/command/parser.js";
+import { resolve, verbTableFrom } from "../src/command/resolve.js";
+import type { CommandBinding } from "../src/command/resolve.js";
 import type { CommandResult } from "../src/types.js";
 import type { CommandSpec, Message } from "../src/command/pipeline.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
@@ -47,8 +47,8 @@ import {
  * or calendar) ever appears in the other's session.
  */
 
-const WUXIA_PACK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../content");
-const schemasDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../schemas");
+const WUXIA_PACK_DIR = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../content");
+const schemasDir = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../schemas");
 
 const RECEIVERS = ["actor-1", "actor-2", "actor-3"];
 
@@ -114,12 +114,14 @@ const WUXIA_CALENDAR_WORDS: readonly string[] = [
  * runs. The ids differ between packs, the adapters are the same three
  * objects — that binding table is the whole of "porting the engine to a new
  * pack", and it is data the host already owns (content.md: hosts bind
- * behaviour per command key).
+ * behaviour per command key). The factory takes the entry; the dispatch-time
+ * bindings hand `resolve` thunks instead (绑行为 / bindSpec, entry curried
+ * here — `command/resolve.ts`), so the two faces stay one word apart.
  */
-type Bindings = Readonly<Record<string, (entry: CommandEntry) => CommandSpec<WorldRuntime>>>;
+type PackBindings = Readonly<Record<string, (entry: CommandEntry) => CommandSpec<WorldRuntime>>>;
 
-const WUXIA_BINDINGS: Bindings = { "cmd-look": lookSpec, "cmd-say": saySpec };
-const MINI_BINDINGS: Bindings = { "cmd-scan": lookSpec, "cmd-broadcast": saySpec };
+const WUXIA_BINDINGS: PackBindings = { "cmd-look": lookSpec, "cmd-say": saySpec };
+const MINI_BINDINGS: PackBindings = { "cmd-scan": lookSpec, "cmd-broadcast": saySpec };
 
 interface DispatchOutcome {
   result: CommandResult;
@@ -141,7 +143,7 @@ interface Session {
  */
 function makeSession(
   rootDir: string,
-  bindings: Bindings,
+  bindings: PackBindings,
   placement: Readonly<Record<string, string>>,
 ): Session {
   const registry = packRegistry(rootDir);
@@ -154,29 +156,33 @@ function makeSession(
   const dispatch = (actorId: string, input: string): DispatchOutcome => {
     const room = registry.room(runtime.locationOf(actorId));
     const sources = [...commandSetSources(registry.commands), ...commandSetSources(room.exits)];
-    // The host's own dispatch step: the merged verb table picks the command
-    // key, and the key decides which behaviour runs. Exits are commands, so
-    // no special case is involved — an exit id and a command id are the same
-    // kind of key here.
-    const match = createVerbTable(mergeCmdSets(sources).verbEntries()).match(input);
-    if (!match.ok) {
+    // The host's own dispatch step: the engine's resolve picks the command
+    // key and binds the behaviour (绑行为 / bindSpec). Exits are commands,
+    // so no special case is involved — an exit id and a command id are the
+    // same kind of key here; exits run the engine's traversal adapter, the
+    // pack's commands whatever the binding table names. The table's factory
+    // takes the entry; the dispatch-time binding curries it into a thunk
+    // (resolve sees no content).
+    const bound = new Map<string, CommandBinding<WorldRuntime>>();
+    for (const command of registry.commands) {
+      const build = bindings[command.id];
+      if (build !== undefined) {
+        bound.set(command.id, () => build(command));
+      }
+    }
+    // Exits bind LAST: an exit id and a command id are the same kind of key,
+    // and on a collision the exit's traversal adapter wins — the order the
+    // old exit-first lookup had.
+    for (const exit of room.exits) {
+      bound.set(exit.id, () => traversalSpec(exit));
+    }
+    const outcome = resolve(input, verbTableFrom(sources), bound);
+    if (!outcome.ok) {
+      // The classification is resolve's one rule (a typo ⇒ `invalid` with a
+      // reason); this driver answers its session in its own words.
       throw new Error(
         `pack "${rootDir}": the verb table of room "${room.id}" does not match ` +
-          `"${input}" (${match.reason})`,
-      );
-    }
-    const exit = room.exits.find((candidate) => candidate.id === match.commandKey);
-    const command = registry.commands.find((candidate) => candidate.id === match.commandKey);
-    const spec =
-      exit !== undefined
-        ? traversalSpec(exit)
-        : command !== undefined
-          ? bindings[command.id]?.(command)
-          : undefined;
-    if (spec === undefined) {
-      throw new Error(
-        `pack "${rootDir}": no behaviour is bound to "${match.commandKey}" — ` +
-          `the host binds the engine's adapters per command id`,
+          `"${input}" (${outcome.reason})`,
       );
     }
     seq += 1;
@@ -187,7 +193,7 @@ function makeSession(
       cmdsets: sources,
       subjectOf: (world, id) => world.subjectOf(id),
     });
-    return harness.call(spec, input, { actorId, seq });
+    return harness.call(outcome.spec, input, { actorId, seq });
   };
 
   return { registry, runtime, dispatch };
@@ -269,10 +275,10 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     expect(registry.exit("exit-orb-001-outboard").targetRoomId).toBe("room-orb-004");
 
     const room = registry.room("room-orb-002");
-    const table = createVerbTable(
-      mergeCmdSets([...commandSetSources(registry.commands), ...commandSetSources(room.exits)])
-        .verbEntries(),
-    );
+    const table = verbTableFrom([
+      ...commandSetSources(registry.commands),
+      ...commandSetSources(room.exits),
+    ]);
     for (const entry of [...registry.commands, ...room.exits]) {
       const verb = entry.verbs[0];
       expect(verb, `${entry.id} declares verbs`).toBeDefined();
@@ -292,10 +298,10 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
 
   it("passes the shipped schemas: a second, non-wuxia pack clears the same hard gate", () => {
     const conditionSchema = JSON.parse(
-      readFileSync(resolve(schemasDir, "condition.schema.json"), "utf8"),
+      readFileSync(resolvePath(schemasDir, "condition.schema.json"), "utf8"),
     );
     const commonSchema = JSON.parse(
-      readFileSync(resolve(schemasDir, "common.schema.json"), "utf8"),
+      readFileSync(resolvePath(schemasDir, "common.schema.json"), "utf8"),
     );
     const compile = (schema: object) => {
       const ajv = new Ajv({ allErrors: true });
@@ -304,16 +310,16 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
       return ajv.compile(schema);
     };
     const validateCommands = compile(
-      JSON.parse(readFileSync(resolve(schemasDir, "commands.schema.json"), "utf8")),
+      JSON.parse(readFileSync(resolvePath(schemasDir, "commands.schema.json"), "utf8")),
     );
     const validateRooms = compile(
-      JSON.parse(readFileSync(resolve(schemasDir, "rooms.schema.json"), "utf8")),
+      JSON.parse(readFileSync(resolvePath(schemasDir, "rooms.schema.json"), "utf8")),
     );
     const validateNpcs = compile(
-      JSON.parse(readFileSync(resolve(schemasDir, "npcs.schema.json"), "utf8")),
+      JSON.parse(readFileSync(resolvePath(schemasDir, "npcs.schema.json"), "utf8")),
     );
     const validateCalendar = compile(
-      JSON.parse(readFileSync(resolve(schemasDir, "config.calendar.schema.json"), "utf8")),
+      JSON.parse(readFileSync(resolvePath(schemasDir, "config.calendar.schema.json"), "utf8")),
     );
 
     const pack = loadPack(MINI_PACK_DIR);
@@ -349,7 +355,7 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     // table; closure against it is the registry's load-time job (ADR-0029 §5:
     // the engine never imports one).
     const validateDimensions = new Ajv({ allErrors: true }).compile(
-      JSON.parse(readFileSync(resolve(schemasDir, "config.dimensions.schema.json"), "utf8")),
+      JSON.parse(readFileSync(resolvePath(schemasDir, "config.dimensions.schema.json"), "utf8")),
     );
     expect(validateDimensions(mini)).toBe(true);
     expect(validateDimensions(wuxia)).toBe(true);
@@ -446,6 +452,23 @@ describe("走 — the mini pack walks through the engine's traversal adapter", (
       { event: { type: "departed", entityId: "actor-1", fromLocationId: "room-orb-002" } },
       { event: { type: "arrived", entityId: "actor-1", toLocationId: "room-orb-003" } },
     ]);
+  });
+});
+
+describe("the session driver answers through the engine's one resolve (issue #38)", () => {
+  it("turns resolve's invalid outcome into its own throw — the wording is the driver's", () => {
+    const { dispatch } = miniStage();
+    expect(() => dispatch("actor-1", "咕哝")).toThrow(
+      /the verb table of room "room-orb-001" does not match "咕哝" \(unknownVerb\)/,
+    );
+  });
+
+  it("leaves the wiring bug to resolve: a matched key nothing is bound to throws ITS error", () => {
+    const session = makeSession(MINI_PACK_DIR, {}, { "actor-1": "room-orb-001" });
+    const verb = session.registry.command("cmd-scan").verbs[0];
+    expect(() => session.dispatch("actor-1", verb!)).toThrow(
+      /no spec bound to command key "cmd-scan"/,
+    );
   });
 });
 
@@ -863,7 +886,7 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
  */
 describe("the display-tiers schema is pack-neutral: a second pack may have none (#27)", () => {
   const validateDisplayTiers = new Ajv({ allErrors: true }).compile(
-    JSON.parse(readFileSync(resolve(schemasDir, "config.display-tiers.schema.json"), "utf8")),
+    JSON.parse(readFileSync(resolvePath(schemasDir, "config.display-tiers.schema.json"), "utf8")),
   );
 
   it("takes a tier table of the pack's own naming — martialTiers is nobody's requirement", () => {
@@ -885,7 +908,7 @@ describe("the display-tiers schema is pack-neutral: a second pack may have none 
 
   it("still takes the wuxia pack's own table whole", () => {
     const wuxia = JSON.parse(
-      readFileSync(resolve(WUXIA_PACK_DIR, "config", "display-tiers.json"), "utf8"),
+      readFileSync(resolvePath(WUXIA_PACK_DIR, "config", "display-tiers.json"), "utf8"),
     );
     expect(validateDisplayTiers(wuxia)).toBe(true);
   });
@@ -893,7 +916,7 @@ describe("the display-tiers schema is pack-neutral: a second pack may have none 
   it("and the mini pack ships no display-tiers file at all — absence is the legal shape", () => {
     // Option (ii), pinned: 「第二套包可以没有显示档位表」. Adding a file here
     // would break this test on purpose — that is a decision, not an oversight.
-    expect(existsSync(resolve(MINI_PACK_DIR, "config", "display-tiers.json"))).toBe(false);
+    expect(existsSync(resolvePath(MINI_PACK_DIR, "config", "display-tiers.json"))).toBe(false);
   });
 });
 

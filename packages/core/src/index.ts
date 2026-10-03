@@ -61,6 +61,12 @@ export type {
   MergeType,
   MergedCmdSet,
 } from "./command/cmdset.js";
+export { resolve, verbTableFrom } from "./command/resolve.js";
+export type {
+  Bindings,
+  CommandBinding,
+  ResolveOutcome,
+} from "./command/resolve.js";
 export { commandSetSources, commandSpecFromEntry } from "./command/entry.js";
 export type {
   CommandEntry,

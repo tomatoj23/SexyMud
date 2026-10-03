@@ -6,8 +6,7 @@ import type { ConditionSubject } from "../src/conditions.js";
 import { checkAccess } from "../src/conditions.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
-import { createVerbTable } from "../src/command/parser.js";
-import { mergeCmdSets } from "../src/command/cmdset.js";
+import { verbTableFrom } from "../src/command/resolve.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
@@ -95,7 +94,7 @@ function roomSources(
 
 /** The verb table a host standing in `roomId` parses against. */
 function roomVerbTable(registry: ReturnType<typeof loadWorld>, roomId: string) {
-  return createVerbTable(mergeCmdSets(roomSources(registry, roomId)).verbEntries());
+  return verbTableFrom(roomSources(registry, roomId));
 }
 
 /** An exit's traversal behaviour, host-injected: a semantic moved event. */
@@ -363,12 +362,11 @@ describe("exits as commands through the real dispatch path (spec/02 §4)", () =>
     const { registry, room } = roomHarness({ flags: {} }, HALL);
     // A dark-room-style filter trying to suppress the north exit — merged at
     // a priority below the exits source, it cannot touch what merges after it.
-    const filtered = mergeCmdSets([
+    const table = verbTableFrom([
       ...commandSetSources(registry.commands),
       { priority: 0, mergetype: "Remove", commands: [{ key: "exit-lq-003-north" }] },
       ...commandSetSources(room.exits),
     ]);
-    const table = createVerbTable(filtered.verbEntries());
     const match = table.match("北");
     expect(match.ok).toBe(true);
     if (match.ok) {

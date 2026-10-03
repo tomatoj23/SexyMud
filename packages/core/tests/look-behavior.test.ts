@@ -1,11 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { CommandResult } from "../src/types.js";
 import { commandSetSources } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
 import type { CommandSpec, Message } from "../src/command/pipeline.js";
+import { resolve, verbTableFrom } from "../src/command/resolve.js";
+import type { CommandBinding } from "../src/command/resolve.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import type { ContentRegistry } from "../src/content/registry.js";
@@ -31,7 +33,7 @@ import type { WorldRuntime } from "../src/world/runtime.js";
  * one (the same precedent as traversal-chain's synthetic ungated exit).
  */
 
-const contentDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../content");
+const contentDir = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../content");
 
 function loadCollection<T>(name: string): T[] {
   const dir = join(contentDir, name);
@@ -88,12 +90,24 @@ function makeDriver(registry: ContentRegistry, runtime: WorldRuntime) {
   };
   const walk = (actorId: string, input: string): DriveOutcome => {
     const room = registry.room(runtime.locationOf(actorId));
-    const exit = room.exits.find((candidate) => candidate.verbs.includes(input));
-    if (exit === undefined) {
+    // The walk path's source recipe is the room's exits (recipes stay with
+    // the caller) — one traversal adapter per exit, bound as a thunk, over
+    // the engine's longest-match verb table (issue #38).
+    const bound = new Map<string, CommandBinding<WorldRuntime>>();
+    for (const exit of room.exits) {
+      bound.set(exit.id, () => traversalSpec(exit));
+    }
+    const outcome = resolve(input, verbTableFrom(commandSetSources(room.exits)), bound);
+    if (!outcome.ok) {
+      // Classification is resolve's one rule (a typo ⇒ `invalid`); this
+      // walk driver answers it in its own words.
       throw new Error(`room "${runtime.locationOf(actorId)}" offers no exit carrying the verb "${input}"`);
     }
-    return call(actorId, input, traversalSpec(exit));
+    return call(actorId, input, outcome.spec);
   };
+  // The look path is a FIXED spec direct feed — not a resolve copy: the
+  // test names the look it wants, and look is this file's subject (issue #38
+  // D4: the direct-feed path stays).
   const look = (actorId: string, input = "看"): DriveOutcome =>
     call(actorId, input, lookSpec(registry.command("cmd-look")));
   return { walk, look };
@@ -339,5 +353,14 @@ describe("the look factory adapter over real content (ADR-0028 §2)", () => {
     const base = loadCollection<CommandEntry>("commands").find((c) => c.id === "cmd-look")!;
     const entry: CommandEntry = { ...base, argForm: "text" };
     expect(() => lookSpec(entry)).toThrow(/argForm/);
+  });
+});
+
+describe("the walk driver resolves through the engine's one resolve (issue #38)", () => {
+  it("an input no exit carries is the walk driver's own throw — classification resolve's, wording the driver's", () => {
+    const { drive } = makeStage("room-lq-001");
+    expect(() => drive.walk("actor-1", "咕哝")).toThrow(
+      /room "room-lq-001" offers no exit carrying the verb "咕哝"/,
+    );
   });
 });

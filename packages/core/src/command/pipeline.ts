@@ -288,15 +288,21 @@ export interface CommandDeps<W = unknown> {
 const DEFAULT_VETO_REASON = "vetoed";
 
 /**
- * The parse stage (spec/02 §1): an explicit hook wins; otherwise the engine
- * parses — verb cut via the verb table, remainder per the declared argForm —
- * and the pre-parser default (whole input is the args) survives for
- * stage-by-stage tests that predate argForm.
+ * The parse stage — binding the ARGUMENTS (parseArgs, spec/02 §1): an
+ * explicit hook wins; otherwise the engine parses — verb cut via the verb
+ * table, remainder per the declared argForm — and the pre-parser default
+ * (whole input is the args) survives for stage-by-stage tests that predate
+ * argForm. Binding the BEHAVIOUR is a different act (bindSpec) and a
+ * different module's job — command/resolve.ts.
  *
- * The verb is re-cut inside the stage even though the dispatcher already
- * matched it to pick this spec: the same deterministic table yields the same
- * result, and the commandKey guard turns a stale or mismatched dispatch into
- * an `invalid` result instead of silently running the wrong command.
+ * On the default argForm path the verb is re-cut inside the stage even
+ * though resolve already matched it to pick this spec: the same
+ * deterministic table yields the same result, and the commandKey guard
+ * turns a stale or mismatched dispatch into an `invalid` result instead of
+ * silently running the wrong command. ⚠️ That guard is the default argForm
+ * path's ONLY stale-dispatch defence — a `spec.parse` hook and a spec
+ * without argForm never re-cut, so nothing here re-checks their dispatch
+ * (a custom hook cuts its own verb).
  */
 function parseStage<W>(
   spec: CommandSpec<W>,

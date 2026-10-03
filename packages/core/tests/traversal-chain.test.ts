@@ -1,11 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { CommandResult } from "../src/types.js";
 import { commandSetSources } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
 import type { Message } from "../src/command/pipeline.js";
+import { resolve, verbTableFrom } from "../src/command/resolve.js";
+import type { CommandBinding } from "../src/command/resolve.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import type { ContentRegistry } from "../src/content/registry.js";
@@ -28,7 +30,7 @@ import type { WorldRuntime } from "../src/world/runtime.js";
  * third player elsewhere (actor-3) proves out-of-room players hear nothing.
  */
 
-const contentDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../content");
+const contentDir = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../../content");
 
 function loadCollection<T>(name: string): T[] {
   const dir = join(contentDir, name);
@@ -57,19 +59,32 @@ interface DriveOutcome {
 /**
  * A host session over the live runtime: each dispatch re-merges the sources
  * of the actor's current room and runs the engine's factory traversal spec
- * for the exit whose verbs carry the input. The seq counter is session-wide
- * and monotonic, as a real host's would be.
+ * for the exit the input resolves to — through the engine's one resolve
+ * (match → lookup → bind the behaviour, issue #38) and its longest-match
+ * verb table, not an exact-verb scan. The seq counter is session-wide and
+ * monotonic, as a real host's would be.
  */
 function makeDriver(registry: ContentRegistry, runtime: WorldRuntime) {
   let seq = 0;
   return (actorId: string, input: string): DriveOutcome => {
     const roomId = runtime.locationOf(actorId);
     const room = registry.room(roomId);
-    const exit = room.exits.find((candidate) => candidate.verbs.includes(input));
-    if (exit === undefined) {
+    // The walk path's source recipe is the room's exits (recipes stay with
+    // the caller) — one traversal adapter per exit, bound as a thunk.
+    const bound = new Map<string, CommandBinding<WorldRuntime>>();
+    for (const exit of room.exits) {
+      bound.set(exit.id, () => traversalSpec(exit));
+    }
+    const outcome = resolve(input, verbTableFrom(commandSetSources(room.exits)), bound);
+    if (!outcome.ok) {
+      // A typo is `invalid` by resolve's one classification rule, and this
+      // driver offers exits only — so it turns that into a throw in its own
+      // words (the wording is the driver's; the classification is resolve's).
       throw new Error(`room "${roomId}" offers no exit carrying the verb "${input}"`);
     }
     seq += 1;
+    // `cmdsets` stays the room's FULL sources: the pipeline's re-cut table
+    // (deps.verbs), not the walk path's exits-only recipe.
     const harness = createCommandHarness<WorldRuntime>({
       world: runtime,
       liveWorld: true,
@@ -77,7 +92,7 @@ function makeDriver(registry: ContentRegistry, runtime: WorldRuntime) {
       cmdsets: [...commandSetSources(registry.commands), ...commandSetSources(room.exits)],
       subjectOf: (world, id) => world.subjectOf(id),
     });
-    return harness.call(traversalSpec(exit), input, { actorId, seq });
+    return harness.call(outcome.spec, input, { actorId, seq });
   };
 }
 
@@ -297,5 +312,12 @@ describe("the full town chain through the engine's traversal adapter (ADR-0028 �
 
     expect(second).toEqual(first);
     expect(first.map((step) => step.result.ok)).toEqual([true, true, true]);
+  });
+
+  it("an input no exit carries is the driver's own throw — classification resolve's, wording the driver's (issue #38)", () => {
+    const { drive } = makeStage();
+    expect(() => drive("actor-1", "咕哝")).toThrow(
+      /room "room-lq-001" offers no exit carrying the verb "咕哝"/,
+    );
   });
 });

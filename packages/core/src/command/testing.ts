@@ -9,8 +9,8 @@ import type { SettleRequest } from "../time/settle.js";
 import type { DueBucket } from "../time/due.js";
 import { createVerbTable } from "./parser.js";
 import type { VerbEntry } from "./parser.js";
-import { mergeCmdSets } from "./cmdset.js";
 import type { CmdSetSource } from "./cmdset.js";
+import { verbTableFrom } from "./resolve.js";
 
 /**
  * The command test harness (ADR-0023 §1). `call()` drives one command through
@@ -90,8 +90,8 @@ export interface HarnessOptions<W> {
    * Command-set sources (spec/02 §3) merged into the parse-stage verb
    * table — the merge product IS the verb table source. Mutually exclusive
    * with `verbs`. Merged once per harness (static like `verbs`); hosts that
-   * merge per input, because sources change with location, call
-   * mergeCmdSets themselves and pass deps.verbs per dispatch.
+   * merge per input, because sources change with location, build the table
+   * per dispatch (`verbTableFrom(sources)`) and pass deps.verbs.
    */
   cmdsets?: readonly CmdSetSource[];
   /**
@@ -170,7 +170,7 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
   const verbs = options.verbs
     ? createVerbTable(options.verbs)
     : options.cmdsets
-      ? createVerbTable(mergeCmdSets(options.cmdsets).verbEntries())
+      ? verbTableFrom(options.cmdsets)
       : undefined;
   let nextSeq = 1;
 

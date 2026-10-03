@@ -296,6 +296,8 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 
 「推进到高水位」里的高水位含本条命令的 tick（`max(驱动侧水位, command.tick)`，§2.2），而 `invalid` 又不许推进 ⇒ **不能等分发完再回头推进**：那既要让命令跑在一个「还没结算到现在」的世界（炸弹该在 50 tick 炸、命令在 100 tick 却没看见），又要把结算事件插到已发出的事件之前。
 
+**四步之前先答一问：这条输入跑哪个 spec？** 这一步收成 `command/resolve.ts` 的 `resolve(input, table, bindings)` **一份**（#38）：match → lookup → **绑行为**（bindSpec——把 command key 变成可执行 `CommandSpec`；`bindings` 一个参数面带两形态：已建 spec／thunk 工厂，entry 由调用方柯里化，resolve 看不到内容）。⚠️ **绑行为（bindSpec）与绑参数（parseArgs）是两个词**：绑参数——`rawArgs` 解析进 `ctx.args`——**留在管线 parse 段**（跑两次契约：预检＋实跑、parse 必须纯；`spec.parse` 自定义钩子原样），resolve 不碰 args。失败形状**一条规则**：empty/unknown verb ⇒ `invalid`（带 reason，由调用方回给玩家），查无绑定 ⇒ throw wiring error（接错线不是玩错字——收编的四个副本继承同一分类，各自转 throw 时文案归驱动器自己）。「源→表」装配链同批收成 `verbTableFrom(sources)`（mergeCmdSets→verbEntries→createVerbTable 三连收一份）：**源配方留调用方**、每 dispatch 重合并、**从不缓存**（§4 的组源合并时机同律）。
+
 **驱动侧的固定四步**——**唯一实现是 `command/driver.ts` 的 `createDispatchDriver`（#35／ADR-0038）**。测试 harness 的 `settle` 钩子与宿主 `Authority`（`apps/web` 的 `LocalAuthority`）都是它的**薄 adapter**：约定变结构，「忘掉一步」不再靠自觉，机械扫描钉死两侧 adapter 不再引用四原语：
 
 1. 先跑一次**预检**（`parseCommand(spec, command, deps)`，只跑 parse 段）：解析失败就直接回 `invalid`、**不再调 `runCommand`**，推进函数一次都不会被调用，水位也不动；

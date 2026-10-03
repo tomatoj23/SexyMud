@@ -19,10 +19,10 @@ import {
   collectMeta,
   createDispatchDriver,
   createSettler,
-  createVerbTable,
-  mergeCmdSets,
+  resolve,
   serializeWorld,
   settlementFirst,
+  verbTableFrom,
 } from "@sexymud/core";
 import type { HostClock } from "./hostClock.js";
 
@@ -32,8 +32,10 @@ import type { HostClock } from "./hostClock.js";
  * test harness (`createCommandHarness`), and like it, it is a thin adapter
  * over the dispatch driver (`command/driver.ts`, spec/04 §4.1): the fixed
  * four steps and their rules live THERE, once (ADR-0038). What stays here is
- * the resolve step in front (which spec does this input name?) and the exit
- * behind (one delivery per consumed seq).
+ * the front and the back of it: the source recipe and the bindings handed to
+ * the engine's one resolve (`command/resolve.ts` — which spec does this input
+ * name, and the `invalid` answer that consumes no seq), and the exit behind
+ * (one delivery per consumed seq).
  *
  * ⚠️ Nothing here sequences a dispatch by hand: forgetting one of the steps
  * freezes the world SILENTLY (O10's failure mode), and "the order exists once"
@@ -54,9 +56,10 @@ export interface LocalAuthorityOptions {
    */
   hostClock: HostClock;
   /**
-   * Command behaviours by dispatch key — bound beside the verb sources (an
-   * entry's `verbs` are content, its `func` is code; `commandSpecFromEntry`
-   * is where the two halves meet).
+   * Command behaviours by dispatch key — the bound behaviour (bindSpec,
+   * `command/resolve.ts`) in its already-built form, kept beside
+   * the verb sources (an entry's `verbs` are content, its `func` is code;
+   * `commandSpecFromEntry` is where the two halves meet).
    */
   specs: ReadonlyMap<string, CommandSpec<WorldRuntime>>;
   /**
@@ -141,26 +144,20 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
   };
 
   /** The per-dispatch verb table: assembled now, discarded after this call. */
-  const verbTableFor = (actorId: string) =>
-    createVerbTable(mergeCmdSets(options.cmdsetsOf(actorId)).verbEntries());
+  const verbTableFor = (actorId: string) => verbTableFrom(options.cmdsetsOf(actorId));
 
   const dispatchNow = (command: Command): CommandResult => {
     const table = verbTableFor(command.actorId);
-    // The resolve step (C4's domain) stays with the adapter — the driver
-    // takes a spec, "which spec does this input name" is this side's loud
-    // business. An input no verb matches is answered HERE, before anything
-    // settles (it must not fast-forward the world, spec/04 §4.1).
-    const match = table.match(command.raw);
-    if (!match.ok) {
-      return { ok: false, seq: command.seq, kind: "invalid", reason: match.reason };
-    }
-    const spec = specs.get(match.commandKey);
-    if (spec === undefined) {
-      // Wiring bug, not play: a verb routed to a key nobody bound behaviour
-      // to. Loud, like every unbound seam here.
-      throw new Error(
-        `local authority: no spec bound to command key "${match.commandKey}" (verb "${match.verb}")`,
-      );
+    // The resolve step is the engine's one (`command/resolve.ts`: match →
+    // lookup → bind the behaviour). The recipe (which sources) and the
+    // bindings (which behaviour per key) stay with this adapter; the driver
+    // takes the resolved spec. A player's typo — empty input, unknown verb —
+    // is answered HERE as an `invalid`, before anything settles (it must not
+    // fast-forward the world, spec/04 §4.1); a matched key nobody bound
+    // behaviour to is resolve's wiring error, loud as a throw.
+    const outcome = resolve(command.raw, table, specs);
+    if (!outcome.ok) {
+      return { ok: false, seq: command.seq, kind: "invalid", reason: outcome.reason };
     }
     // What the execution stage said, in order. Recipient routing rides the
     // `Message` (spec/05 output pipeline, not built yet); the subscriber
@@ -182,7 +179,7 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
 
     // The four steps and their rules run in the driver (spec/04 §4.1): this
     // adapter never sequences a dispatch by hand.
-    const { result, settled } = driver.dispatch(command, spec, deps);
+    const { result, settled } = driver.dispatch(command, outcome.spec, deps);
 
     // The exit (AC4): one batch per CONSUMED seq — `ok`, `rejected`, a
     // heartbeat — even when it carries no events. `invalid` consumes no seq
