@@ -22,9 +22,9 @@ import type { RoomEntry } from "../src/world/entry.js";
  * and a test that pinned it would be asserting freedom that does not exist.
  *
  * The hand path is NOT exercised here — it stays legal and stays covered by
- * `snapshot.test.ts`, which still hand-assembles (the additive red line, D2).
- * This file's job is the entry and its symmetric collection face, nothing
- * else.
+ * `snapshot.test.ts` and `cooldown.test.ts`, which still hand-assemble (the
+ * additive red line, D2). This file's job is the entry and its symmetric
+ * collection face, nothing else.
  */
 
 const ROOMS: RoomEntry[] = [
@@ -158,6 +158,76 @@ describe("assembleWorld — the load path's one entry (D1/D2, #37)", () => {
     });
 
     expect(seen).toEqual(["player-1@room-a"]);
+  });
+
+  it("refuses a half-rebuilt world — every restored entity brings its instance", () => {
+    // D1's promise is that OMISSION is impossible: the five steps cannot be
+    // skipped, and the ×N must not silently under-count. A restored entity
+    // with no instance would play fine until someone asks IT for a hook — the
+    // very death the checklist exists to prevent. (The hand path stays free
+    // to attach any subset; only the entry is whole.)
+    const live = liveWorld();
+    live.runtime.addEntity(createEntity("player-2"), "room-a");
+
+    expect(() =>
+      assembleWorld({
+        snapshot: saveOf(live),
+        registry: registry(),
+        bucket: makeBucket(),
+        entities: [createEntity("player-1")],
+      }),
+    ).toThrow(/no hook instance: player-2/);
+  });
+
+  it("a failed load leaves the host's live fuses armed", () => {
+    // The failure contract, deliberately NOT an order assertion: whatever
+    // sequence the five steps run in, the caller-owned live bucket — the one
+    // mutable piece the entry is handed — must survive a failed load
+    // untouched. A load that threw mid-way leaving the save's due items over
+    // live fuses would be the half-interpreted state the loud-failure law
+    // forbids (spec/04 §1.4).
+    const live = liveWorld();
+    const armed = makeBucket();
+    armed.schedule(50, "live-fuse");
+
+    // Content drift: the restored player sits in a room this registry does
+    // not have, so attachEntity throws.
+    expect(() =>
+      assembleWorld({
+        snapshot: saveOf(live),
+        registry: createContentRegistry({ rooms: [] }),
+        bucket: armed,
+        entities: [createEntity("player-1")],
+      }),
+    ).toThrow(/neither a loaded room/);
+
+    expect(armed.snapshot()).toEqual([{ dueTick: 50, payload: "live-fuse" }]);
+  });
+
+  it("a save with malformed due items never half-loads the host's bucket", () => {
+    // The same failure contract from the other throw site: `bucket.restore`
+    // resolves items in full before replacing (due.ts) and runs only once the
+    // world is whole — so a malformed item can neither half-load the bucket
+    // nor disarm what was armed.
+    const live = liveWorld();
+    const snapshot = saveOf(live);
+    const tampered = {
+      ...snapshot,
+      data: { ...(snapshot.data as Record<string, unknown>), due: [{ dueTick: "late" }] },
+    } as Snapshot;
+    const armed = makeBucket();
+    armed.schedule(50, "live-fuse");
+
+    expect(() =>
+      assembleWorld({
+        snapshot: tampered,
+        registry: registry(),
+        bucket: armed,
+        entities: [createEntity("player-1")],
+      }),
+    ).toThrow(/due bucket/);
+
+    expect(armed.snapshot()).toEqual([{ dueTick: 50, payload: "live-fuse" }]);
   });
 });
 

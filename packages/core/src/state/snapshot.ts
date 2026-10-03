@@ -120,13 +120,11 @@ export interface SaveDataV2 extends SaveDataV1 {
  *
  *   serializeWorld(runtime.state, collectMeta({ runtime, rng, bucket }))
  *
- *   const { runtime, rng, bucket, meta } = assembleWorld({
- *     snapshot, registry, bucket, entities,
- *   });
+ *   const world = assembleWorld({ snapshot, registry, bucket, entities });
+ *   // world = { runtime, rng, bucket, meta } — the four pieces, live again
  *
- * (The five steps behind that entry — restoreWorld → createWorldRuntime →
- * createSeededRng → bucket.restore → attachEntity × N — stay hand-callable;
- * the entry exists so no host has to remember the checklist.)
+ * (The five steps behind that entry stay hand-callable — see state/assembly.ts
+ * for the checklist; the entry exists so no host has to remember it.)
  */
 export interface WorldMeta {
   /** The engine's high-water mark (spec/04 §2.2). */
