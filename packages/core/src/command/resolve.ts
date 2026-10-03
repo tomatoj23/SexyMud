@@ -6,11 +6,14 @@ import type { CommandSpec } from "./pipeline.js";
 
 /**
  * The ONE "input → which spec" step (spec/04 §4.1): match the verb, look the
- * key up, bind the behaviour. Four copies of this knowledge used to spell it
- * out each its own way — the host's step 0 in front of the driver, a pack
- * session's dispatch loop, and two test drivers that scanned exits for an
- * EXACT verb (a degenerate match, off the engine's longest-match rule) —
- * with two different failure shapes between them. They all call this now.
+ * key up, bind the behaviour. Every copy of this knowledge used to spell it
+ * out its own way — the host's step 0 in front of the driver, a pack
+ * session's dispatch loop, and the test drivers' walk loops (which scanned
+ * exits for an EXACT verb, a degenerate match off the engine's
+ * longest-match rule) — with two different failure shapes between them.
+ * They all call this now. (The pipeline's own re-cut + commandKey guard is
+ * NOT one of these copies: it re-checks an ALREADY-made dispatch against the
+ * parse table — stale-dispatch defence, spec/04 §4.1.)
  *
  * ⚠️ Two acts used to share the word "bind"; they are not one act, and the
  * split is the vocabulary (bindSpec / parseArgs, D1):

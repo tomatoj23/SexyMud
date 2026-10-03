@@ -1,9 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import Ajv from "ajv";
 import { commandSetSources } from "../src/command/entry.js";
+import { resolve, verbTableFrom } from "../src/command/resolve.js";
+import type { CommandBinding } from "../src/command/resolve.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import type { DimensionTable } from "../src/content/registry.js";
@@ -38,8 +40,8 @@ import { traversalSpec } from "../src/world/traverse.js";
  * ever sees it (spec/06 §4's three-way sync).
  */
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const schemasDir = resolve(root, "schemas");
+const root = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../..");
+const schemasDir = resolvePath(root, "schemas");
 
 /**
  * Two dimensions sharing the key "inner" — the whole reason a tag is a PAIR:
@@ -54,7 +56,7 @@ function compileSchemas() {
   const parsed = new Map<string, object>();
   for (const name of readdirSync(schemasDir).sort()) {
     if (!name.endsWith(".schema.json")) continue;
-    const schema = JSON.parse(readFileSync(resolve(schemasDir, name), "utf8")) as object;
+    const schema = JSON.parse(readFileSync(resolvePath(schemasDir, name), "utf8")) as object;
     parsed.set(name, schema);
     ajv.addSchema(schema);
   }
@@ -133,8 +135,20 @@ function makeStage(npcs?: readonly NpcEntry[]) {
 /** One dispatch through `call()`: the host's per-command assembly, live world. */
 function drive(runtime: WorldRuntime, input = "北") {
   const here = runtime.registry.room(runtime.locationOf("player-1"));
-  const exit = here.exits.find((candidate) => candidate.verbs.includes(input));
-  if (exit === undefined) throw new Error(`no exit carries the verb "${input}" here`);
+  // The walk path's source recipe is the room's exits (issue #38): the
+  // engine's resolve matches over its longest-match verb table, the exit's
+  // traversal adapter binds as a thunk.
+  const bound = new Map<string, CommandBinding<WorldRuntime>>();
+  for (const exit of here.exits) {
+    bound.set(exit.id, () => traversalSpec(exit));
+  }
+  const outcome = resolve(input, verbTableFrom(commandSetSources(here.exits)), bound);
+  if (!outcome.ok) {
+    // Classification is resolve's one rule (a typo ⇒ `invalid`); this walk
+    // driver answers it in its own words.
+    throw new Error(`no exit carries the verb "${input}" here`);
+  }
+  const exit = runtime.registry.exit(outcome.match.commandKey);
   const harness = createCommandHarness<WorldRuntime>({
     world: runtime,
     liveWorld: true,
@@ -142,7 +156,7 @@ function drive(runtime: WorldRuntime, input = "北") {
     cmdsets: commandSetSources([exit]),
     subjectOf: (world, actorId) => world.subjectOf(actorId),
   });
-  return { out: harness.call(traversalSpec(exit), input, { actorId: "player-1" }), exit };
+  return { out: harness.call(outcome.spec, input, { actorId: "player-1" }), exit };
 }
 
 describe("the runtime tags slot (spec/03 §5.1, ADR-0029 §1)", () => {
@@ -403,5 +417,12 @@ describe("the gate, end to end through call() (spec/02 §5.4)", () => {
     expect(second).toEqual(first);
     expect(first.refused.result.ok).toBe(false);
     expect(first.granted.result.ok).toBe(true);
+  });
+});
+
+describe("the walk driver resolves through the engine's one resolve (issue #38 复查)", () => {
+  it("an input no exit carries is the driver's own throw — classification resolve's, wording the driver's", () => {
+    const { runtime } = makeStage();
+    expect(() => drive(runtime, "咕哝")).toThrow(/no exit carries the verb "咕哝" here/);
   });
 });

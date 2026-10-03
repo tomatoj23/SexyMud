@@ -165,7 +165,9 @@ function makeSession(
     // (resolve sees no content).
     const bound = new Map<string, CommandBinding<WorldRuntime>>();
     for (const command of registry.commands) {
-      const build = bindings[command.id];
+      // Object.hasOwn, not a bare [id]: a pack id must never meet
+      // Object.prototype's members (the reason resolve takes a Map).
+      const build = Object.hasOwn(bindings, command.id) ? bindings[command.id] : undefined;
       if (build !== undefined) {
         bound.set(command.id, () => build(command));
       }

@@ -299,10 +299,13 @@ const DEFAULT_VETO_REASON = "vetoed";
  * though resolve already matched it to pick this spec: the same
  * deterministic table yields the same result, and the commandKey guard
  * turns a stale or mismatched dispatch into an `invalid` result instead of
- * silently running the wrong command. ⚠️ That guard is the default argForm
- * path's ONLY stale-dispatch defence — a `spec.parse` hook and a spec
- * without argForm never re-cut, so nothing here re-checks their dispatch
- * (a custom hook cuts its own verb).
+ * silently running the wrong command. The "same table" is the design's
+ * premise — and when a caller resolves against a DIFFERENT table than
+ * `deps.verbs` (a partial recipe, e.g. a walk driver that binds only exits),
+ * the guard is exactly what answers: `verbMismatch`, never the wrong
+ * command. ⚠️ That guard is the default argForm path's ONLY stale-dispatch
+ * defence — a `spec.parse` hook and a spec without argForm never re-cut, so
+ * nothing here re-checks their dispatch (a custom hook cuts its own verb).
  */
 function parseStage<W>(
   spec: CommandSpec<W>,
