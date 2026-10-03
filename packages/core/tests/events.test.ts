@@ -258,8 +258,42 @@ describe("compile-time pins (typecheck-only — `@ts-expect-error` is the assert
     const expectation: ExpectedEvent = { type: "pong" };
     // @ts-expect-error — and a deliverable GameEvent cannot be typed up by hand
     const delivered: GameEvent = { seq: 1, tick: 0, actorId: "jia", type: "pong" };
+    // @ts-expect-error — a COMPLETE engine arm plus one typo'd field slips into
+    // no arm either: the extension arm's open carrying lives at construction
+    // only (an index signature here would waive the union's excess check and
+    // let this literal land in `say` — measured, see types.ts).
+    const typoArm: GameEvent = { seq: 1, tick: 0, actorId: "jia", type: "say", speakerId: "s", text: "t", locationId: "r", textt: "hi" };
+    // @ts-expect-error — an expectation pins spelled fields only, same law
+    const typoExpectation: ExpectedEvent = { type: "say", textt: "hi" };
     expect(expectation).toBeDefined();
     expect(delivered).toBeDefined();
+    expect(typoArm).toBeDefined();
+    expect(typoExpectation).toBeDefined();
+  });
+});
+
+describe("the delivery claim has one owner (src scan)", () => {
+  it("finds no cast to a GameEvent/brand face outside events.ts — laundering a draft into an arm is stampEvent's alone", () => {
+    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          walk(path);
+          continue;
+        }
+        if (!name.endsWith(".ts")) continue;
+        // Same full-path exemption as the scan above: events.ts IS the owner.
+        if (path === join(srcRoot, "events.ts")) continue;
+        const pattern = /as (?:unknown as )?(?:GameEvent|CustomEvent|CustomEventDraft|CustomCode)(?![A-Za-z])/g;
+        for (const match of readFileSync(path, "utf8").matchAll(pattern)) {
+          offenders.push(`${path.slice(srcRoot.length + 1)}: ${match[0]}`);
+        }
+      }
+    };
+    walk(srcRoot);
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -281,7 +315,9 @@ describe("engine construction stays in one place (src scan)", () => {
         // `[{,]` precedes an object-literal stamp (a param ANNOTATION is
         // preceded by `(` — `type: "departed" | "arrived"` stays out) and the
         // `(?=…)` demands the quote run end at a comma or brace (an `as const`
-        // between them is allowed). ANY type string, not a closed list:
+        // between them is allowed) — a `;`-terminated run is a TYPE position
+        // (`{ type: "departed"; }` in types.ts), which cannot be a value
+        // literal, so it stays out too. ANY type string, not a closed list:
         // "construction in one place" must hold for the engine event type
         // added next year too (a NON-event `type:` literal would need its own
         // documented exemption here). Documented blind spots: template or

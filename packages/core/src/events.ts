@@ -72,6 +72,11 @@ export function arrivedEvent(fields: FieldsOf<ArrivedEvent>): EventDraft {
  * expectation), so the extension arm cannot be reached by accident. The
  * fields carry through generically — `customEvent("x", { tick })` knows it
  * carries a `tick` (a settlement draft's one must-get-right field).
+ *
+ * `fields` is OPEN on purpose (content freedom): a typo'd free field is not
+ * reported — the documented price — and the arm type itself carries no index
+ * signature, so that openness cannot leak into `GameEvent` and waive the
+ * engine arms' field checking (types.ts spells out the measured reason).
  */
 export function customEvent<F extends Record<string, unknown> = Record<string, unknown>>(
   type: string,

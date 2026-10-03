@@ -100,10 +100,12 @@ interface SayEvent extends EventSkeleton {
 // …其余四型同律
 
 // 扩展臂：合成／宿主事件，**品牌化**、只出自 `customEvent(type, fields?)`——
-// 手写字面量掉不进任何臂、编译报错；自由 fields 开放承载（内容自由度）。
+// 手写字面量掉不进任何臂、编译报错；自由 fields 开放承载在**构造面**
+// （`fields` 参数宽形＋泛型透传，拼错不报＝有意代价），臂类型不带
+// index signature（带了会豁免整个联合的字段检查——实测侧门，见 ADR-0040）。
 ```
 
-**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3）。draft→已投递事件的收口构造只有一处：`stampEvent(draft, skeleton)`（pipeline 与 settler 两个盖章点都走它——开放 draft 展开进封闭联合编译不过，收口即受检边界）。
+**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3）。draft→已投递事件的收口构造只有一处：`stampEvent(draft, skeleton)`（pipeline 与 settler 两个盖章点都走它；src 侧扫描钉禁 `as GameEvent` 出现在 `events.ts` 之外）。**诚实范围**：联合封的是全部**类型化边界**（注解、期望、factory 参数）；发射口 `EventDraft` 按设计保持开放（发射面收编批、非编译强制），手拼 draft 仍可从发射口走——引擎 src 由扫描钉守，宿主自由构造是记账的代价。
 
 **语义码取值面**（`types.ts` 单一住所，#47）：`reason`／`accessType` 是**码**不是文案——引擎自产码进字面量（拒绝面 `accessDenied`／`vetoed`／`notVisible`／`sayVetoed`／`moveVetoed`，解析面 `emptyInput`／`unknownVerb`／`verbMismatch`／`unexpectedArg`／`missingTarget`／`badOrdinal`／`missingNoun`；accessType 面 `use`／`traverse`／`enter`／`look`），自定义码经 `customCode(text)` 取**品牌**进面（`"gateClosed"`／`"learn"` 是自定义码，裸字符串进不了码位）；`DispatchFailure.reason`／`CommandRejection.reason`／`ParseOutcome.reason`／`ctx.veto(reason)`／`commandRefused.reason` 同一面。文案照旧走内容 `err_*` 数据（errKey 机制不动）。
 

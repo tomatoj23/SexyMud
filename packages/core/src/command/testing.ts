@@ -352,6 +352,12 @@ function matchesSubset(expected: unknown, actual: unknown): boolean {
  * type twin of `matchesSubset` below; a shallow `Partial` would force tests
  * to pin nested digests in full, which is a different assertion than the one
  * the matcher runs.
+ *
+ * Two known departures from the matcher, both LOUD (they throw, never pass
+ * silently): arrays — the type allows any length, the matcher demands equal
+ * length element-wise; and an explicitly-`undefined` value key — the type
+ * allows it, the matcher's `undefined === undefined` semantics read it as
+ * "must be absent". The twin is the subset SPIRIT, not a proof.
  */
 export type EventSubset<T> = T extends string | number | boolean | null | undefined
   ? T

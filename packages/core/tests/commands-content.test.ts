@@ -209,8 +209,10 @@ describe("call() through content data (parse, merge and gates all real)", () => 
     ]);
 
     // Renderer role: the errKey locates the copy in the entry, which exists and is worded.
+    // Cross-arm read (spec/05): the extension arm's `type` is an open string,
+    // so `type ===` alone does not exclude it — the field check does.
     const event = out.messages[0]?.event;
-    const errKey = event?.type === "commandRefused" ? event.errKey : undefined;
+    const errKey = event !== undefined && "errKey" in event ? event.errKey : undefined;
     expect(typeof errKey).toBe("string");
     const copy = registry.command("cmd-rest")[errKey as `err_${string}`];
     expect(typeof copy).toBe("string");

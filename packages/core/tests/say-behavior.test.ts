@@ -432,7 +432,12 @@ describe("the say factory adapter over real content (ADR-0028 §2)", () => {
 
     const out = drive.sayInput("actor-1", "说 今夜风大，诸位早些歇息");
 
-    const event = out.messages[0]?.event as Record<string, unknown>;
+    // Field check narrows to the say arm (spec/05: the extension arm's
+    // `type` is an open string, so a field check is the honest narrowing).
+    const event = out.messages[0]?.event;
+    if (event === undefined || !("text" in event)) {
+      throw new Error("expected a say event carrying text");
+    }
     // The spoken text passes through untouched — wrapping it into 「…」 or
     // prefixing a stance sentence is the renderer's job per receiver.
     expect(event.text).toBe("今夜风大，诸位早些歇息");
@@ -450,7 +455,10 @@ describe("the say factory adapter over real content (ADR-0028 §2)", () => {
 
     expect(out.result.ok).toBe(true);
     expect(out.messages).toHaveLength(2);
-    const event = out.messages[0]?.event as Record<string, unknown>;
+    const event = out.messages[0]?.event;
+    if (event === undefined || !("text" in event)) {
+      throw new Error("expected a say event carrying text");
+    }
     expect(event.text).toBe("hello there");
   });
 

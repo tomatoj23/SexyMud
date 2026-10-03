@@ -159,7 +159,7 @@ export type CommandResult =
  * settlement event by the settler (seq/actorId) with its `tick` coming from
  * the due bucket's `dueTick` (ADR-0034 §3).
  */
-export interface EventSkeleton {
+export type EventSkeleton = {
   seq: number;
   /**
    * The tick this event is FOR (O1, spec/01 §5): the world time at which it
@@ -176,7 +176,7 @@ export interface EventSkeleton {
    */
   tick: number;
   actorId: string;
-}
+};
 
 /**
  * A `commandRefused` event: the semantic refusal. `reason` says WHICH
@@ -184,7 +184,7 @@ export interface EventSkeleton {
  * (`commandKey`'s `err_*` field named by `errKey`, spec/02 §5.4) and are
  * each optional — a pre-stage veto has only the reason to give.
  */
-export interface CommandRefusedEvent extends EventSkeleton {
+export type CommandRefusedEvent = EventSkeleton & {
   type: "commandRefused";
   reason: ReasonCode;
   /** The command entry whose copy words this refusal. */
@@ -195,50 +195,55 @@ export interface CommandRefusedEvent extends EventSkeleton {
   errKey?: string;
   /** The room whose gate denied, when a room gate was the refuser. */
   roomId?: string;
-  /** The refusing hook, when a movement/speech hook vetoed. */
+  /**
+   * The refusing hook, when a movement/speech hook vetoed. Closed over the
+   * hook families that actually emit refusals today; a new family (the
+   * get/give/drop transfer stages already exist in `world/transfer.ts`) joins
+   * by widening this union when its refusal events land.
+   */
   stage?: MoveVetoStage | SayVetoStage;
-}
+};
 
 /** A `say` event: the spoken text verbatim, addressed to a location. */
-export interface SayEvent extends EventSkeleton {
+export type SayEvent = EventSkeleton & {
   type: "say";
   speakerId: string;
   text: string;
   locationId: string;
-}
+};
 
 /**
  * An `appearance` event: one room's digest for one viewer — the look
  * outcome. Ids and lists only: the names and copy stay in content data
  * (spec/01 §5.1), reached by id exactly like `err_*` text.
  */
-export interface AppearanceEvent extends EventSkeleton {
+export type AppearanceEvent = EventSkeleton & {
   type: "appearance";
   roomId: string;
   exits: readonly ExitDigest[];
   staticPresence: readonly StaticPresence[];
   occupants: readonly string[];
-}
+};
 
 /** The move semantics both movement announcements carry. */
-interface MoveAnnouncement extends EventSkeleton {
+type MoveAnnouncement = EventSkeleton & {
   entityId: string;
   fromLocationId: string;
   toLocationId: string;
   moveType: MoveType;
   /** The exit traversed, when the move is a traversal; null/absent otherwise. */
   viaExitId?: string | null;
-}
+};
 
 /** A `departed` event: one movement announcement, the leaving half. */
-export interface DepartedEvent extends MoveAnnouncement {
+export type DepartedEvent = MoveAnnouncement & {
   type: "departed";
-}
+};
 
 /** An `arrived` event: one movement announcement, the entering half. */
-export interface ArrivedEvent extends MoveAnnouncement {
+export type ArrivedEvent = MoveAnnouncement & {
   type: "arrived";
-}
+};
 
 /**
  * The engine's event vocabulary — CLOSED, discriminated by `type`
@@ -259,25 +264,47 @@ declare const customEventBrand: unique symbol;
 /**
  * The extension arm: a synthetic or host event under the caller's own type.
  * BRANDED (type-only, no runtime property): only `customEvent()` hands these
- * out, so a hand-written literal drops into NO arm and fails to compile —
- * a misspelled engine field cannot hide in here. Free fields stay OPEN
- * (`[key: string]: unknown` — content freedom): a typo'd free field is not
- * caught, which is the deliberate price of that openness.
+ * out, so a hand-written literal drops into NO arm and fails to compile — a
+ * misspelled engine field cannot hide in here either.
+ *
+ * ⚠️ Deliberately NO index signature. The open carrying of free fields lives
+ * at CONSTRUCTION (`customEvent`'s `fields` parameter — a typo'd free field
+ * is not reported there, the documented price of content freedom). An index
+ * signature here would waive the union's fresh-literal excess check for the
+ * WHOLE of `GameEvent`: a complete engine-arm literal plus one typo'd field
+ * would then slip into the engine arm silently — the exact misspelling hole
+ * this union exists to close (measured, not conjectured).
  */
-export interface CustomEventDraft {
+export type CustomEventDraft = {
   readonly [customEventBrand]: "customEvent";
   type: string;
-  [key: string]: unknown;
-}
+};
 
-/** A delivered custom event: the extension arm plus the stamped skeleton. */
-export interface CustomEvent extends CustomEventDraft, EventSkeleton {}
+/**
+ * A delivered custom event: the extension arm plus the stamped skeleton.
+ *
+ * Everything here is a TYPE ALIAS on purpose, and the fact is measured: an
+ * intersection of object-literal aliases carries an IMPLICIT index signature
+ * (so `GameEvent` still flows into the open `EventDraft` emit port), while an
+ * interface — or an intersection with one — does not; and an implicit index
+ * never waives the union's field checking the way an EXPLICIT
+ * `[key: string]: unknown` does. Both halves are pinned in events.test.ts.
+ */
+export type CustomEvent = CustomEventDraft & EventSkeleton;
 
 /**
  * A single engine occurrence — the CLOSED union (spec/01 §5): either one of
  * the engine's five, or the branded extension arm. There is no index
  * signature to fall back on, so no event shape escapes the two construction
  * paths (events.ts).
+ *
+ * Closed on every TYPED boundary — annotations, expectations and the
+ * factories' parameters all reject a hand-written or misspelled literal. The
+ * emit PORT (`EventDraft`) stays open by design (spec/01 §5: the emission
+ * batch is normalized, not compile-enforced), so a hand-built draft can still
+ * ride it; engine src is scan-pinned, and a host's free construction is the
+ * documented cost — `stampEvent` in events.ts is the single place a draft is
+ * claimed to be its arm.
  *
  * Pure semantics — NEVER rendered text. Rendering happens outside the engine
  * boundary, per receiver, so that a Chinese reader sees the second-person

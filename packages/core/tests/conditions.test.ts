@@ -400,7 +400,10 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
 
     // The renderer's path, demonstrated: read the field the event names from
     // the entry data. The copy exists ONLY there — the engine holds no text.
-    const refusal = out.messages[0]!.event as Record<string, unknown>;
+    const refusal = out.messages[0]!.event;
+    if (!("errKey" in refusal)) {
+      throw new Error("expected a refusal event carrying errKey");
+    }
     expect(restEntry[refusal.errKey as keyof typeof restEntry]).toBe("你伤势未愈，此刻无法安歇。");
   });
 

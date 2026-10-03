@@ -11,7 +11,7 @@
 ## Decision
 
 1. **`GameEvent = EngineEvent | CustomEvent` 封闭判别联合**（`types.ts`）：引擎五型按 `type` 分型声明语义字段必/可选（pre-veto `commandRefused` 只有 `type`+`reason`，`commandKey` 可选）；顶层 index signature 删除。新引擎事件＝联合加一员＋factory 加一个（`events.ts`）。
-2. **扩展臂品牌化、自由 fields 开放承载**：`customEvent(type, fields?)` 是唯一发品牌处——**类型级 phantom 品牌**（`declare const unique symbol`，零运行时改动，守「行为零变化」红线），手写字面量不结构等价、掉不进任何臂。**有意代价明码标价**：自定义自由 fields 拼错**不报**（开放承载＝内容自由度），编译期钉只钉引擎臂字段与骨架，勿给自由 fields 上钉。
+2. **扩展臂品牌化、自由 fields 开放承载在构造面**：`customEvent(type, fields?)` 是唯一发品牌处——**类型级 phantom 品牌**（`declare const unique symbol`，零运行时改动，守「行为零变化」红线），手写字面量不结构等价、掉不进任何臂。**有意代价明码标价**：自定义自由 fields 拼错**不报**（开放承载＝内容自由度——`fields` 参数宽形＋泛型透传），编译期钉只钉引擎臂字段与骨架，勿给自由 fields 上钉。⚠️ **臂类型不带 index signature**（复查轮实测修正）：带 index 的联合成员会**豁免整个联合**的新鲜字面量 excess 检查——全必填引擎臂字面量＋一个拼错字段曾从侧门溜进 `say` 臂（H4 陷阱换门还魂）；开放承载因此只活在构造面，臂型全用 type alias 承载（**实测**：对象字面量 alias 的交集有隐式 index signature、仍入开放 `EventDraft` 发射口，interface 交集没有；隐式 index 不豁免联合的字段检查，显式 index 一个不留）。
 3. **语义码取值面单一住所**（`types.ts`）：`reason`（拒绝面 `accessDenied`/`vetoed`/`notVisible`/`sayVetoed`/`moveVetoed`＋解析面 `emptyInput`/`unknownVerb`/`verbMismatch`/`unexpectedArg`/`missingTarget`/`badOrdinal`/`missingNoun`）与 `accessType` 面（`use`/`traverse`/`enter`/`look`）＝引擎字面量＋`customCode(text)` 品牌化自定义码；`DispatchFailure.reason`／`CommandRejection.reason`／`ParseOutcome.reason`／`ctx.veto(reason)`／`commandRefused.reason` 同一面（「reason 单一住所」覆盖 rejected/invalid 双面）。`DEFAULT_VETO_REASON`（`"vetoed"`）机制与 errKey 机制不动。
 4. **factory 参数换臂字段型**（#41 形状不变，仅收窄入参）：拼错引擎臂字段、夹带 `type`／骨架键＝新鲜字面量 excess property check 当场红；factory 仍**只统一 `type`**，骨架归盖章点。
 5. **盖章点收成受检构造 `stampEvent(draft, skeleton)`**：pipeline emit 与 settler 两个 `{...draft, …}` 展开进封闭联合编译不过，收成 `events.ts` 一处收口（发射时机与字段值零变化；骨架永远盖过 draft 同名键）。第三个 spread 点 `time/due.ts:138` 是 `DueEvent`→`SettleDraft` 的 tick 重盖（draft→draft），封 `GameEvent` 不破它，`EventDraft` 不收形，不入改写清单。
@@ -34,6 +34,6 @@
 
 - 拼错引擎臂字段／夹带 `type`／骨架键／裸字符串码／手写字面量事件：**编译期红**；`tests/events.test.ts` 的 `@ts-expect-error` 钉住这些面，钉失效（面放宽）＝typecheck 自身红。
 - 自定义事件的自由 fields 拼错**不报**——开放承载的明码代价；「engine src 一律经 factory」由扫描钉兜底（对象字面量 `type: "…"` 盖章在 `core/src` 除 `events.ts` 零命中，任何 type 字符串）。
-- 品牌是类型级 phantom，事件**运行时形状零变化**；不变量是**无品牌的开放 `EventDraft` 展开不进封闭联合**（编译不过）——`stampEvent` 因此是 draft→已投递事件的唯一收口（臂归属/品牌声明点）。带品牌的 `CustomEventDraft` 自身展开保品牌，属扩展臂内部构造（测试夹具亦改走 `stampEvent`，与引擎同一条交付构造）。
+- 品牌是类型级 phantom，事件**运行时形状零变化**；不变量是**无品牌的开放 `EventDraft` 展开不进封闭联合**（编译不过）——`stampEvent` 因此是 draft→已投递事件的唯一**类型声明**点（臂归属/品牌声明；src 侧 `as GameEvent` 扫描钉守其独占）。**诚实范围**（复查轮改准）：联合封的是全部类型化边界（注解、期望、factory 参数），发射口 `EventDraft` 按 AC5「非编译强制」保持开放——手拼 draft 仍可从发射口走，引擎 src 由「构造一处」扫描钉守、宿主自由构造是记账代价。带品牌的 `CustomEventDraft` 自身展开保品牌（TS 对象展开保留 phantom 品牌，实测），属扩展臂内部构造。
 - 渲染层（spec/05）按 `type` 判别收窄读臂字段，扩展臂自由 fields 当 `unknown` 读；`GameEvent` 公共面字段名与语义不变。
 - 测试网 910 → 915 用例（core 34/682→34/687、web 12/228 不变；新增＝`stampEvent` 2、自由 fields 有意代价 1、编译期钉 2）。
