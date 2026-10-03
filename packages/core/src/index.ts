@@ -166,9 +166,9 @@ export { assembleWorld, collectMeta } from "./state/assembly.js";
 export type { AssembledWorld, AssembleWorldOptions, WorldBundle } from "./state/assembly.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
-  CallOptions,
   CallOutcome,
   CommandHarness,
+  CommandInput,
   ExpectedMessage,
   HarnessOptions,
   TestClock,

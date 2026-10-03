@@ -151,7 +151,18 @@ function makeSession(
   for (const [actorId, roomId] of Object.entries(placement)) {
     runtime.addEntity(createEntity(actorId), roomId);
   }
-  let seq = 0;
+  // ONE harness per session (issue #36): the actor's room decides the
+  // sources, so they reach the harness through the per-dispatch resolver and
+  // are re-merged every call — while the seq counter runs session-wide.
+  const harness = createCommandHarness<WorldRuntime>({
+    world: { live: runtime },
+    receivers: RECEIVERS,
+    verbs: ({ actorId }) => {
+      const room = registry.room(runtime.locationOf(actorId));
+      return [...commandSetSources(registry.commands), ...commandSetSources(room.exits)];
+    },
+    access: { subjectOf: (world, id) => world.subjectOf(id) },
+  });
 
   const dispatch = (actorId: string, input: string): DispatchOutcome => {
     const room = registry.room(runtime.locationOf(actorId));
@@ -187,15 +198,7 @@ function makeSession(
           `"${input}" (${outcome.reason})`,
       );
     }
-    seq += 1;
-    const harness = createCommandHarness<WorldRuntime>({
-      world: runtime,
-      liveWorld: true,
-      receivers: RECEIVERS,
-      cmdsets: sources,
-      subjectOf: (world, id) => world.subjectOf(id),
-    });
-    return harness.call(outcome.spec, input, { actorId, seq });
+    return harness.call(outcome.spec, { raw: input, actorId });
   };
 
   return { registry, runtime, dispatch };

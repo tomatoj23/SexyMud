@@ -390,11 +390,11 @@ describe("cmdset merge product as the parser's verb table source (issue #4)", ()
     return createCommandHarness<TestWorld>({
       world: { room: "dark-cellar" },
       receivers: ["actor-1"],
-      cmdsets: [characterSource, darkRoomSource, exitsSource],
+      verbs: [characterSource, darkRoomSource, exitsSource],
     });
   }
 
-  it("drives the parse stage end to end through the harness cmdsets option", () => {
+  it("drives the parse stage end to end through the harness verbs option", () => {
     const harness = darkRoomHarness();
 
     // 看 dispatches the dark room's replacement look.
@@ -421,20 +421,14 @@ describe("cmdset merge product as the parser's verb table source (issue #4)", ()
     const harness = createCommandHarness<TestWorld>({
       world: { room: "courtyard" },
       receivers: ["actor-1"],
-      cmdsets: [characterSource, exitsSource],
+      verbs: [characterSource, exitsSource],
     });
     const outcome = harness.call(attackSpec, "打 张三");
     expect(outcome.result).toMatchObject({ ok: true });
   });
 
-  it("rejects harness options that pass both verbs and cmdsets", () => {
-    expect(() =>
-      createCommandHarness<TestWorld>({
-        world: { room: "x" },
-        receivers: [],
-        verbs: [{ verb: "打", commandKey: "cmd-attack" }],
-        cmdsets: [characterSource],
-      }),
-    ).toThrow(/verbs.*cmdsets|cmdsets.*verbs/);
-  });
+  // Issue #36: the old "verbs XOR cmdsets" runtime throw is superseded — the
+  // two fields are one (`verbs`), so two disagreeing verb-table sources cannot
+  // be passed at all. The type-level guarantee is pinned at compile time in
+  // command-harness.test.ts ("every way back to an options channel").
 });

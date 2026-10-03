@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import { parseCommand, runCommand } from "../src/command/pipeline.js";
-import { createCommandHarness } from "../src/command/testing.js";
+import { createCommandHarness, createTestClock } from "../src/command/testing.js";
 import { createSeededRng } from "../src/rng.js";
 import { createTickClock, observeDispatch } from "../src/clock.js";
 
@@ -162,17 +162,17 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
     const harness = createCommandHarness<TestWorld>({
       world: { rooms: {} },
       receivers: ["actor-1"],
-      nowTick: 0,
+      session: { clock: createTestClock(0) },
     });
 
     for (let i = 0; i < 5; i += 1) {
-      const out = harness.call(broken, "乱码", { tick: 1000 });
+      const out = harness.call(broken, { raw: "乱码", tick: 1000 });
       expect(out.result).toMatchObject({ ok: false, kind: "invalid" });
     }
     // 5000 ticks of malformed input advanced the world by nothing.
     expect(harness.clock.nowTick()).toBe(0);
 
-    harness.call(fine, "go", { tick: 3 });
+    harness.call(fine, { raw: "go", tick: 3 });
     expect(harness.clock.nowTick()).toBe(3);
   });
 
@@ -185,11 +185,11 @@ describe("only commands that run advance the world (spec/04 §4.1)", () => {
     const harness = createCommandHarness<TestWorld>({
       world: { rooms: {} },
       receivers: ["actor-1"],
-      nowTick: 0,
+      session: { clock: createTestClock(0) },
     });
 
     // Rejected before the parse stage, yet it happened: the world moves.
-    const out = harness.call(vetoed, "go", { tick: 40 });
+    const out = harness.call(vetoed, { raw: "go", tick: 40 });
 
     expect(out.result).toMatchObject({ ok: false, kind: "rejected" });
     expect(harness.clock.nowTick()).toBe(40);
@@ -209,11 +209,11 @@ describe("seq and tick are independent (spec/04 §6 O2)", () => {
     const harness = createCommandHarness<TestWorld>({
       world: { rooms: {} },
       receivers: ["actor-1"],
-      nowTick: 0,
+      session: { clock: createTestClock(0) },
     });
 
-    const first = harness.call(spec, "one", { seq: 1, tick: 50 });
-    const second = harness.call(spec, "two", { seq: 2, tick: 10 });
+    const first = harness.call(spec, { raw: "one", tick: 50 });
+    const second = harness.call(spec, { raw: "two", tick: 10 });
 
     // The engine neither reorders nor rejects: the caller's seq decides
     // delivery order, each command's tick decides world time.

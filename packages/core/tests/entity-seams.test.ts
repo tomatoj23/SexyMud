@@ -721,16 +721,15 @@ describe("the dynamic cmdset seam (spec/03 §7.9)", () => {
     // The host's per-dispatch assembly: sources are re-asked EVERY dispatch
     // (the engine keeps no cache — Evennia's merge cache is a documented
     // pitfall, spec/08), so state changes surface on the very next input.
-    const dispatch = (input: string) => {
-      const sources = assembleSources(runtime, "actor-1", BASE_SOURCES);
-      const harness = createCommandHarness<WorldRuntime>({
-        world: runtime,
-        liveWorld: true,
-        receivers: ["actor-1"],
-        cmdsets: sources,
-      });
-      return harness.call(spec, input, { actorId: "actor-1" });
-    };
+    // ONE harness (issue #36): the sources reach it through the per-dispatch
+    // resolver, so the re-ask every dispatch is structural.
+    const harness = createCommandHarness<WorldRuntime>({
+      world: { live: runtime },
+      receivers: ["actor-1"],
+      verbs: ({ actorId }) => assembleSources(runtime, actorId, BASE_SOURCES),
+    });
+    const dispatch = (input: string) =>
+      harness.call(spec, { raw: input, actorId: "actor-1" });
 
     // Before the state change the verb dispatches.
     expect(dispatch("say hello").result.ok).toBe(true);

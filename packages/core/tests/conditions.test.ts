@@ -14,6 +14,7 @@ import type {
   PredicateFn,
 } from "../src/conditions.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
+import { createVerbTable } from "../src/command/parser.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 
 /**
@@ -357,8 +358,8 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
     return createCommandHarness<ActorWorld>({
       world: { actors: { "actor-1": actor } },
       receivers: ["actor-1"],
-      verbs: restEntry.verbs.map((verb) => ({ verb, commandKey: restEntry.key })),
-      subjectOf: (world, actorId) => subjectOf(world.actors[actorId]!),
+      verbs: createVerbTable(restEntry.verbs.map((verb) => ({ verb, commandKey: restEntry.key }))),
+      access: { subjectOf: (world, actorId) => subjectOf(world.actors[actorId]!) },
     });
   }
 
@@ -428,7 +429,7 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
     const harness = createCommandHarness<ActorWorld>({
       world: { actors: {} },
       receivers: ["actor-1"],
-      verbs: restEntry.verbs.map((verb) => ({ verb, commandKey: restEntry.key })),
+      verbs: createVerbTable(restEntry.verbs.map((verb) => ({ verb, commandKey: restEntry.key }))),
     });
     expect(() => harness.call(specFromEntry(restEntry), "歇息")).toThrow(
       /declares an access gate but no subject provider/,
@@ -446,9 +447,11 @@ describe("pipeline integration: access-gated commands through the M1-T1 harness"
     const options = (actor: ActorFixture) => ({
       world: { actors: { "actor-1": actor } } as ActorWorld,
       receivers: ["actor-1"],
-      verbs: [{ verb: "delve", commandKey: "cmd-delve" }],
-      subjectOf: (world: ActorWorld, actorId: string) => subjectOf(world.actors[actorId]!),
-      predicates: createPredicateRegistry([...defaultPredicateEntries, ["wears", wears]]),
+      verbs: createVerbTable([{ verb: "delve", commandKey: "cmd-delve" }]),
+      access: {
+        subjectOf: (world: ActorWorld, actorId: string) => subjectOf(world.actors[actorId]!),
+        predicates: createPredicateRegistry([...defaultPredicateEntries, ["wears", wears]]),
+      },
     });
 
     const shoddy = createCommandHarness<ActorWorld>(options({ ...ACTOR, tags: {} }));

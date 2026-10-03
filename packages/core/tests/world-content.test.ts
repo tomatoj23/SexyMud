@@ -78,8 +78,8 @@ function roomHarness(world: TracerWorld, roomId: string) {
     harness: createCommandHarness<TracerWorld>({
       world,
       receivers: ["actor-1"],
-      cmdsets: roomSources(registry, roomId),
-      subjectOf,
+      verbs: roomSources(registry, roomId),
+      access: { subjectOf },
     }),
   };
 }

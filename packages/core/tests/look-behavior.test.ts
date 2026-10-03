@@ -74,20 +74,21 @@ interface DriveOutcome {
  * as a real host's would be.
  */
 function makeDriver(registry: ContentRegistry, runtime: WorldRuntime) {
-  let seq = 0;
-  const call = (actorId: string, input: string, spec: CommandSpec<WorldRuntime>): DriveOutcome => {
-    const roomId = runtime.locationOf(actorId);
-    const room = registry.room(roomId);
-    seq += 1;
-    const harness = createCommandHarness<WorldRuntime>({
-      world: runtime,
-      liveWorld: true,
-      receivers: RECEIVERS,
-      cmdsets: [...commandSetSources(registry.commands), ...commandSetSources(room.exits)],
-      subjectOf: (world, id) => world.subjectOf(id),
-    });
-    return harness.call(spec, input, { actorId, seq });
-  };
+  // ONE harness per session (issue #36): the actor's room decides the
+  // sources, so they reach the harness through the per-dispatch resolver and
+  // are re-merged every call — while the seq counter and the rng stream run
+  // session-wide instead of restarting per command.
+  const harness = createCommandHarness<WorldRuntime>({
+    world: { live: runtime },
+    receivers: RECEIVERS,
+    verbs: ({ actorId }) => [
+      ...commandSetSources(registry.commands),
+      ...commandSetSources(registry.room(runtime.locationOf(actorId)).exits),
+    ],
+    access: { subjectOf: (world, id) => world.subjectOf(id) },
+  });
+  const call = (actorId: string, input: string, spec: CommandSpec<WorldRuntime>): DriveOutcome =>
+    harness.call(spec, { raw: input, actorId });
   const walk = (actorId: string, input: string): DriveOutcome => {
     const room = registry.room(runtime.locationOf(actorId));
     // The walk path's source recipe is the room's exits (recipes stay with

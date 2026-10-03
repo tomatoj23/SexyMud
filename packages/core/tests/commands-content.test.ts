@@ -56,8 +56,8 @@ function tracerHarness(world: TracerWorld) {
     harness: createCommandHarness<TracerWorld>({
       world,
       receivers: ["actor-1"],
-      cmdsets: commandSetSources(registry.commands),
-      subjectOf,
+      verbs: commandSetSources(registry.commands),
+      access: { subjectOf },
     }),
   };
 }

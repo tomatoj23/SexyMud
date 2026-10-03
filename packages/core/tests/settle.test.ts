@@ -3,7 +3,7 @@ import { createTickClock } from "../src/clock.js";
 import type { TickClock } from "../src/clock.js";
 import type { CommandSpec } from "../src/command/pipeline.js";
 import type { Message } from "../src/command/pipeline.js";
-import { createCommandHarness } from "../src/command/testing.js";
+import { createCommandHarness, createTestClock } from "../src/command/testing.js";
 import type { CommandHarness } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import type { RoomEntry } from "../src/world/entry.js";
@@ -91,17 +91,20 @@ function rig(options: {
     entitySpans.push({ entityId, fromTick: span.fromTick, toTick: span.toTick });
     options.entity?.(entityId, span, emit);
   };
-  let settler: Settler | undefined;
+  // Clock first, settler from it, hook as a plain function (issue #36): the
+  // construction order needs no delayed assignment around the harness.
+  const clock = createTestClock(options.nowTick ?? 0);
+  const settler = createSettler({ state, clock, world, entity });
   const harness = createCommandHarness<WorldState>({
-    world: state,
-    receivers: RECEIVERS,
     // Live: the tree is the world's truth, and a state tree must not be
     // deep-copied away from its settler between calls.
-    liveWorld: true,
-    nowTick: options.nowTick ?? 0,
-    settle: (request: SettleRequest): Message[] => settler!.settleTo(request),
+    world: { live: state },
+    receivers: RECEIVERS,
+    session: {
+      clock,
+      settle: (request: SettleRequest): Message[] => settler.settleTo(request),
+    },
   });
-  settler = createSettler({ state, clock: harness.clock, world, entity });
   return { harness, settler, state, worldSpans, entitySpans };
 }
 
@@ -143,7 +146,7 @@ describe("the two-layer advance (spec/04 §4.3, ADR-0034 §1–§2)", () => {
   it("settles the world to the high-water mark and only the actor's entity layer", () => {
     const { harness, state, worldSpans, entitySpans } = rig();
 
-    harness.call(fine, "go", { seq: 1, actorId: "jia", tick: 1000 });
+    harness.call(fine, { raw: "go", actorId: "jia", tick: 1000 });
 
     // World layer: one span, [last settle point, now) — not one per tick.
     expect(worldSpans).toEqual([{ fromTick: 0, toTick: 1000 }]);
@@ -157,8 +160,8 @@ describe("the two-layer advance (spec/04 §4.3, ADR-0034 §1–§2)", () => {
   it("gives each player their own span: 甲 back from 0, 乙 back from 100, both at 1000", () => {
     const { harness, state, worldSpans, entitySpans } = rig();
 
-    harness.call(fine, "go", { seq: 1, actorId: "jia", tick: 1000 });
-    harness.call(fine, "go", { seq: 2, actorId: "yi", tick: 1000 });
+    harness.call(fine, { raw: "go", actorId: "jia", tick: 1000 });
+    harness.call(fine, { raw: "go", actorId: "yi", tick: 1000 });
 
     expect(worldSpans).toEqual([{ fromTick: 0, toTick: 1000 }]);
     expect(entitySpans).toEqual([
@@ -174,7 +177,7 @@ describe("the two-layer advance (spec/04 §4.3, ADR-0034 §1–§2)", () => {
   it("does not re-run the world layer when the mark is already there", () => {
     const { harness, worldSpans, entitySpans } = rig({ nowTick: 1000 });
 
-    harness.call(fine, "go", { seq: 1, actorId: "jia", tick: 1000 });
+    harness.call(fine, { raw: "go", actorId: "jia", tick: 1000 });
 
     // The world is already settled to 1000; only 甲's entity layer is behind.
     expect(worldSpans).toEqual([]);
@@ -205,7 +208,7 @@ describe("the advance and the dispatch contract (spec/04 §4.1)", () => {
     // neither does any entity's lastSeenTick (otherwise spamming garbage
     // would be a fast-forward button).
     for (let i = 0; i < 5; i += 1) {
-      const out = harness.call(broken, "乱码", { seq: 100 + i, actorId: "jia", tick: 1000 });
+      const out = harness.call(broken, { raw: "乱码", actorId: "jia", tick: 1000 });
       expect(out.result).toMatchObject({ ok: false, kind: "invalid" });
       // Pre-flight failure exits with an EMPTY message list — settled is empty
       // (no advance ever ran) and the sink buffer is empty (no dispatch ran).
@@ -217,12 +220,12 @@ describe("the advance and the dispatch contract (spec/04 §4.1)", () => {
     expect(state.entities["jia"]!.lastSeenTick).toBe(0);
 
     // Rejected before the parse stage, yet it happened: the world moves.
-    harness.call(vetoed, "go", { seq: 1, actorId: "jia", tick: 40 });
+    harness.call(vetoed, { raw: "go", actorId: "jia", tick: 40 });
     expect(worldSpans).toEqual([{ fromTick: 0, toTick: 40 }]);
     expect(harness.clock.nowTick()).toBe(40);
 
     // And so does a command that ran.
-    harness.call(fine, "go", { seq: 2, actorId: "jia", tick: 60 });
+    harness.call(fine, { raw: "go", actorId: "jia", tick: 60 });
     expect(worldSpans).toEqual([
       { fromTick: 0, toTick: 40 },
       { fromTick: 40, toTick: 60 },
@@ -285,7 +288,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
         emit(_entityId, { type: "caughtUp", tick: span.fromTick + 1 }),
     });
 
-    const out = harness.call(fine, "go", { seq: 9, actorId: "jia", tick: 1000 });
+    const out = harness.call(fine, { raw: "go", actorId: "jia", tick: 1000 });
     if (!out.result.ok) {
       throw new Error("expected an ok result");
     }
@@ -297,7 +300,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       "caughtUp",
       "ran",
     ]);
-    expect(out.result.events.every((event) => event.seq === 9)).toBe(true);
+    expect(out.result.events.every((event) => event.seq === out.result.seq)).toBe(true);
   });
 
   it("timestamps an event with the tick it was DUE, never the tick it was caught up on", () => {
@@ -312,7 +315,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       },
     });
 
-    const out = harness.call(fine, "go", { seq: 3, actorId: "jia", tick: 1000 });
+    const out = harness.call(fine, { raw: "go", actorId: "jia", tick: 1000 });
     if (!out.result.ok) {
       throw new Error("expected an ok result");
     }
@@ -339,7 +342,7 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       world: (span, emit) => emit("broadcast", { type: "worldSettled", tick: span.toTick }),
     });
 
-    const out = harness.call(vetoed, "go", { seq: 4, actorId: "jia", tick: 40 });
+    const out = harness.call(vetoed, { raw: "go", actorId: "jia", tick: 40 });
 
     expect(out.result).toMatchObject({ ok: false, kind: "rejected" });
     // `rejected` results carry no event list at all (spec/01 §2.2), so the
@@ -349,8 +352,8 @@ describe("settlement events (ADR-0034 §3–§4)", () => {
       // A settlement riding a command is stamped with that command's actor,
       // exactly like the pipeline stamps its own events; only a heartbeat,
       // which has no actor, leaves the field empty.
-      { to: "broadcast", event: { seq: 4, tick: 40, type: "worldSettled", actorId: "jia" } },
-      { to: "jia", event: { seq: 4, tick: 40, type: "commandRefused", actorId: "jia", reason: "gateClosed" } },
+      { to: "broadcast", event: { seq: out.result.seq, tick: 40, type: "worldSettled", actorId: "jia" } },
+      { to: "jia", event: { seq: out.result.seq, tick: 40, type: "commandRefused", actorId: "jia", reason: "gateClosed" } },
     ]);
   });
 });
@@ -493,7 +496,7 @@ describe("O1: every GameEvent carries a tick (spec/01 §5)", () => {
   it("stamps a command's event with the now that command saw", () => {
     const { harness } = rig({ nowTick: 0 });
 
-    const out = harness.call(fine, "go", { seq: 1, actorId: "jia", tick: 40 });
+    const out = harness.call(fine, { raw: "go", actorId: "jia", tick: 40 });
     if (!out.result.ok) {
       throw new Error("expected an ok result");
     }
@@ -504,8 +507,8 @@ describe("O1: every GameEvent carries a tick (spec/01 §5)", () => {
   it("stamps the HIGH-WATER reading, so a backwards tick cannot date an event into the past", () => {
     const { harness } = rig({ nowTick: 0 });
 
-    harness.call(fine, "go", { seq: 1, actorId: "jia", tick: 100 });
-    const out = harness.call(fine, "go", { seq: 2, actorId: "jia", tick: 50 });
+    harness.call(fine, { raw: "go", actorId: "jia", tick: 100 });
+    const out = harness.call(fine, { raw: "go", actorId: "jia", tick: 50 });
     if (!out.result.ok) {
       throw new Error("expected an ok result");
     }

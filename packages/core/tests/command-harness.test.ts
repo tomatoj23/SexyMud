@@ -5,6 +5,7 @@ import {
   createTestClock,
   expectMessageSequence,
 } from "../src/command/testing.js";
+import { createSeededRng } from "../src/rng.js";
 import { createPredicateRegistry, defaultPredicateRegistry } from "../src/conditions.js";
 
 /**
@@ -205,7 +206,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     const harness = createCommandHarness<TestWorld>({
       world: { rooms: {} },
       receivers: ["actor-1"],
-      nowTick: 100,
+      session: { clock: createTestClock(100) },
     });
     harness.call(spec, "tickProbe");
     harness.clock.advance(7);
@@ -224,7 +225,11 @@ describe("command test harness (ADR-0023 §1)", () => {
           rolls.push(ctx.rng.next());
         },
       };
-      const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], seed: 42 });
+      const harness = createCommandHarness<TestWorld>({
+        world: { rooms: {} },
+        receivers: [],
+        session: { rng: createSeededRng(42) },
+      });
       harness.call(spec, "roll");
       harness.call(spec, "roll");
       return rolls;
@@ -272,7 +277,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     };
 
     const harness = createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [] });
-    harness.call(spec, "confirm", { inputs: ["yes", "2"] });
+    harness.call(spec, { raw: "confirm", inputs: ["yes", "2"] });
 
     expect(consumed).toEqual(["yes", "2", "<none>"]);
   });
@@ -326,15 +331,16 @@ describe("command test harness (ADR-0023 §1)", () => {
 
     createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [] }).call(spec, "probe");
     const custom = createPredicateRegistry([["always", () => true]]);
-    createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], predicates: custom }).call(
-      spec,
-      "probe",
-    );
+    createCommandHarness<TestWorld>({
+      world: { rooms: {} },
+      receivers: [],
+      access: { predicates: custom },
+    }).call(spec, "probe");
 
     expect(seen).toEqual(["default", "custom"]);
   });
 
-  it("liveWorld mode shares the world across calls: mutations persist (how a host drives a runtime)", () => {
+  it("live-world mode shares the world across calls: mutations persist (how a host drives a runtime)", () => {
     const spec: CommandSpec<TestWorld> = {
       key: "mutate",
       func: (ctx) => {
@@ -343,7 +349,7 @@ describe("command test harness (ADR-0023 §1)", () => {
     };
     const world: TestWorld = { rooms: {} };
 
-    const harness = createCommandHarness<TestWorld>({ world, receivers: [], liveWorld: true });
+    const harness = createCommandHarness<TestWorld>({ world: { live: world }, receivers: [] });
     harness.call(spec, "mutate");
     harness.call(spec, "mutate");
 
@@ -391,5 +397,125 @@ describe("createTestClock: the tick the next call carries (ADR-0031)", () => {
     clock.advance(5);
     expect(clock.nextTick()).toBe(155);
     expect(clock.nowTick()).toBe(150); // still: advance never observes
+  });
+});
+
+/**
+ * One assembly per session (issue #36): a session host re-merges its verb
+ * sources per input — they change with location — so the harness takes them
+ * through a per-dispatch resolver and re-merges the table EVERY dispatch,
+ * never caching it. The rng stream and the local seq counter live on the
+ * harness, so a source change must not restart either.
+ */
+describe("one assembly across per-dispatch verb sources (issue #36)", () => {
+  it("keeps the seq counter and the rng stream when the sources change between calls", () => {
+    let dispatch = 0;
+    const rolls: number[] = [];
+    const spec: CommandSpec<TestWorld> = {
+      key: "probe",
+      argForm: "none",
+      func: (ctx) => {
+        rolls.push(ctx.rng.next());
+      },
+    };
+    // The session pattern: ONE harness, sources re-resolved per dispatch.
+    const session = () => {
+      dispatch = 0;
+      rolls.length = 0;
+      return createCommandHarness<TestWorld>({
+        world: { rooms: {} },
+        receivers: [],
+        session: { rng: createSeededRng(42) },
+        verbs: () => {
+          dispatch += 1;
+          return [{ priority: 1, commands: [{ key: "probe", verbs: [`动${dispatch}`] }] }];
+        },
+      });
+    };
+
+    const harness = session();
+    const seqs = [
+      harness.call(spec, "动1").result.seq,
+      harness.call(spec, "动2").result.seq,
+      harness.call(spec, "动3").result.seq,
+    ];
+    // The counter is the harness's, session-wide: no rebuild between inputs,
+    // no reset (the old rebuild-per-command pattern restarted at 1 every call).
+    expect(seqs).toEqual([1, 2, 3]);
+    // One stream per harness: each call continues the previous roll instead
+    // of restarting the seeded stream at its first value.
+    expect(new Set(rolls).size).toBe(3);
+    const firstRolls = [...rolls];
+
+    // Same seed, same session: the whole sequence replays.
+    const second = session();
+    const replay = [
+      second.call(spec, "动1").result.seq,
+      second.call(spec, "动2").result.seq,
+      second.call(spec, "动3").result.seq,
+    ];
+    expect(replay).toEqual([1, 2, 3]);
+    expect(rolls).toEqual(firstRolls);
+  });
+
+  it("re-merges the verb table on every dispatch and never caches it", () => {
+    let dispatch = 0;
+    const spec: CommandSpec<TestWorld> = {
+      key: "probe",
+      argForm: "none",
+      func: (ctx) => {
+        ctx.emit(ctx.command.actorId, { type: "probed" });
+      },
+    };
+    const harness = createCommandHarness<TestWorld>({
+      world: { rooms: {} },
+      receivers: ["actor-1"],
+      verbs: () => {
+        dispatch += 1;
+        return [{ priority: 1, commands: [{ key: "probe", verbs: [`动${dispatch}`] }] }];
+      },
+    });
+
+    // Each dispatch sees a FRESH merge of the sources it resolved to.
+    expect(harness.call(spec, "动1").result.ok).toBe(true);
+    expect(harness.call(spec, "动2").result.ok).toBe(true);
+    // 动1 was verb 1's — a cached table would still answer it. The fresh
+    // merge has moved on, so the stale verb is unknown input.
+    const stale = harness.call(spec, "动1");
+    expect(stale.result).toMatchObject({ ok: false, kind: "invalid", reason: "unknownVerb" });
+    // The resolver ran once per dispatch — nothing was cached.
+    expect(dispatch).toBe(3);
+  });
+
+  it("carries input only: every way back to an options channel is a compile error", () => {
+    const harness = createCommandHarness<TestWorld>({
+      world: { rooms: {} },
+      receivers: ["actor-1"],
+    });
+    const spec: CommandSpec<TestWorld> = {
+      key: "ping",
+      func: (ctx) => {
+        ctx.emit(ctx.command.actorId, { type: "pong" });
+      },
+    };
+    // Runtime half: the input descriptor is the whole call surface.
+    const out = harness.call(spec, { raw: "ping", actorId: "actor-1", tick: 5 });
+    expect(out.result.ok).toBe(true);
+
+    // Compile half — tsc IS the runner for these lines; each @ts-expect-error
+    // fails the build the moment the channel it guards becomes legal again.
+    const neverRun = () => {
+      // @ts-expect-error — no third argument: the old CallOptions channel is gone.
+      harness.call(spec, "ping", { seq: 1 });
+      // @ts-expect-error — no `seq` on the input: the harness owns the counter.
+      harness.call(spec, { raw: "ping", seq: 1 });
+      // @ts-expect-error — no `liveWorld` switch: the world carries its liveness.
+      createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], liveWorld: true });
+      // @ts-expect-error — no `cmdsets`: verbs and cmdsets are one field.
+      createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], cmdsets: [] });
+      // @ts-expect-error — no `seed`/`nowTick`: the streams are assembled objects.
+      createCommandHarness<TestWorld>({ world: { rooms: {} }, receivers: [], seed: 7, nowTick: 3 });
+    };
+    expect(typeof neverRun).toBe("function");
   });
 });

@@ -77,7 +77,7 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 - **incoming 的 mergetype 生效**（借 Evennia：A 并入 B，A 的合并规则适用；同优先级时后来者胜）。空种子使四种算子**全然**（total）：单独一个 Remove／Intersect 集合过滤不到任何东西——它的命令是过滤清单，不是供给。
 - **四种算子**：`Union`（默认；同键**整体替换** payload 含 verbs）／`Intersect`（只留双方共有的键，取 incoming 版本）／`Replace`（丢弃累积结果）／`Remove`（纯过滤器，不添加任何命令）。
 - **合并顺序 = 最后引入顺序**：跨键动词冲突归**后合并者**所有——合并栈在到达分发前解决动词归属（`parser.ts` 的契约：`createVerbTable` 遇跨键同名动词会抛错，合并产物不再有歧义）。这就是出口源（+101，高于一切常规源）**永远可用**的机制：它最后合并，下方任何源都无法遮蔽或滤掉它的方向词。
-- **接入解析器**：合并产物 `verbEntries()` 即动词表来源，是 `createVerbTable` 的直接输入（`deps.verbs`）；「mergeCmdSets→verbEntries→createVerbTable」这三连**收成组源 helper `verbTableFrom(sources)` 一份**（#38），测试骨架的 `cmdsets` 选项（与 `verbs` 互斥）与真实宿主都调它——真实宿主每次输入时按地点重组源列表后自行调用，**源配方留调用方**、每 dispatch 重合并、从不缓存。确定性（ADR-0024 §2）：同一输入列表必得同一合并结果。
+- **接入解析器**：合并产物 `verbEntries()` 即动词表来源，是 `createVerbTable` 的直接输入（`deps.verbs`）；「mergeCmdSets→verbEntries→createVerbTable」这三连**收成组源 helper `verbTableFrom(sources)` 一份**（#38），测试骨架的 `verbs` 选项与真实宿主都调它——测试骨架取静态组源或 per-dispatch resolver 形态（resolver 每 dispatch 取源、骨架重合并，#36），真实宿主每次输入时按地点重组源列表后自行调用，**源配方留调用方**、每 dispatch 重合并、从不缓存。确定性（ADR-0024 §2）：同一输入列表必得同一合并结果。
 
 ## 4. 出口即命令
 

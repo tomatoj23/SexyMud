@@ -124,39 +124,41 @@ function makeRegistry(npcs?: readonly NpcEntry[]): ReturnType<typeof createConte
   );
 }
 
-/** A runtime with one player standing at the gate, plus its registry. */
+/** A runtime with one player standing at the gate — and the session's one driver. */
 function makeStage(npcs?: readonly NpcEntry[]) {
   const registry = makeRegistry(npcs);
   const runtime = createWorldRuntime({ registry });
   runtime.addEntity(createEntity("player-1"), "room-tag-001");
-  return { registry, runtime };
-}
-
-/** One dispatch through `call()`: the host's per-command assembly, live world. */
-function drive(runtime: WorldRuntime, input = "北") {
-  const here = runtime.registry.room(runtime.locationOf("player-1"));
-  // The walk path's source recipe is the room's exits (issue #38): the
-  // engine's resolve matches over its longest-match verb table, the exit's
-  // traversal adapter binds as a thunk.
-  const bound = new Map<string, CommandBinding<WorldRuntime>>();
-  for (const exit of here.exits) {
-    bound.set(exit.id, () => traversalSpec(exit));
-  }
-  const outcome = resolve(input, verbTableFrom(commandSetSources(here.exits)), bound);
-  if (!outcome.ok) {
-    // Classification is resolve's one rule (a typo ⇒ `invalid`); this walk
-    // driver answers it in its own words.
-    throw new Error(`no exit carries the verb "${input}" here`);
-  }
-  const exit = runtime.registry.exit(outcome.match.commandKey);
+  // ONE harness per session (issue #36): the room's exits reach it through
+  // the per-dispatch resolver, re-merged every call, while the seq counter
+  // and the rng stream run session-wide.
   const harness = createCommandHarness<WorldRuntime>({
-    world: runtime,
-    liveWorld: true,
+    world: { live: runtime },
     receivers: ["player-1"],
-    cmdsets: commandSetSources([exit]),
-    subjectOf: (world, actorId) => world.subjectOf(actorId),
+    verbs: ({ actorId }) =>
+      commandSetSources(runtime.registry.room(runtime.locationOf(actorId)).exits),
+    access: { subjectOf: (world, actorId) => world.subjectOf(actorId) },
   });
-  return { out: harness.call(outcome.spec, input, { actorId: "player-1" }), exit };
+  /** One dispatch through `call()`: the walk resolve picks the exit, the harness runs it. */
+  const drive = (input = "北") => {
+    const here = runtime.registry.room(runtime.locationOf("player-1"));
+    // The walk path's source recipe is the room's exits (issue #38): the
+    // engine's resolve matches over its longest-match verb table, the exit's
+    // traversal adapter binds as a thunk.
+    const bound = new Map<string, CommandBinding<WorldRuntime>>();
+    for (const exit of here.exits) {
+      bound.set(exit.id, () => traversalSpec(exit));
+    }
+    const outcome = resolve(input, verbTableFrom(commandSetSources(here.exits)), bound);
+    if (!outcome.ok) {
+      // Classification is resolve's one rule (a typo ⇒ `invalid`); this walk
+      // driver answers it in its own words.
+      throw new Error(`no exit carries the verb "${input}" here`);
+    }
+    const exit = runtime.registry.exit(outcome.match.commandKey);
+    return { out: harness.call(outcome.spec, { raw: input, actorId: "player-1" }), exit };
+  };
+  return { registry, runtime, drive };
 }
 
 describe("the runtime tags slot (spec/03 §5.1, ADR-0029 §1)", () => {
@@ -327,8 +329,8 @@ describe("the gate, end to end through call() (spec/02 §5.4)", () => {
   });
 
   it("refuses a player with no tags: rejected + a semantic event, copy still in the JSON", () => {
-    const { registry, runtime } = makeStage();
-    const { out } = drive(runtime);
+    const { registry, runtime, drive } = makeStage();
+    const { out } = drive();
 
     expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "accessDenied" });
     expectMessageSequence(out.messages, [
@@ -354,10 +356,10 @@ describe("the gate, end to end through call() (spec/02 §5.4)", () => {
   });
 
   it("lets the player through once the tag is written to the state tree", () => {
-    const { runtime } = makeStage();
+    const { runtime, drive } = makeStage();
     runtime.state.entities["player-1"]!.tags = { zone: ["inner"] };
 
-    const { out } = drive(runtime);
+    const { out } = drive();
 
     expect(out.result.ok).toBe(true);
     expect(runtime.locationOf("player-1")).toBe("room-tag-002");
@@ -368,46 +370,46 @@ describe("the gate, end to end through call() (spec/02 §5.4)", () => {
   });
 
   it("refuses again after the tag is removed — the gate reads live state, not a snapshot", () => {
-    const { runtime } = makeStage();
+    const { runtime, drive } = makeStage();
     runtime.state.entities["player-1"]!.tags = { zone: ["inner"] };
     // Back in the gate room: the move above is undone the same way a host
     // would do it (construction is data; here the test is the host).
     runtime.state.entities["player-1"]!.locationId = "room-tag-001";
     runtime.state.entities["player-1"]!.tags = {};
 
-    const { out } = drive(runtime);
+    const { out } = drive();
 
     expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "accessDenied" });
     expect(runtime.locationOf("player-1")).toBe("room-tag-001");
   });
 
   it("needs BOTH halves: the same key under another dimension, or another key, is refused", () => {
-    const { runtime } = makeStage();
+    const { runtime, drive } = makeStage();
 
     runtime.state.entities["player-1"]!.tags = { layer: ["inner"] }; // right key, wrong dimension
-    expect(drive(runtime).out.result).toMatchObject({ kind: "rejected", reason: "accessDenied" });
+    expect(drive().out.result).toMatchObject({ kind: "rejected", reason: "accessDenied" });
 
     runtime.state.entities["player-1"]!.tags = { zone: ["outer"] }; // right dimension, wrong key
-    expect(drive(runtime).out.result).toMatchObject({ kind: "rejected", reason: "accessDenied" });
+    expect(drive().out.result).toMatchObject({ kind: "rejected", reason: "accessDenied" });
 
     runtime.state.entities["player-1"]!.tags = { zone: ["inner"] };
-    expect(drive(runtime).out.result.ok).toBe(true);
+    expect(drive().out.result.ok).toBe(true);
   });
 
   it("is not fooled by a flag carrying the same word: the flag layer is not the tag layer", () => {
-    const { runtime } = makeStage();
+    const { runtime, drive } = makeStage();
     runtime.state.entities["player-1"]!.flags = ["inner"];
 
-    expect(drive(runtime).out.result).toMatchObject({ kind: "rejected", reason: "accessDenied" });
+    expect(drive().out.result).toMatchObject({ kind: "rejected", reason: "accessDenied" });
     expect(runtime.subjectOf("player-1").hasFlag("inner")).toBe(true);
   });
 
   it("replays identically: the same session twice yields the same results and events (ADR-0017)", () => {
     const runSession = () => {
-      const { runtime } = makeStage();
-      const refused = drive(runtime).out;
+      const { runtime, drive } = makeStage();
+      const refused = drive().out;
       runtime.state.entities["player-1"]!.tags = { zone: ["inner"] };
-      const granted = drive(runtime).out;
+      const granted = drive().out;
       return { refused, granted };
     };
 
@@ -422,7 +424,7 @@ describe("the gate, end to end through call() (spec/02 §5.4)", () => {
 
 describe("the walk driver resolves through the engine's one resolve (issue #38 复查)", () => {
   it("an input no exit carries is the driver's own throw — classification resolve's, wording the driver's", () => {
-    const { runtime } = makeStage();
-    expect(() => drive(runtime, "咕哝")).toThrow(/no exit carries the verb "咕哝" here/);
+    const { runtime, drive } = makeStage();
+    expect(() => drive("咕哝")).toThrow(/no exit carries the verb "咕哝" here/);
   });
 });

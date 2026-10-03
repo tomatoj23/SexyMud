@@ -6,7 +6,7 @@ import { createTickClock } from "../src/clock.js";
 import { createSeededRng } from "../src/rng.js";
 import { runCommand } from "../src/command/pipeline.js";
 import type { CommandSpec, MessageSink } from "../src/command/pipeline.js";
-import { createCommandHarness } from "../src/command/testing.js";
+import { createCommandHarness, createTestClock } from "../src/command/testing.js";
 import type { WorldState } from "../src/state/tree.js";
 import { createSettler } from "../src/time/settle.js";
 import type { Settler } from "../src/time/settle.js";
@@ -240,13 +240,12 @@ describe("O8: the host's handler reaches the engine through a dependency (spec/0
   it("lets a command arm an item through deps.due — injected by the host, not read from a registry", () => {
     const { bucket, fired } = recorder();
     const harness = createCommandHarness<WorldState>({
-      world: world(),
+      world: { live: world() },
       receivers: RECEIVERS,
-      liveWorld: true,
-      due: bucket,
+      session: { due: bucket },
     });
 
-    harness.call(arming, "light", { seq: 1, actorId: "jia", tick: 10 });
+    harness.call(arming, { raw: "light", actorId: "jia", tick: 10 });
     expect(bucket.snapshot()).toEqual([{ dueTick: 60, payload: { roomId: "room-a" } }]);
     expect(fired).toEqual([]);
 
@@ -273,18 +272,22 @@ describe("invalid input never fires the bucket (spec/04 §4.1)", () => {
     bucket.schedule(30, "bomb");
 
     let settleCalls = 0;
-    let settler: Settler | undefined;
     const state = world();
+    // Clock first, settler from it, hook as a plain function (issue #36): the
+    // construction order needs no delayed assignment around the harness.
+    const clock = createTestClock(0);
+    const settler = createSettler({ state, clock, world: bucket.settle });
     const harness = createCommandHarness<WorldState>({
-      world: state,
+      world: { live: state },
       receivers: RECEIVERS,
-      liveWorld: true,
-      settle: (request) => {
-        settleCalls += 1;
-        return settler!.settleTo(request);
+      session: {
+        clock,
+        settle: (request) => {
+          settleCalls += 1;
+          return settler.settleTo(request);
+        },
       },
     });
-    settler = createSettler({ state, clock: harness.clock, world: bucket.settle });
 
     const broken: CommandSpec<WorldState> = {
       key: "broken",
@@ -292,7 +295,7 @@ describe("invalid input never fires the bucket (spec/04 §4.1)", () => {
       func: () => {},
     };
     for (let i = 0; i < 5; i += 1) {
-      const out = harness.call(broken, "乱码", { seq: 10 + i, actorId: "jia", tick: 1000 });
+      const out = harness.call(broken, { raw: "乱码", actorId: "jia", tick: 1000 });
       expect(out.result).toMatchObject({ ok: false, kind: "invalid" });
     }
 

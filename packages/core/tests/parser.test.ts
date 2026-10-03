@@ -422,7 +422,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
     const harness = createCommandHarness<TestWorld>({
       world: { room: "room-1" },
       receivers: ["actor-1"],
-      verbs,
+      verbs: createVerbTable(verbs),
     });
 
     const out = harness.call(attackSpec(seen), "打第二个强盗");
@@ -465,7 +465,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
     const harness = createCommandHarness<TestWorld>({
       world: { room: "room-1" },
       receivers: ["actor-1"],
-      verbs,
+      verbs: createVerbTable(verbs),
     });
 
     const wrongCall = harness.call(laugh, "笑傲江湖");
@@ -484,7 +484,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
     const harness = createCommandHarness<TestWorld>({
       world: { room: "room-1" },
       receivers: ["actor-1"],
-      verbs,
+      verbs: createVerbTable(verbs),
     });
 
     const out = harness.call(attackSpec(seen), "打第个强盗");
@@ -511,7 +511,7 @@ describe("call() full chain through the harness (issue #2: 全链路可用)", ()
     const harness = createCommandHarness<TestWorld>({
       world: { room: "room-1" },
       receivers: ["actor-1"],
-      verbs: localVerbs,
+      verbs: createVerbTable(localVerbs),
     });
 
     expect(harness.call(north, "n").result).toMatchObject({ ok: true });

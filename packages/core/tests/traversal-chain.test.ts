@@ -65,7 +65,18 @@ interface DriveOutcome {
  * monotonic, as a real host's would be.
  */
 function makeDriver(registry: ContentRegistry, runtime: WorldRuntime) {
-  let seq = 0;
+  // ONE harness per session (issue #36): the room's full sources reach the
+  // harness through the per-dispatch resolver and are re-merged every call,
+  // while the seq counter and the rng stream run session-wide.
+  const harness = createCommandHarness<WorldRuntime>({
+    world: { live: runtime },
+    receivers: RECEIVERS,
+    verbs: ({ actorId }) => [
+      ...commandSetSources(registry.commands),
+      ...commandSetSources(registry.room(runtime.locationOf(actorId)).exits),
+    ],
+    access: { subjectOf: (world, id) => world.subjectOf(id) },
+  });
   return (actorId: string, input: string): DriveOutcome => {
     const roomId = runtime.locationOf(actorId);
     const room = registry.room(roomId);
@@ -82,17 +93,9 @@ function makeDriver(registry: ContentRegistry, runtime: WorldRuntime) {
       // words (the wording is the driver's; the classification is resolve's).
       throw new Error(`room "${roomId}" offers no exit carrying the verb "${input}"`);
     }
-    seq += 1;
-    // `cmdsets` stays the room's FULL sources: the pipeline's re-cut table
-    // (deps.verbs), not the walk path's exits-only recipe.
-    const harness = createCommandHarness<WorldRuntime>({
-      world: runtime,
-      liveWorld: true,
-      receivers: RECEIVERS,
-      cmdsets: [...commandSetSources(registry.commands), ...commandSetSources(room.exits)],
-      subjectOf: (world, id) => world.subjectOf(id),
-    });
-    return harness.call(outcome.spec, input, { actorId, seq });
+    // The verb table stays the room's FULL sources: the pipeline's re-cut
+    // table (deps.verbs), not the walk path's exits-only recipe.
+    return harness.call(outcome.spec, { raw: input, actorId });
   };
 }
 
@@ -211,14 +214,13 @@ describe("the full town chain through the engine's traversal adapter (ADR-0028 �
       priority: 101,
     };
     const harness = createCommandHarness<WorldRuntime>({
-      world: runtime,
-      liveWorld: true,
+      world: { live: runtime },
       receivers: ["actor-1"],
-      cmdsets: [...commandSetSources(registry.commands), ...commandSetSources([ungated])],
-      subjectOf: (world, id) => world.subjectOf(id),
+      verbs: [...commandSetSources(registry.commands), ...commandSetSources([ungated])],
+      access: { subjectOf: (world, id) => world.subjectOf(id) },
     });
 
-    const out = harness.call(traversalSpec(ungated), "北", { actorId: "actor-1" });
+    const out = harness.call(traversalSpec(ungated), { raw: "北", actorId: "actor-1" });
 
     expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "accessDenied" });
     expectMessageSequence(out.messages, [
@@ -269,18 +271,17 @@ describe("the full town chain through the engine's traversal adapter (ADR-0028 �
       "room-lq-001",
     );
     const harness = createCommandHarness<WorldRuntime>({
-      world: runtime,
-      liveWorld: true,
+      world: { live: runtime },
       receivers: ["stubborn-1"],
-      cmdsets: [
+      verbs: [
         ...commandSetSources(registry.commands),
         ...commandSetSources(registry.room("room-lq-001").exits),
       ],
-      subjectOf: (world, id) => world.subjectOf(id),
+      access: { subjectOf: (world, id) => world.subjectOf(id) },
     });
     const exit = registry.room("room-lq-001").exits[0]!;
 
-    const out = harness.call(traversalSpec(exit), "北", { actorId: "stubborn-1" });
+    const out = harness.call(traversalSpec(exit), { raw: "北", actorId: "stubborn-1" });
 
     expect(out.result).toEqual({ ok: false, seq: 1, kind: "rejected", reason: "moveVetoed" });
     expectMessageSequence(out.messages, [

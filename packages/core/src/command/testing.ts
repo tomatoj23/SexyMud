@@ -1,4 +1,4 @@
-import type { Command, CommandResult, GameEvent } from "../types.js";
+import type { Command, CommandResult, GameEvent, Rng } from "../types.js";
 import type { ConditionSubject, PredicateRegistry } from "../conditions.js";
 import { createSeededRng } from "../rng.js";
 import { createTickClock } from "../clock.js";
@@ -7,8 +7,7 @@ import { createDispatchDriver, settlementFirst } from "./driver.js";
 import type { CommandSpec, Message } from "./pipeline.js";
 import type { SettleRequest } from "../time/settle.js";
 import type { DueBucket } from "../time/due.js";
-import { createVerbTable } from "./parser.js";
-import type { VerbEntry } from "./parser.js";
+import type { VerbTable } from "./parser.js";
 import type { CmdSetSource } from "./cmdset.js";
 import { verbTableFrom } from "./resolve.js";
 
@@ -22,6 +21,12 @@ import { verbTableFrom } from "./resolve.js";
  * which the harness owns between calls), output sink (collector), world
  * fixture (deep-copied per call), RNG seed — the one Evennia never had, its
  * dice rolls are unseeded — and an explicit receiver list.
+ *
+ * One assembly per harness (issue #36, spec/02 §3 + spec/04 §2.2): the
+ * clock, the RNG stream, the advance hook and the verb table are assembled
+ * ONCE, and `call` carries nothing but input — the session's streams (rng,
+ * seq) live here, so a per-dispatch verb-source change must not restart
+ * them.
  */
 
 /**
@@ -56,78 +61,13 @@ export function createTestClock(startTick = 0): TestClock {
   };
 }
 
-export interface HarnessOptions<W> {
-  /**
-   * The world. Pure-object mode (default): deep-copied per call, no
-   * transaction rollback — each call runs on a fresh fixture. Live mode
-   * (`liveWorld: true`): passed by reference every call, so state a command
-   * mutates (a move) is visible to the next call — how a host drives a
-   * world runtime across a session. A runtime cannot be deep-copied at all
-   * (structuredClone drops its hook-carrying entity instances), so runtime
-   * worlds always run live.
-   */
-  world: W;
-  /**
-   * Explicitly declared receivers (ADR-0023 §1f). Output to any other
-   * recipient is discarded — omitting a receiver omits its checks.
-   */
-  receivers: string[];
-  /** RNG seed. Fixed default so every harness is reproducible. */
-  seed?: number;
-  /**
-   * Starting engine tick: the initial high-water mark and the tick the first
-   * command carries (spec/04 §2.2). The harness owns it from then on.
-   */
-  nowTick?: number;
-  /**
-   * Verb entries for the engine's parse stage: specs declaring `argForm`
-   * match their input against this table, so `call()` runs the full chain —
-   * raw input, verb cut, argForm parse, func. Built once per harness, so a
-   * conflicting registration fails at harness creation, not mid-session.
-   */
-  verbs?: readonly VerbEntry[];
-  /**
-   * Command-set sources (spec/02 §3) merged into the parse-stage verb
-   * table — the merge product IS the verb table source. Mutually exclusive
-   * with `verbs`. Merged once per harness (static like `verbs`); hosts that
-   * merge per input, because sources change with location, build the table
-   * per dispatch (`verbTableFrom(sources)`) and pass deps.verbs.
-   */
-  cmdsets?: readonly CmdSetSource[];
-  /**
-   * Builds the condition subject for access-gated specs (spec/02 §5); passed
-   * through to the pipeline deps. Required only when a called spec declares
-   * an access gate — the world is deep-copied per call, so the subject is
-   * always derived from that call's world.
-   */
-  subjectOf?: (world: W, actorId: string) => ConditionSubject;
-  /** Predicate registry for access gates; defaults to the engine's built-ins. */
-  predicates?: PredicateRegistry;
-  /**
-   * The due bucket a called command may arm (spec/04 §4.5, §6 O8) — the
-   * harness passes it straight through, like `subjectOf`. Absent, a command
-   * that schedules fails loudly instead of losing the item.
-   */
-  due?: DueBucket;
-  /** Live-world mode: share the world by reference across calls. Default false. */
-  liveWorld?: boolean;
-  /**
-   * The advance hook (spec/04 §4.3): when present, EVERY call settles the
-   * world before the command runs — the harness is the side that drives the
-   * world, so this is where the two-layer advance is driven from in tests.
-   *
-   * Because an `invalid` input must not advance the world, a harness with
-   * this hook pre-flights the parse stage: an input that cannot become a
-   * command returns `invalid` without ever calling the hook (and without
-   * raising the high-water mark). A harness WITHOUT the hook skips the
-   * pre-flight, because there is no world to protect.
-   */
-  settle?: (request: SettleRequest) => Message[];
-}
-
-export interface CallOptions {
-  /** Defaults to a harness-local counter starting at 1. */
-  seq?: number;
+/**
+ * The input side of one command (issue #36): who typed what, and when. The
+ * harness owns the `seq` counter — it is the session's, not the call's.
+ */
+export interface CommandInput {
+  /** The raw line the player typed. */
+  raw: string;
   /** Defaults to "actor-1". */
   actorId?: string;
   /**
@@ -136,7 +76,88 @@ export interface CallOptions {
    */
   tick?: number;
   /** Queued player inputs for interactive flows (ADR-0023 §1d). */
-  inputs?: string[];
+  inputs?: readonly string[];
+}
+
+export interface HarnessOptions<W> {
+  /**
+   * The world (spec/04 §2.2). Bare `W` is pure-object mode (default): deep-copied per call,
+   * no transaction rollback — each call runs on a fresh fixture. `{ live: W }`
+   * is live mode: passed by reference every call, so state a command mutates
+   * (a move) is visible to the next call — how a host drives a world runtime
+   * across a session. A runtime cannot be deep-copied at all (structuredClone
+   * drops its hook-carrying entity instances), so runtime worlds always run
+   * live. The wrapper is exactly one key, `live`.
+   */
+  world: W | { live: W };
+  /**
+   * Explicitly declared receivers (ADR-0023 §1f). Output to any other
+   * recipient is discarded — omitting a receiver omits its checks.
+   */
+  receivers: readonly string[];
+  /**
+   * The verb table the engine's parse stage cuts against (spec/02 §3) — specs declaring
+   * `argForm` match their input here, so `call()` runs the full chain — raw
+   * input, verb cut, argForm parse, func. Three forms:
+   *
+   * - a pre-built {@link VerbTable} (build raw entries with `createVerbTable`,
+   *   where a conflicting registration throws);
+   * - cmdset sources ({@link CmdSetSource}), merged once per harness — a
+   *   conflicting registration fails at harness creation, not mid-session;
+   * - a RESOLVER over those sources, the per-dispatch form (issue #36): it is
+   *   called once per `call()` with that call's world and actor — sources
+   *   change with location — and its result is re-merged through
+   *   `verbTableFrom` EVERY dispatch, never cached (#38: the source recipe
+   *   stays with the caller, the merge never accumulates).
+   */
+  verbs?:
+    | VerbTable
+    | readonly CmdSetSource[]
+    | ((ctx: { world: W; actorId: string }) => readonly CmdSetSource[]);
+  /**
+   * The session's streams and advance, assembled once (issue #36): the clock,
+   * the RNG stream, the advance hook and the due bucket. All optional —
+   * omitted, the harness starts its own clock at tick 0 and its own seeded
+   * stream at seed 1.
+   *
+   * Pass a pre-built `clock` (and build a settler from it) to wire an advance
+   * hook that reads the very clock the harness drives: clock first, settler
+   * from it, hook as a plain function — the construction order needs no
+   * delayed assignment.
+   */
+  session?: {
+    clock?: TestClock;
+    rng?: Rng;
+    /**
+     * The advance hook (spec/04 §4.3): when present, EVERY call settles the
+     * world before the command runs — the harness is the side that drives the
+     * world, so this is where the two-layer advance is driven from in tests.
+     *
+     * Because an `invalid` input must not advance the world, a harness with
+     * this hook pre-flights the parse stage: an input that cannot become a
+     * command returns `invalid` without ever calling the hook (and without
+     * raising the high-water mark). A harness WITHOUT the hook skips the
+     * pre-flight, because there is no world to protect.
+     */
+    settle?: (request: SettleRequest) => Message[];
+    /**
+     * The due bucket a called command may arm (spec/04 §4.5, §6 O8) — the
+     * harness passes it straight through. Absent, a command that schedules
+     * fails loudly instead of losing the item.
+     */
+    due?: DueBucket;
+  };
+  /**
+   * Access gates (spec/02 §5): the condition subject builder for gated specs
+   * and the predicate registry (defaults to the engine's built-ins). Required
+   * subject only when a called spec declares an access gate — the world is
+   * deep-copied per call (bare-world mode), so the subject is always derived
+   * from that call's world.
+   */
+  access?: {
+    subjectOf?: (world: W, actorId: string) => ConditionSubject;
+    predicates?: PredicateRegistry;
+  };
 }
 
 export interface CallOutcome {
@@ -151,42 +172,72 @@ export interface CallOutcome {
 
 export interface CommandHarness<W> {
   readonly clock: TestClock;
-  call(spec: CommandSpec<W>, input: string, options?: CallOptions): CallOutcome;
+  /**
+   * Drives one command — the spec under test plus its input and nothing else
+   * (issue #36: the input descriptor is the whole call surface; a string is
+   * the shorthand for `{ raw }`).
+   */
+  call(spec: CommandSpec<W>, input: string | CommandInput): CallOutcome;
+}
+
+/**
+ * The `{ live: W }` wrapper is exactly one key; anything else is the bare
+ * fixture. Checked structurally so a plain world never needs a tag.
+ */
+function liveWrapperOf<W>(world: W | { live: W }): { value: W; byRef: boolean } {
+  if (
+    typeof world === "object" &&
+    world !== null &&
+    Object.hasOwn(world, "live") &&
+    Object.keys(world).length === 1
+  ) {
+    return { value: (world as { live: W }).live, byRef: true };
+  }
+  return { value: world as W, byRef: false };
+}
+
+/** The source list is the array form of the verb input; a table is not. */
+function isCmdSetSources(
+  source: VerbTable | readonly CmdSetSource[],
+): source is readonly CmdSetSource[] {
+  return Array.isArray(source);
 }
 
 export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarness<W> {
   // The high-water mark lives on the side that drives the world — here, the
   // harness (spec/04 §2.2). The pipeline stays a pure function of its inputs.
-  const clock = createTestClock(options.nowTick ?? 0);
+  const clock = options.session?.clock ?? createTestClock(0);
   const receiverSet = new Set(options.receivers);
+  const { value: world, byRef: worldIsLive } = liveWrapperOf(options.world);
   // One RNG stream per harness: a session replays as a command sequence, so
   // identical inputs at different points must roll different values.
-  const rng = createSeededRng(options.seed ?? 1);
-  if (options.verbs !== undefined && options.cmdsets !== undefined) {
-    // Wiring bug, not a data problem: two verb-table sources disagree about
-    // which table a call parses against.
-    throw new Error("harness options: pass either verbs or cmdsets, not both");
-  }
-  const verbs = options.verbs
-    ? createVerbTable(options.verbs)
-    : options.cmdsets
-      ? verbTableFrom(options.cmdsets)
-      : undefined;
+  const rng = options.session?.rng ?? createSeededRng(1);
+  const source = options.verbs;
+  // The static forms merge once here: a conflicting registration fails at
+  // harness creation, not mid-session. The resolver form merges per dispatch
+  // — that is its whole point.
+  const staticTable: VerbTable | undefined =
+    source === undefined || typeof source === "function"
+      ? undefined
+      : isCmdSetSources(source)
+        ? verbTableFrom(source)
+        : source;
   let nextSeq = 1;
 
   // One driver per harness (D5: one factory closure). The four steps and
   // their rules live THERE (spec/04 §4.1, ADR-0038); this file is the exit:
   // it decides who is a receiver and what the recorded output looks like.
-  const driver = createDispatchDriver<W>({ clock, settle: options.settle });
+  const driver = createDispatchDriver<W>({ clock, settle: options.session?.settle });
 
   return {
     clock,
-    call(spec, input, callOptions = {}) {
+    call(spec, input) {
+      const descriptor = typeof input === "string" ? { raw: input } : input;
       const command: Command = {
-        seq: callOptions.seq ?? nextSeq++,
-        actorId: callOptions.actorId ?? "actor-1",
-        tick: callOptions.tick ?? clock.nextTick(),
-        raw: input,
+        seq: nextSeq++,
+        actorId: descriptor.actorId ?? "actor-1",
+        tick: descriptor.tick ?? clock.nextTick(),
+        raw: descriptor.raw,
       };
       const messages: Message[] = [];
       const sink = {
@@ -196,15 +247,20 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
           }
         },
       };
+      const callWorld = worldIsLive ? world : structuredClone(world);
       const deps = {
         rng,
-        world: options.liveWorld ? options.world : structuredClone(options.world),
+        world: callWorld,
         sink,
-        inputs: [...(callOptions.inputs ?? [])],
-        verbs,
-        subjectOf: options.subjectOf,
-        predicates: options.predicates,
-        due: options.due,
+        inputs: [...(descriptor.inputs ?? [])],
+        verbs:
+          staticTable ??
+          (typeof source === "function"
+            ? verbTableFrom(source({ world: callWorld, actorId: command.actorId }))
+            : undefined),
+        subjectOf: options.access?.subjectOf,
+        predicates: options.access?.predicates,
+        due: options.session?.due,
       };
       const { result, settled } = driver.dispatch(command, spec, deps);
       // The harness's exit (AC4): settlement messages to declared receivers
