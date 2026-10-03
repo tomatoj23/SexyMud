@@ -114,20 +114,19 @@ export interface SaveDataV2 extends SaveDataV1 {
  *
  * These live on the side that drives the world, not in `WorldState`, so they
  * are handed to `serializeWorld` and handed back by `restoreWorld` as a
- * separate value. A host that saves reads them from its runtime:
+ * separate value. A host that saves collects them off its live bundle, and a
+ * host that loads gets them back in the bundle the one load entry returns
+ * (state/assembly.ts, #37):
  *
- *   serializeWorld(runtime.state, {
- *     nowTick: runtime.clock.nowTick(),
- *     rngState: rng.getState(),
- *     due: bucket.snapshot(),
- *   })
+ *   serializeWorld(runtime.state, collectMeta({ runtime, rng, bucket }))
  *
- * and a host that loads feeds them straight back in:
+ *   const { runtime, rng, bucket, meta } = assembleWorld({
+ *     snapshot, registry, bucket, entities,
+ *   });
  *
- *   const { state, meta } = restoreWorld(snapshot);
- *   createWorldRuntime({ registry, state, nowTick: meta.nowTick });
- *   createSeededRng(meta.rngState);
- *   bucket.restore(meta.due);
+ * (The five steps behind that entry — restoreWorld → createWorldRuntime →
+ * createSeededRng → bucket.restore → attachEntity × N — stay hand-callable;
+ * the entry exists so no host has to remember the checklist.)
  */
 export interface WorldMeta {
   /** The engine's high-water mark (spec/04 §2.2). */
@@ -239,8 +238,10 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
  * second (the shape a validator reads is the CURRENT one).
  *
  * This is NOT creation. No creation layer runs here (spec/03 §7.8 is
- * createObject's business): restore replays a tree and the host re-attaches
- * hook instances to it through WorldRuntime.attachEntity. Running
+ * createObject's business): restore replays a tree, and hook instances are
+ * re-attached to it afterwards — `assembleWorld` (state/assembly.ts) runs
+ * that loop over the host's rebuilt instances (the "host re-attaches" step is
+ * the entry's job now), or a host runs WorldRuntime.attachEntity itself. Running
  * at_object_creation on load would overwrite saved state with code defaults
  * — the exact inversion of "content wins" that the two-layer seam exists to
  * prevent.

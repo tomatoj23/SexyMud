@@ -156,6 +156,8 @@ export type {
   SaveDataV2,
   WorldMeta,
 } from "./state/snapshot.js";
+export { assembleWorld, collectMeta } from "./state/assembly.js";
+export type { AssembledWorld, AssembleWorldOptions, WorldBundle } from "./state/assembly.js";
 export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
 export type {
   CallOptions,

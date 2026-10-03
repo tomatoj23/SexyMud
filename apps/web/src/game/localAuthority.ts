@@ -16,6 +16,7 @@ import type {
   WorldRuntime,
 } from "@sexymud/core";
 import {
+  collectMeta,
   createDispatchDriver,
   createSettler,
   createVerbTable,
@@ -228,18 +229,13 @@ export function createLocalAuthority(options: LocalAuthorityOptions): LocalAutho
       return events;
     },
     snapshot(): Promise<Snapshot> {
-      // O9/ADR-0033 §2: the scalars ride beside the tree — the mark from the
-      // side that drives the world, the stream's exported state, the armed
-      // items. `serializeWorld` rejects a non-tick `nowTick` loudly. The
+      // O9/ADR-0033 §2: the scalars ride beside the tree, and `collectMeta`
+      // is the face that reads the three off the live bundle (#37) — the mark
+      // from the side that drives the world, the stream's exported state, the
+      // armed items. `serializeWorld` rejects a non-tick `nowTick` loudly. The
       // items come from THE bucket — the one that armed and fires them — so
       // a save can never write `due: []` over live fuses.
-      return Promise.resolve(
-        serializeWorld(runtime.state, {
-          nowTick: runtime.clock.nowTick(),
-          rngState: rng.getState(),
-          due: bucket.snapshot(),
-        }),
-      );
+      return Promise.resolve(serializeWorld(runtime.state, collectMeta({ runtime, rng, bucket })));
     },
   };
 }

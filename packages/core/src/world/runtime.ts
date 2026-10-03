@@ -44,14 +44,18 @@ export interface WorldRuntime {
    */
   addEntity(entity: Entity, locationId: string): void;
   /**
-   * THE LOAD PATH (M2-T5): re-attaches a hook-carrying instance to a state
-   * the tree ALREADY holds, because a restored save adopted a whole tree.
-   * No creation layer runs here — restore replays a tree, it does not
-   * create (running at_object_creation on load would overwrite saved state
-   * with code defaults). The tree must hold the state (restoreWorld first),
-   * and the saved location must still resolve to a loaded room or to
-   * another entity's state; that second check is order-independent on
-   * purpose, so a carried entity may be attached before its carrier.
+   * Re-attaches a hook-carrying instance to a state the tree ALREADY holds
+   * (M2-T5), because a restored save adopted a whole tree. THE LOAD PATH's
+   * per-entity primitive: `assembleWorld` (state/assembly.ts) runs this over
+   * every rebuilt instance — that loop is the entry's job now, not the
+   * host's — and the hand path stays legal, so a host that assembles itself
+   * calls this directly. No creation layer runs here — restore replays a
+   * tree, it does not create (running at_object_creation on load would
+   * overwrite saved state with code defaults). The tree must hold the state
+   * (restoreWorld first), and the saved location must still resolve to a
+   * loaded room or to another entity's state; that second check is
+   * order-independent on purpose, so a carried entity may be attached before
+   * its carrier.
    */
   attachEntity(entity: Entity): void;
   /** The hook-carrying instance; unknown ids throw (wiring bug, not play). */

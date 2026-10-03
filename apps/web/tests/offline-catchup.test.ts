@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  assembleWorld,
   createContentRegistry,
   createDueBucket,
   createEntity,
   createSeededRng,
   createWorldRuntime,
-  restoreWorld,
 } from "@sexymud/core";
 import type { DueBucket, DueItem, Rng, SaveDataV2, SettleSpan, WorldRuntime } from "@sexymud/core";
 import { createHostClock } from "../src/game/hostClock.js";
@@ -96,21 +96,25 @@ describe("end-to-end: 上线 → 离线 → 回来补算", () => {
     await store.save(await authority1.snapshot());
     wall.ms = 100_000; // 80 ticks away
 
-    // ---- 回来 (login #2)：读档重挂 ----
+    // ---- 回来 (login #2)：读档重挂 — one entry, all five steps (#37) ----
     const loaded = await store.load();
     expect(loaded).not.toBeNull();
-    const { state, meta } = restoreWorld(loaded!);
+    const {
+      runtime: runtime2,
+      rng: rng2,
+      bucket: bucket2,
+      meta,
+    } = assembleWorld({
+      snapshot: loaded!,
+      registry,
+      bucket: makeBucket(),
+      entities: [createEntity("jia")],
+    });
     // The save's scalars came back whole: the mark, the stream, the bomb.
     expect(meta.nowTick).toBe(20);
     expect(meta.due).toEqual([{ dueTick: 70, payload: { kind: "fuse" } }]);
 
-    const runtime2 = createWorldRuntime({ registry, state, nowTick: meta.nowTick });
-    runtime2.attachEntity(createEntity("jia"));
-    const authority2 = startSession(runtime2, createSeededRng(meta.rngState), (() => {
-      const bucket = makeBucket();
-      bucket.restore(meta.due);
-      return bucket;
-    })());
+    const authority2 = startSession(runtime2, rng2, bucket2);
 
     // Nothing has moved yet: catch-up happens when the world is OBSERVED,
     // not when a clock ticks (spec/04 §4.2).

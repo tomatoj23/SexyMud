@@ -12,6 +12,7 @@ import { createWorldRuntime } from "../src/world/runtime.js";
 import { cooldownReady } from "../src/time/cooldown.js";
 import { createDueBucket } from "../src/time/due.js";
 import { createSettler } from "../src/time/settle.js";
+import { assembleWorld, collectMeta } from "../src/state/assembly.js";
 
 /**
  * Save v2 (ADR-0033, spec/04 §1.5): the engine's "now", the random stream's
@@ -264,24 +265,26 @@ describe("the host's save/load loop, end to end (spec/04 §1.5)", () => {
     });
     bucket.schedule(900, "bomb");
 
-    // SAVE — the host reads its own runtime, clock, stream and bucket.
-    const snapshot = serializeWorld(first.state, {
-      nowTick: first.clock.nowTick(),
-      rngState: rng.getState(),
-      due: bucket.snapshot(),
-    });
+    // SAVE — the host reads its own runtime, clock, stream and bucket;
+    // collectMeta is the face those three reads live on (#37).
+    const snapshot = serializeWorld(first.state, collectMeta({ runtime: first, rng, bucket }));
     const wire = JSON.parse(JSON.stringify(snapshot)) as Snapshot;
     const expectedNext = rng.next();
 
-    // LOAD — and the same four pieces go back where they came from.
-    const { state, meta } = restoreWorld(wire);
-    const second = createWorldRuntime({ registry: registry(), state, nowTick: meta.nowTick });
-    const resumedRng = createSeededRng(meta.rngState);
-    const reloadedBucket = createDueBucket({
-      fire: (item, emit) => emit("broadcast", { type: "wentOff", id: item.payload }),
+    // LOAD — one entry assembles the same four pieces back where they came
+    // from (state/assembly.ts; the five steps behind it stay hand-callable).
+    const {
+      runtime: second,
+      rng: resumedRng,
+      bucket: reloadedBucket,
+    } = assembleWorld({
+      snapshot: wire,
+      registry: registry(),
+      bucket: createDueBucket({
+        fire: (item, emit) => emit("broadcast", { type: "wentOff", id: item.payload }),
+      }),
+      entities: [createEntity("player-1")],
     });
-    reloadedBucket.restore(meta.due);
-    second.attachEntity(createEntity("player-1"));
 
     // The clock: cooldowns still read against the tick the world was saved
     // at, so "relocks at 800" still means "relocks at 800".
