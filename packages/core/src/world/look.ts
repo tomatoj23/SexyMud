@@ -3,6 +3,7 @@ import type { PredicateRegistry } from "../conditions.js";
 import { commandSpecFromEntry } from "../command/entry.js";
 import type { CommandEntry } from "../command/entry.js";
 import type { CommandRejection, CommandSpec } from "../command/pipeline.js";
+import { appearanceEvent, commandRefusedEvent } from "../events.js";
 import type { WorldRuntime } from "./runtime.js";
 
 /**
@@ -179,26 +180,24 @@ export function lookSpec(entry: CommandEntry): CommandSpec<WorldRuntime> {
 
       const look = atLook(runtime, roomId, viewerId, ctx.predicates);
       if (!look.ok) {
-        ctx.emit(viewerId, {
-          type: "commandRefused",
+        ctx.emit(viewerId, commandRefusedEvent({
           reason: "notVisible",
           commandKey: entry.id,
           accessType: "look",
           errKey: look.errKey,
           roomId,
-        });
+        }));
         const rejection: CommandRejection = { kind: "rejected", reason: "notVisible" };
         return rejection;
       }
 
       const appearance = look.appearance;
-      ctx.emit(viewerId, {
-        type: "appearance",
+      ctx.emit(viewerId, appearanceEvent({
         roomId: appearance.roomId,
         exits: appearance.exits,
         staticPresence: appearance.staticPresence,
         occupants: appearance.occupants,
-      });
+      }));
     },
   });
 }

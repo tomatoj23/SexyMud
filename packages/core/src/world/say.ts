@@ -1,6 +1,7 @@
 import { commandSpecFromEntry } from "../command/entry.js";
 import type { CommandEntry } from "../command/entry.js";
 import type { CommandRejection, CommandSpec } from "../command/pipeline.js";
+import { commandRefusedEvent, sayEvent } from "../events.js";
 import type { SayHookContext } from "./entity.js";
 import { broadcastMessage } from "./message.js";
 import type { MessagePorts } from "./message.js";
@@ -85,12 +86,11 @@ export function say(runtime: WorldRuntime, request: SayRequest, ports: MessagePo
     runtime,
     {
       locationId,
-      draft: {
-        type: "say",
+      draft: sayEvent({
         speakerId: request.speakerId,
         text: request.text,
         locationId,
-      },
+      }),
       fromEntityId: request.speakerId,
     },
     ports,
@@ -136,12 +136,11 @@ export function saySpec(entry: CommandEntry): CommandSpec<WorldRuntime> {
       }
       const outcome = say(ctx.world, { speakerId: ctx.command.actorId, text }, { emit: ctx.emit });
       if (!outcome.ok) {
-        ctx.emit(ctx.command.actorId, {
-          type: "commandRefused",
+        ctx.emit(ctx.command.actorId, commandRefusedEvent({
           reason: "sayVetoed",
           commandKey: entry.id,
           stage: outcome.stage,
-        });
+        }));
         const rejection: CommandRejection = { kind: "rejected", reason: "sayVetoed" };
         return rejection;
       }

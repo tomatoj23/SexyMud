@@ -28,6 +28,14 @@ export type {
   PredicateFn,
   PredicateRegistry,
 } from "./conditions.js";
+export {
+  appearanceEvent,
+  arrivedEvent,
+  commandRefusedEvent,
+  customEvent,
+  departedEvent,
+  sayEvent,
+} from "./events.js";
 export { effectiveNowTick, parseCommand, runCommand } from "./command/pipeline.js";
 export { createDispatchDriver, settlementFirst } from "./command/driver.js";
 export type {

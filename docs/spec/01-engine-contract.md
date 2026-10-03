@@ -95,6 +95,8 @@ interface GameEvent {
 }
 ```
 
+**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由 pipeline／settler 盖章（§2.2、§5.0），factory 不出骨架。
+
 ### 5.0 `tick`：**每个事件都带**（O1 已定案，#22）
 
 事件要能被渲染成「三天前发生的事」，就必须自带世界时间。**两种盖章规则，一个理由**：
@@ -127,6 +129,7 @@ packages/core/          引擎（可独立发布的库，零题材词）
   src/
     types.ts            端口与对外契约（Clock / Rng / SaveStore / Authority、GameEvent）
     conditions.ts       条件求值与谓词注册表（独立横切契约，M1-T3 已落——不并入 effects/）
+    events.ts           事件构造一处（按 type 一族 factory + 扩展臂 customEvent，#41）
     command/            解析、命令集合并、分发（M1-T1/T2 已落）
     save/               版本化存档迁移链
     world/              房间、出口、实体、hook

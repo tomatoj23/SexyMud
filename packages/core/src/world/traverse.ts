@@ -1,6 +1,7 @@
 import { checkAccess } from "../conditions.js";
 import { commandSpecFromEntry } from "../command/entry.js";
 import type { CommandRejection, CommandSpec } from "../command/pipeline.js";
+import { commandRefusedEvent } from "../events.js";
 import type { ExitEntry } from "./entry.js";
 import { moveTo } from "./move.js";
 import type { WorldRuntime } from "./runtime.js";
@@ -51,14 +52,13 @@ export function traversalSpec(exit: ExitEntry): CommandSpec<WorldRuntime> {
           ctx.predicates,
         );
         if (!check.ok) {
-          ctx.emit(actorId, {
-            type: "commandRefused",
+          ctx.emit(actorId, commandRefusedEvent({
             reason: "accessDenied",
             commandKey: exit.id,
             accessType: check.accessType,
             errKey: check.errKey,
             roomId: room.id,
-          });
+          }));
           const rejection: CommandRejection = { kind: "rejected", reason: "accessDenied" };
           return rejection;
         }
@@ -78,12 +78,11 @@ export function traversalSpec(exit: ExitEntry): CommandSpec<WorldRuntime> {
         // A movement hook vetoed (spec/03 §7: an explicit false aborts).
         // The refusal is semantic — stage names the hook, commandKey names
         // the exit — and the move never happened.
-        ctx.emit(actorId, {
-          type: "commandRefused",
+        ctx.emit(actorId, commandRefusedEvent({
           reason: "moveVetoed",
           commandKey: exit.id,
           stage: move.stage,
-        });
+        }));
         return { kind: "rejected", reason: "moveVetoed" };
       }
     },

@@ -1,5 +1,6 @@
 import type { CmdSetSource } from "../command/cmdset.js";
 import type { EventDraft } from "../command/pipeline.js";
+import { arrivedEvent, departedEvent } from "../events.js";
 import type { EntityState } from "../state/tree.js";
 
 /**
@@ -266,14 +267,14 @@ export type EntityHooks = Omit<Entity, "id">;
 
 /** The semantic shape of one movement announcement, shared by both directions. */
 function announceDraft(type: "departed" | "arrived", move: MoveInfo): EventDraft {
-  return {
-    type,
+  const fields = {
     entityId: move.entityId,
     fromLocationId: move.fromLocationId,
     toLocationId: move.toLocationId,
     moveType: move.moveType,
     viaExitId: move.viaExitId,
   };
+  return type === "departed" ? departedEvent(fields) : arrivedEvent(fields);
 }
 
 /**

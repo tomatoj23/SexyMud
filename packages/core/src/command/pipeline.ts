@@ -2,6 +2,7 @@ import type { Clock, Command, CommandResult, GameEvent, Rng } from "../types.js"
 import { assertTick } from "../clock.js";
 import { checkAccess, defaultPredicateRegistry } from "../conditions.js";
 import type { AccessGate, ConditionSubject, PredicateRegistry } from "../conditions.js";
+import { commandRefusedEvent } from "../events.js";
 import { parseArgForm } from "./parser.js";
 import type { ArgForm, VerbTable } from "./parser.js";
 import type { DueBucket, DueScheduler } from "../time/due.js";
@@ -391,13 +392,12 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
       // Semantic only: commandKey + errKey locate the entry's err_* copy; the
       // renderer reads the text from data — refusal is narrative, and the
       // data words it (spec/02 §5.4).
-      ctx.emit(command.actorId, {
-        type: "commandRefused",
+      ctx.emit(command.actorId, commandRefusedEvent({
         reason: "accessDenied",
         commandKey: spec.key,
         accessType: check.accessType,
         errKey: check.errKey,
-      });
+      }));
       return { ok: false, seq: command.seq, kind: "rejected", reason: "accessDenied" };
     }
   }
@@ -411,7 +411,7 @@ export function runCommand<W>(spec: CommandSpec<W>, command: Command, deps: Comm
     // event back to the player.
     if (pre === false || vetoReason !== undefined) {
       const reason = vetoReason ?? DEFAULT_VETO_REASON;
-      ctx.emit(command.actorId, { type: "commandRefused", reason });
+      ctx.emit(command.actorId, commandRefusedEvent({ reason }));
       return { ok: false, seq: command.seq, kind: "rejected", reason };
     }
   }
