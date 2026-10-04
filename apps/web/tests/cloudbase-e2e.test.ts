@@ -107,12 +107,18 @@ describe.skipIf(!configured)("CloudBase e2e — the adapter against a real backe
  * The contract's third target (#44 D3): the same real backend, opened lazily
  * for one sign-in shared by every case here. `cloudbase.init` is a factory —
  * the shipped `init` of `@cloudbase/js-sdk@3.10.1` constructs a fresh app per
- * call (its own request instance), so this app living beside the smoke's own
- * is sound. The smoke above signs in for itself and is therefore immune to
- * whatever order the two blocks run in; the live-unauth case signs the shared
- * session out LAST and drops the cache, so nothing after it depends on a dead
- * session either. Fault injection is absent here by nature — a real backend
- * cannot be told to be offline — and those cases are skipped, visibly.
+ * call, each with its OWN request instance — but the isolation stops there
+ * (dist-verified, #44 复查轮): the per-env request cache is overwritten by
+ * the newest app (an App's `request` getter falls back to it when the app has
+ * no request instance of its own) and the auth persistence namespace is
+ * shared per env, so one app's sign-out is visible to the other. What makes
+ * the two apps sound HERE is the SEQUENCE, not isolation — cases in a file
+ * run in declaration order (no shuffle configured) and one app is active at
+ * a time: the smoke signs in for itself (immune to either order of the two
+ * blocks), and the live-unauth case is the runner's LAST case — it drops the
+ * shared-session cache BEFORE signing out, so any later `open()` signs in
+ * afresh. Fault injection is absent here by nature — a real backend cannot be
+ * told to be offline — and those cases are skipped, visibly.
  */
 /** The signed-in real backend every contract case here shares. */
 interface RealBackend {

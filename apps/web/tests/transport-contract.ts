@@ -202,11 +202,16 @@ export function cloudSaveTransportContract(name: string, target: TransportTarget
       await expectFailure(rig.transport.write(rig.key, "three", first), "conflict"); // the old token is spent
     });
 
-    // The two classified-failure cases below pin the SEAM's channel, not the
-    // classifier: on an adapter target an already-classified `CloudSaveError`
-    // passes through untouched (`asSaveError`), so these bite "a rejection is
-    // never swallowed or re-worded" — a taxonomy collapse to one kind would
-    // stay green HERE and dies on the two `classify` cases after them.
+    // The two classified-failure cases pin the SEAM's channel, not the
+    // classifier. What bites where: on the RAM fake these are FAKE-conformance
+    // teeth (a fake that swallowed a rejection — `read` resolving null — goes
+    // red here); on an adapter target F2 is the word-preservation tooth (an
+    // `asSaveError` that re-worded a classified rejection would flip its
+    // kind), while F1 cannot see a network→network re-wording — its teeth are
+    // the rejection surfacing at all and "the failed write applies nothing"
+    // (the deep half-write pin is the adapter's failCommit case). A taxonomy
+    // collapse to one kind stays green on both and dies on the two `classify`
+    // cases after them.
     it.skipIf(!target.can.faults)(
       "a 'network' failure rejects read AND write — never null, and the failed write applies nothing",
       async () => {
