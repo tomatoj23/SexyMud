@@ -144,6 +144,16 @@ afterEach(() => {
   for (const panel of mounted.splice(0)) panel.unmount();
 });
 
+/** Both cover pins share this setup: a standing "已存到云端" verdict to bury. */
+async function standSavedVerdict(panel: PanelRig, local: FakeLocal): Promise<void> {
+  local.snapshot = snapshotFixture({ nowTick: 20 });
+  local.text = JSON.stringify(local.snapshot);
+  await panel.click("重新检查");
+  await panel.click("上传到云端");
+  await panel.click("确认上传");
+  expect(panel.text()).toContain("已存到云端 ✓（存了）");
+}
+
 describe("CloudSavePanel — rendered discipline (#45 W6: the judgments are the machine's)", () => {
   it("D7 the cost notice is unconditional — a STALE view never skips it (#31's law, now a render pin)", async () => {
     const { panel, local, cloud } = mountRig();
@@ -228,12 +238,7 @@ describe("CloudSavePanel — rendered discipline (#45 W6: the judgments are the 
 
   it("D8 a failure covers the old verdict — the line says what did NOT happen, never a stale ✓", async () => {
     const { panel, local, cloud } = mountRig();
-    local.snapshot = snapshotFixture({ nowTick: 20 });
-    local.text = JSON.stringify(local.snapshot);
-    await panel.click("重新检查");
-    await panel.click("上传到云端");
-    await panel.click("确认上传");
-    expect(panel.text()).toContain("已存到云端 ✓（存了）");
+    await standSavedVerdict(panel, local);
 
     cloud.failing = new Error("backend down");
     await panel.click("重新检查");
@@ -309,14 +314,31 @@ describe("CloudSavePanel — rendered discipline (#45 W6: the judgments are the 
     expect(panel.button("下载云端存档").disabled).toBe(true); // its gate reads the REMOTE view
   });
 
+  it("D2 the death words live in AuthPanel alone — the panel's two copies are deleted (#42)", async () => {
+    const { panel, local, cloud } = mountRig();
+    // The terminal state must still COVER a standing verdict (#42 killed the
+    // words, not the cover — a failed action must never read "存了").
+    await standSavedVerdict(panel, local);
+
+    cloud.failing = new CloudSaveError("auth", "session expired");
+    await panel.click("重新检查");
+
+    // The two CloudSavePanel death texts are gone: no status word and no
+    // guidance paragraph — the panel claims no death (#42 D2).
+    expect(panel.text()).not.toContain("登录已过期");
+    expect(panel.text()).not.toContain("重新登录");
+    expect(panel.text()).not.toContain("已存到云端"); // the old verdict stays covered
+  });
+
   it("an expired session greys nothing — and the refusal names the dead gesture distinctly", async () => {
     const { panel, cloud } = mountRig();
     cloud.failing = new CloudSaveError("auth", "session expired");
     await panel.click("重新检查");
-    expect(panel.text()).toContain("登录已过期"); // the phase's own guidance line
 
     expect(panel.button("重新检查").disabled).toBe(false); // D5: the guard tail is gone
     await panel.click("重新检查");
     expect(panel.text()).toContain("此操作未执行"); // the machine's refusal, on the error line (AuthPanel's law)
+    expect(panel.text()).toContain("登录已过期"); // "a dead session says so" — the machine's own word
+    expect(panel.text()).not.toContain("重新登录"); // …and no guidance: that copy lives in AuthPanel (#42 D2)
   });
 });

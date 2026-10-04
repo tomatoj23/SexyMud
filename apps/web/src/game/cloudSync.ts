@@ -665,7 +665,10 @@ export class CloudSync {
       return new CloudSyncError("busy", "此操作未执行：上一个同步操作还在进行——稍候再试。");
     }
     if (this.current.phase === "auth-expired") {
-      return new CloudSyncError("auth-expired", "登录已过期，此操作未执行——重新登录后继续云存档。");
+      // The REASON only (#42 D2): a dead session says so, and the re-login
+      // guidance is AuthPanel's ONE copy — so this refusal carries no advice
+      // tail, whatever the other refusals' tails say.
+      return new CloudSyncError("auth-expired", "登录已过期，此操作未执行。");
     }
     return null;
   }

@@ -31,7 +31,11 @@ const VERDICT: Record<SyncOutcome, string> = {
  */
 function statusLine(view: StatusView, local: SlotView): string {
   if (view.kind === "busy") return "同步中…";
-  if (view.kind === "auth-expired") return "登录已过期";
+  // A dead session renders NOTHING here (#42 D2): the death words' one home
+  // is AuthPanel (the session machine owns the re-login guidance), and the
+  // old verdict stays COVERED — only the words died, not the cover, so a
+  // failed action can never read "存了".
+  if (view.kind === "auth-expired") return "";
   if (view.kind === "conflict") return "冲突——请选择以哪边继续";
   if (view.kind === "failed") {
     return view.action === "upload"
@@ -118,7 +122,8 @@ function ConfirmButtons({
  * (`sync.destructive`), what the status speaks arrives as `sync.statusView`,
  * and a refused gesture is the machine's own word shown here the way
  * AuthPanel shows one. This layer keeps the interaction choreography
- * (buttons, confirm rows, the file picker) and the wording.
+ * (buttons, confirm rows, the file picker) and the wording — except the
+ * DEATH, whose one home is AuthPanel (#42 D2).
  */
 export function CloudSavePanel({ sync }: { sync: CloudSync }) {
   const state = useSyncExternalStore(
@@ -270,7 +275,7 @@ export function CloudSavePanel({ sync }: { sync: CloudSync }) {
         </p>
       )}
 
-      {state.phase === "auth-expired" && <p style={warnStyle}>登录已过期——重新登录后继续云存档。</p>}
+      {/* #42 D2: the dead phase renders no paragraph — see statusLine. */}
 
       {state.phase === "conflict" && (
         <div style={{ border: "1px solid #d97706", borderRadius: 4, padding: 8, margin: "8px 0" }}>
