@@ -5,6 +5,7 @@ import {
   createCloudbaseSaveDb,
   type CloudbaseApp,
 } from "../src/game/cloudbaseSdk.js";
+import { probeFailureContract } from "./support.js";
 
 /**
  * The CloudBase SDK binding (#30, ADR-0037) — the seam where SDK REALITY is
@@ -15,7 +16,9 @@ import {
  * state, and the account field dispatches to email or username.
  *
  * The regression each shape guards: awaiting these calls blindly used to
- * read a wrong password as "登录成功但未获得会话".
+ * read a wrong password as "登录成功但未获得会话". A failed PROBE is the same
+ * family of quiet lie — decision D1 (#43) rules it loud: "failure ≠ no
+ * session", pinned here and by the shared probe-failure contract.
  */
 
 const session: CloudAuthSession = { uid: "uid-1", account: "侠客行" };
@@ -127,12 +130,67 @@ describe("cloudbaseSdk — account dispatch and session extraction", () => {
     await expect(client.getLoginState()).resolves.toBeNull();
   });
 
-  it("a login state that fails to load reads as no session — signing in again is the same fix", async () => {
+  it("a login state that fails to load REJECTS — a failed probe is not 'no session' (decision D1, #43)", async () => {
     const { client } = stubAuth({
       getLoginState: () => Promise.reject(new TypeError("unreachable")),
     });
 
-    await expect(client.getLoginState()).resolves.toBeNull();
+    await expect(client.getLoginState()).rejects.toMatchObject({
+      name: "CloudAuthError",
+      kind: "network",
+    });
+  });
+});
+
+describe("cloudbaseSdk — a failed probe is loud, never a verdict (decision D1, #43)", () => {
+  // The seam ruling as the SHARED contract — the identical case runs against
+  // the seam's fake in cloud-auth.test.ts.
+  probeFailureContract(() =>
+    stubAuth({ getLoginState: () => Promise.reject(new TypeError("unreachable")) }).client,
+  );
+
+  it("a probe failure after sign-in is never swallowed into '登录成功但未获得会话'", async () => {
+    const { client, calls } = stubAuth({
+      getLoginState: () => Promise.reject(new TypeError("unreachable")),
+    });
+
+    const error: unknown = await client.signIn("侠客行", "口令").then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect((error as Error).message).toContain("获取登录态失败");
+    expect((error as Error).message).not.toContain("登录成功但未获得会话");
+    // The failure stops the flow at the first probe — no phantom re-login.
+    expect(calls.filter((call) => call.method === "signInWithPassword")).toHaveLength(1);
+  });
+
+  it("a probe failure on the SECOND probe (after the explicit re-login) is loud too", async () => {
+    let probes = 0;
+    const { client } = stubAuth({
+      getLoginState: () => {
+        probes += 1;
+        return probes === 1 ? Promise.resolve(null) : Promise.reject(new TypeError("unreachable"));
+      },
+    });
+
+    const error: unknown = await client.signIn("侠客行", "口令").then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect((error as Error).message).toContain("获取登录态失败");
+    expect((error as Error).message).not.toContain("登录成功但未获得会话");
+  });
+
+  it("the '登录成功但未获得会话' verdict is reserved for a probe that RAN and found nothing", async () => {
+    const { client, calls } = stubAuth({
+      getLoginState: () => Promise.resolve(null),
+    });
+
+    await expect(client.signIn("侠客行", "口令")).rejects.toThrow("登录成功但未获得会话");
+    // The explicit re-login ran before the second probe answered empty.
+    expect(calls.filter((call) => call.method === "signInWithPassword")).toHaveLength(2);
   });
 });
 

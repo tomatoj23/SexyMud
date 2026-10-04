@@ -32,8 +32,11 @@ import { snapshotFixture } from "./support.js";
  * Smoke calibration points (残余风险 E1) — the places fake-based tests
  * cannot vouch for: ①错误分类信号（UNAUTHENTICATED 16 / "unauthenticated" /
  * 401）对真后端错误形状是否成立；②条件更新 `updated` 计数与事务 create 的
- * 真语义；③文档 id 的 `~` 拼接在真实 REST 路径上的通行。If any misbehaves,
- * the failure is loud here — never silent.
+ * 真语义；③文档 id 的 `~` 拼接在真实 REST 路径上的通行；④探测失败的分辨
+ * （#43 D1）——SDK 门面把探测失败吞成 `null`（3.10.1 实装查证），真机上
+ * 「探测失败」与「无会话」在门面缝合流；binding 已不自吞、裁定住缝上，
+ * 冒烟时留意此残余。If any misbehaves, the failure is loud here — never
+ * silent.
  */
 
 const envId = process.env["CLOUDBASE_ENV_ID"];

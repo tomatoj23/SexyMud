@@ -1,6 +1,7 @@
 import { CloudSaveError } from "./cloudSaveStore.js";
 import type { CloudSaveFailureKind, CloudSaveRecord, CloudSaveTransport } from "./cloudSaveStore.js";
 import type { CloudAuthSession } from "./cloudAuth.js";
+import { isAlreadyExists, signalOf, type CloudbaseSignal } from "./cloudbaseSignals.js";
 
 /**
  * The CloudBase transport — the real backend adapter behind
@@ -36,16 +37,15 @@ import type { CloudAuthSession } from "./cloudAuth.js";
  * snapshot itself still carries no account id: the identity lives in the
  * storage namespace, not in the save document.
  *
- * **Failure classification (decision D5)** uses the SDK's DOCUMENTED
- * signals — `AuthErrorCode.UNAUTHENTICATED = 16`, `ErrorType
- * "unauthenticated"` / `"login_required"`, HTTP 401 → `auth`; the backend's
- * `already_exists` on a raced create names the CAS condition itself →
- * `conflict`; everything else (including every unknown backend error) →
- * `network`, because retryable is the safe reading of "unknown". No error
- * string guessing beyond those documented enums. ⚠️ Coded gateway failures
- * RESOLVE instead of throwing (verified in the SDK runtime) — every result
- * is checked for `code` before use, because a coded read flowing out as
- * "absent" is exactly the silent degrade D8 bans.
+ * **Failure classification (decision D5)** judges the SDK's DOCUMENTED
+ * signals through `cloudbaseSignals.ts` — the one table (#43): the
+ * session-class signals → `auth`; the backend's create-collision signal on a
+ * raced create names the CAS condition itself → `conflict`; everything else
+ * → `network` (the unknown⇒network rule lives with that table, one home).
+ * No error string guessing beyond those documented enums. ⚠️ Coded gateway
+ * failures RESOLVE instead of throwing (verified in the SDK runtime) — every
+ * result is checked for `code` before use, because a coded read flowing out
+ * as "absent" is exactly the silent degrade D8 bans.
  */
 
 /** A gateway result: success data plus the CARRIED error channel. */
@@ -216,34 +216,26 @@ function throwIfCoded(result: unknown): void {
   }
 }
 
-/** The one error string this adapter honors — it names the CAS condition itself. */
-function isAlreadyExists(error: unknown): boolean {
-  const code = errorCode(error);
-  return code === "already_exists" || code === "ALREADY_EXISTS";
-}
-
-/** The documented unauthenticated signals (decision D5). */
-function isUnauthenticated(error: unknown): boolean {
-  const e = (typeof error === "object" && error !== null ? error : {}) as Record<string, unknown>;
-  if (e["errorCode"] === 16) return true; // AuthErrorCode.UNAUTHENTICATED
-  const code = errorCode(error);
-  if (code === "unauthenticated" || code === "UNAUTHENTICATED" || code === "login_required") return true;
-  return e["statusCode"] === 401 || e["status"] === 401 || e["status"] === "401"; // HTTP 401
-}
-
-function errorCode(error: unknown): unknown {
-  return (typeof error === "object" && error !== null ? (error as Record<string, unknown>)["code"] : undefined);
-}
+/** The thin map (decision D5, #43): the table's signal → the contract's failure kind. */
+const SAVE_KIND: Record<CloudbaseSignal, CloudSaveFailureKind> = {
+  // A duplicate is the create gate's `conflict` before it can reach here, and
+  // a login failure leaking through the wire is not this adapter's vocabulary
+  // — both fall to `network` exactly as before (#43 moves judgment, not words).
+  "already-exists": "network",
+  "invalid-credentials": "network",
+  unauthenticated: "auth",
+  unknown: "network",
+};
 
 /**
- * Turns a thrown backend failure into the contract's classified rejection:
- * `auth` for the documented unauthenticated signals, `network` for everything
- * unknown (decision D5). An already-classified {@link CloudSaveError} — a CAS
- * `conflict`, chiefly — passes through untouched.
+ * Turns a thrown backend failure into the contract's classified rejection —
+ * the map above applied and nothing else (#43). An already-classified
+ * {@link CloudSaveError} — a CAS `conflict`, chiefly — passes through
+ * untouched.
  */
 function asSaveError(error: unknown, operation: string): CloudSaveError | unknown {
   if (error instanceof CloudSaveError) return error;
-  const kind: CloudSaveFailureKind = isUnauthenticated(error) ? "auth" : "network";
+  const kind = SAVE_KIND[signalOf(error)];
   const message = error instanceof Error ? error.message : String(error);
   return new CloudSaveError(kind, `cloud save: ${operation} failed: ${message}`);
 }

@@ -97,7 +97,8 @@ export type ReplaceResult =
  *   not exist), and otherwise applies nothing and rejects `conflict`;
  * - failures reject with {@link CloudSaveError} — `network`/`auth` from the
  *   backend, `conflict` from the CAS. An unexpected backend error is a
- *   `network` one (retryable is the safe reading of "unknown").
+ *   `network` one (the unknown⇒network rule's one home is
+ *   `cloudbaseSignals.ts` — #43 folded four copied wordings into it).
  */
 export interface CloudSaveTransport {
   /** The slot's record, or `null` when the slot is empty (absence is not failure). */

@@ -45,8 +45,11 @@ function CloudShell({ cloud }: { cloud: CloudStack }) {
   const [sync, setSync] = useState<CloudSync | null>(null);
 
   // Boot: probe for a persisted session (never an "expired" — see CloudAuth.restore).
+  // A failed probe REJECTS (#43, decision D1) — the binding keeps that
+  // information; how quiet a flaky boot goes is THIS layer's decision, and
+  // this shell stays quiet (the login form is the same fix either way).
   useEffect(() => {
-    void cloud.auth.restore();
+    void cloud.auth.restore().catch(() => undefined);
   }, [cloud]);
 
   useEffect(() => {

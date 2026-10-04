@@ -688,9 +688,9 @@ export class CloudSync {
    * session is told by {@link run} once the state has landed); `corrupt`
    * names cloud damage (defensive — the flows map their own damage verdicts
    * today); everything else — every unknown error included — is `network`
-   * (retryable is the safe reading). A `conflict` never arrives here (the
-   * store hands its race verdict back as a result), mapped to `network` only
-   * so the taxonomy stays closed.
+   * (the unknown⇒network rule's one home: `cloudbaseSignals.ts`). A
+   * `conflict` never arrives here (the store hands its race verdict back as
+   * a result), mapped to `network` only so the taxonomy stays closed.
    */
   private failureState(error: unknown, action: SyncAction): SyncState {
     if (error instanceof CloudSaveError && error.kind === "auth") {

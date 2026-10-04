@@ -1,3 +1,4 @@
+import { expect, it } from "vitest";
 import { customCode, customEvent, serializeWorld, summaryOf } from "@sexymud/core";
 import type {
   CmdSetSource,
@@ -10,6 +11,7 @@ import type {
   WorldRuntime,
   WorldState,
 } from "@sexymud/core";
+import { CloudAuth, type CloudAuthClient } from "../src/game/cloudAuth.js";
 import type { CloudSaveRecord } from "../src/game/cloudSaveStore.js";
 import type { SlotView } from "../src/game/cloudSync.js";
 
@@ -145,4 +147,22 @@ export function memoryStorage(): Storage {
  */
 export function anchorDamaged(text: string): CloudSaveRecord {
   return { text, revision: 17 as unknown as string };
+}
+
+/**
+ * The failed-probe contract (#43, decision D1/D4) — the seam ruling elevated
+ * to a contract BOTH sides of the binding share: a probe that cannot probe is
+ * NOT "no session". `restore` REJECTS (the failure's words stay visible) and
+ * the state does not move — never "expired", since nothing died. Each side
+ * hands in a client whose probe fails its own way — with a failure whose
+ * message contains "unreachable": the contract asserts those words survive
+ * the trip (the fake rejects raw, the binding wraps without erasing them).
+ */
+export function probeFailureContract(makeFailingProbeClient: () => CloudAuthClient): void {
+  it("a FAILED probe leaves the state alone — an unreachable backend is not a logout", async () => {
+    const auth = new CloudAuth(makeFailingProbeClient());
+
+    await expect(auth.restore()).rejects.toThrow("unreachable");
+    expect(auth.state).toEqual({ status: "signed-out" }); // unchanged, and never "expired"
+  });
 }

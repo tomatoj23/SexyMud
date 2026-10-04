@@ -1,4 +1,5 @@
 import { CloudAuthError, type CloudAuthClient, type CloudAuthSession } from "./cloudAuth.js";
+import { signalOf } from "./cloudbaseSignals.js";
 import type { CloudBaseDb } from "./cloudbaseTransport.js";
 
 /**
@@ -23,7 +24,15 @@ import type { CloudBaseDb } from "./cloudbaseTransport.js";
  *     accounts are created through this flow or pre-provisioned (decision D1,
  *     ADR-0037);
  *   - `signOut` also resolves with `error` — a failed logout MUST surface, or
- *     the UI says "signed out" while the backend session lives on.
+ *     the UI says "signed out" while the backend session lives on;
+ *   - `getLoginState` answers `null` on a FAILED probe, not only on "no
+ *     session" — the facade catches the oauth layer's failure and swallows it
+ *     (verified in the shipped source of `@cloudbase/js-sdk@3.10.1`, its
+ *     `Auth.getLoginState` try/catch). Decision D1's ruling ("failure ≠ no
+ *     session") is therefore enforced here for every failure that REACHES
+ *     this binding — never re-swallowed — and pinned by the shared
+ *     probe-failure contract; the residual conflation one layer down is a
+ *     real-backend smoke calibration point (cloudbase-e2e.test.ts).
  */
 
 /** The error channel the SDK returns instead of throwing (the `AuthResult`). */
@@ -71,33 +80,28 @@ export function createCloudbaseAuthClient(app: CloudbaseApp): CloudAuthClient {
   const auth = (app as { auth(): unknown }).auth() as CloudbaseAuthSurface;
   return {
     async signUp(email, password) {
-      const result = requireOk(
-        await call(() => auth.signUp({ email, password })),
-        "注册",
-      );
+      const result = await callOk(() => auth.signUp({ email, password }), "注册");
       const verifyOtp = (result.data as { verifyOtp?: CloudbaseSignUpCompleter } | undefined)?.verifyOtp;
       if (!verifyOtp) {
         throw new CloudAuthError("network", "注册未返回验证码校验步骤");
       }
       return async (code: string) => {
-        requireOk(await call(() => verifyOtp({ token: code })), "注册");
+        await callOk(() => verifyOtp({ token: code }), "注册");
         return establishedSession(auth, { email, password });
       };
     },
     async signIn(account, password) {
       const credentials = credentialsFor(account, password);
-      requireOk(await call(() => auth.signInWithPassword(credentials)), "登录");
+      await callOk(() => auth.signInWithPassword(credentials), "登录");
       return establishedSession(auth, credentials);
     },
     async getLoginState() {
-      // A failed probe reads as "no session": signing in again is the same
-      // fix either way, and this keeps a flaky boot out of the player's face.
-      return sessionOf(await auth.getLoginState().catch(() => null));
+      return probeSession(auth);
     },
     async signOut() {
       // A failed logout REJECTS — "signed out" over a live backend session is
       // exactly the quiet lie this project bans (decision D8's discipline).
-      requireOk(await call(() => auth.signOut()), "退出");
+      await callOk(() => auth.signOut(), "退出");
     },
   };
 }
@@ -120,15 +124,26 @@ async function establishedSession(
   auth: CloudbaseAuthSurface,
   credentials: { email: string; password: string } | { username: string; password: string },
 ): Promise<CloudAuthSession> {
-  const landed = sessionOf(await auth.getLoginState().catch(() => null));
+  const landed = await probeSession(auth);
   if (landed) return landed;
   // Some flows report success without landing a local session — sign in explicitly.
-  requireOk(await call(() => auth.signInWithPassword(credentials)), "登录");
-  const session = sessionOf(await auth.getLoginState().catch(() => null));
+  await callOk(() => auth.signInWithPassword(credentials), "登录");
+  const session = await probeSession(auth);
   if (!session) {
     throw new CloudAuthError("network", "登录成功但未获得会话");
   }
   return session;
+}
+
+/**
+ * The live-session probe — the one path behind `getLoginState` and both
+ * post-login probes (#43, decision D1): a probe failure REJECTS ("failure ≠
+ * no session"), and the "登录成功但未获得会话" verdict is reserved for a probe
+ * that RAN and found nothing. A failed probe must never be swallowed into
+ * either verdict.
+ */
+async function probeSession(auth: CloudbaseAuthSurface): Promise<CloudAuthSession | null> {
+  return sessionOf(await call(() => auth.getLoginState(), "获取登录态"));
 }
 
 /**
@@ -143,44 +158,45 @@ function sessionOf(state: { user?: CloudbaseUserLike } | null): CloudAuthSession
   return { uid, account: user?.username ?? user?.email ?? uid };
 }
 
+/**
+ * Runs one SDK call whose success is an `AuthResult`, collapsing both failure
+ * channels into one classified rejection under one `what` label: a THROWN
+ * failure and a resolved `error` channel alike.
+ */
+async function callOk<T extends CloudbaseAuthResultLike>(operation: () => Promise<T>, what: string): Promise<T> {
+  return requireOk(await call(operation, what), what);
+}
+
 /** Runs one SDK call, converting a THROWN failure to the form's vocabulary. */
-async function call<T>(operation: () => Promise<T>): Promise<T> {
+async function call<T>(operation: () => Promise<T>, what: string): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    throw authFailure(error);
+    throw authFailure(error, what);
   }
 }
 
 /** The SDK's error channel: an `AuthResult` carrying `error` is a failure. */
-function requireOk(result: CloudbaseAuthResultLike, what: string): CloudbaseAuthResultLike {
+function requireOk<T extends CloudbaseAuthResultLike>(result: T, what: string): T {
   if (result?.error) throw authFailure(result.error, what);
   return result;
 }
 
 /**
  * Login-time failures for the FORM (decision D5's discipline, applied to the
- * sign-in edge): the SDK's documented category/code VOCABULARY decides the
- * hint — enum words, not string guessing — everything unknown is `network`
- * (retryable is the safe reading).
+ * sign-in edge): a thin map of `cloudbaseSignals.ts`'s table (#43) — the
+ * documented enum words decide the hint, never string guessing, and the
+ * unknown⇒network default is the rule that table owns.
  */
-function authFailure(error: unknown, what = "登录"): CloudAuthError {
-  const e = (typeof error === "object" && error !== null ? error : {}) as Record<string, unknown>;
-  const category = String(e["category"] ?? "");
-  const code = String(e["code"] ?? "");
-  if (code === "already_exists" || code === "ALREADY_EXISTS") {
+function authFailure(error: unknown, what: string): CloudAuthError {
+  const signal = signalOf(error);
+  if (signal === "already-exists") {
     return new CloudAuthError("already-exists", "该邮箱已被注册");
   }
-  if (
-    category === "INVALID_CREDENTIALS" ||
-    category === "USER_NOT_FOUND" ||
-    category === "AUTH_METHOD_MISMATCH" ||
-    code === "invalid_password" ||
-    code === "invalid_credentials" ||
-    code === "invalid_grant"
-  ) {
+  if (signal === "invalid-credentials") {
     return new CloudAuthError("invalid-credentials", "账号或密码错误");
   }
-  const message = error instanceof Error ? error.message : String(e["message"] ?? error);
+  const carrier = (typeof error === "object" && error !== null ? error : {}) as { message?: unknown };
+  const message = error instanceof Error ? error.message : String(carrier.message ?? error);
   return new CloudAuthError("network", `${what}失败：${message}`);
 }

@@ -6,6 +6,7 @@ import {
   type CloudAuthClient,
   type CloudAuthSession,
 } from "../src/game/cloudAuth.js";
+import { probeFailureContract } from "./support.js";
 
 /**
  * Cloud save identity and login (#30; spec/04 §1.6, ADR-0037) — the session
@@ -26,7 +27,10 @@ import {
  *   - registration is the backend's two-step OTP flow (decision D1): a
  *     registration in flight is not a session until `verify` lands;
  *   - anonymous identity is not offered at all (decision D2): the only way
- *     to a session is an account.
+ *     to a session is an account;
+ *   - a FAILED probe is not "no session" (decision D1, #43) — the ruling is
+ *     the shared probe-failure contract, run against this fake AND the real
+ *     binding (cloudbase-sdk.test.ts).
  */
 
 const session: CloudAuthSession = { uid: "uid-1", account: "侠客行" };
@@ -103,13 +107,12 @@ describe("CloudAuth — the three states (decision D6)", () => {
     expect(auth.session).toBeNull();
   });
 
-  it("a FAILED probe leaves the state alone — an unreachable backend is not a logout", async () => {
+  // The failed-probe ruling as the SHARED contract (#43, decision D1/D4) —
+  // the identical case runs against the real binding in cloudbase-sdk.test.ts.
+  probeFailureContract(() => {
     const client = new FakeAuthClient();
     client.restoreFailing = new Error("unreachable");
-    const auth = new CloudAuth(client);
-
-    await expect(auth.restore()).rejects.toThrow("unreachable");
-    expectStatus(auth.state, "signed-out"); // unchanged, and never "expired"
+    return client;
   });
 
   it("a slow probe never clobbers a newer sign-in — the probe's stale answer is discarded", async () => {
