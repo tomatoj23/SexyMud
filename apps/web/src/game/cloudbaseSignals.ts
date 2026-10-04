@@ -40,7 +40,18 @@ interface SignalShape {
   status?: unknown;
 }
 
-/** Classifies a raw SDK error (thrown or carried) into the documented signals. */
+/**
+ * Classifies a raw SDK error (thrown or carried) into the documented signals.
+ * Precedence when ONE carrier names several signals: `already-exists`
+ * outranks `invalid-credentials` outranks `unauthenticated` — the more
+ * specific operational signal wins (such a carrier is contradictory; the
+ * table answers with the specific verdict, not the generic one).
+ *
+ * Domain: the judgments read plain primitive fields off the SDK's error
+ * carriers. JS-object-level hostility — boxed strings, array codes, throwing
+ * getters — is outside this table's contract, same as the "never throws"
+ * reader contracts are scoped to the JSON channel (#46's domain discipline).
+ */
 export function signalOf(error: unknown): CloudbaseSignal {
   if (isAlreadyExists(error)) return "already-exists";
   if (isInvalidCredentials(error)) return "invalid-credentials";

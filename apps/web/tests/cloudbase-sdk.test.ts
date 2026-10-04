@@ -192,6 +192,57 @@ describe("cloudbaseSdk — a failed probe is loud, never a verdict (decision D1,
     // The explicit re-login ran before the second probe answered empty.
     expect(calls.filter((call) => call.method === "signInWithPassword")).toHaveLength(2);
   });
+
+  it("a user WITHOUT any id after sign-in is that verdict too — sessionOf's ruling, not a swallowed probe", async () => {
+    const { client } = stubAuth({
+      // The probe RAN and found a user that could bind nothing (no uid, no
+      // save namespace) — "no session" by sessionOf, distinct from a failure.
+      getLoginState: () => Promise.resolve({ user: { username: "侠客行" } }),
+    });
+
+    await expect(client.signIn("侠客行", "口令")).rejects.toThrow("登录成功但未获得会话");
+  });
+
+  it("a probe failure after the sign-up completer rejects loud too", async () => {
+    const { client } = stubAuth({
+      signUp: () =>
+        Promise.resolve({
+          data: { verifyOtp: () => Promise.resolve({ data: {}, error: null }) },
+          error: null,
+        }),
+      getLoginState: () => Promise.reject(new TypeError("unreachable")),
+    });
+
+    const complete = await client.signUp("a@b.c", "口令");
+    const error: unknown = await complete("123456").then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect((error as Error).message).toContain("获取登录态失败");
+    expect((error as Error).message).not.toContain("登录成功但未获得会话");
+  });
+
+  it("a FAILED explicit re-login rejects as a login failure — never the missing-session verdict", async () => {
+    let logins = 0;
+    const { client } = stubAuth({
+      signInWithPassword: () => {
+        logins += 1;
+        return logins === 1
+          ? Promise.resolve({ data: { user: null, session: null }, error: null })
+          : Promise.resolve(sdkError({ category: "INVALID_CREDENTIALS", message: "bad" }));
+      },
+      getLoginState: () => Promise.resolve(null), // first probe finds nothing → the explicit re-login runs
+    });
+
+    const error: unknown = await client.signIn("侠客行", "口令").then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(CloudAuthError);
+    expect((error as CloudAuthError).kind).toBe("invalid-credentials");
+    expect((error as Error).message).not.toContain("登录成功但未获得会话");
+  });
 });
 
 describe("cloudbaseSdk — sign-up is the backend's two-step OTP flow (decision D1)", () => {

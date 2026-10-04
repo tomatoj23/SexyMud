@@ -220,7 +220,11 @@ function throwIfCoded(result: unknown): void {
 const SAVE_KIND: Record<CloudbaseSignal, CloudSaveFailureKind> = {
   // A duplicate is the create gate's `conflict` before it can reach here, and
   // a login failure leaking through the wire is not this adapter's vocabulary
-  // — both fall to `network` exactly as before (#43 moves judgment, not words).
+  // — both fall to `network`, as before for SINGLE-signal carriers. ⚠️ The
+  // one consolidation delta (#43 复查轮, A/B-probed): a CONTRADICTORY carrier
+  // naming a session signal beside another used to read `auth` (this adapter
+  // judged unauthenticated alone); the table answers with the specific signal
+  // (signalOf's precedence) → `network`.
   "already-exists": "network",
   "invalid-credentials": "network",
   unauthenticated: "auth",

@@ -139,8 +139,9 @@ async function establishedSession(
  * The live-session probe — the one path behind `getLoginState` and both
  * post-login probes (#43, decision D1): a probe failure REJECTS ("failure ≠
  * no session"), and the "登录成功但未获得会话" verdict is reserved for a probe
- * that RAN and found nothing. A failed probe must never be swallowed into
- * either verdict.
+ * that RAN and found no BINDABLE session — `sessionOf` rules a user without
+ * any id as no session (no uid, no save namespace), so that case lands here
+ * too. A failed probe must never be swallowed into either verdict.
  */
 async function probeSession(auth: CloudbaseAuthSurface): Promise<CloudAuthSession | null> {
   return sessionOf(await call(() => auth.getLoginState(), "获取登录态"));

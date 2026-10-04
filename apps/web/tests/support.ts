@@ -11,7 +11,7 @@ import type {
   WorldRuntime,
   WorldState,
 } from "@sexymud/core";
-import { CloudAuth, type CloudAuthClient } from "../src/game/cloudAuth.js";
+import { CloudAuth, type AuthState, type CloudAuthClient } from "../src/game/cloudAuth.js";
 import type { CloudSaveRecord } from "../src/game/cloudSaveStore.js";
 import type { SlotView } from "../src/game/cloudSync.js";
 
@@ -161,8 +161,16 @@ export function anchorDamaged(text: string): CloudSaveRecord {
 export function probeFailureContract(makeFailingProbeClient: () => CloudAuthClient): void {
   it("a FAILED probe leaves the state alone — an unreachable backend is not a logout", async () => {
     const auth = new CloudAuth(makeFailingProbeClient());
+    const moved: AuthState[] = [];
+    const unsubscribe = auth.subscribe(() => moved.push(auth.state));
 
     await expect(auth.restore()).rejects.toThrow("unreachable");
     expect(auth.state).toEqual({ status: "signed-out" }); // unchanged, and never "expired"
+    // A state move ALWAYS notifies (transition is the only writer) — nothing
+    // moved iff nothing fired. This is the half that bites "transition first,
+    // rethrow after" mutations; the deep-equal above alone cannot tell a
+    // signed-out→signed-out move from no move at all.
+    expect(moved).toEqual([]);
+    unsubscribe();
   });
 }
