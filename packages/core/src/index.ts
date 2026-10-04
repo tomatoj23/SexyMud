@@ -8,6 +8,8 @@
  * docs/spec/00-overview.md.
  */
 export { SAVE_VERSION, migrateSnapshot } from "./save/migrations.js";
+export { summaryOf } from "./save/summary.js";
+export type { SaveSummary } from "./save/summary.js";
 export { createSeededRng } from "./rng.js";
 export { createTickClock, observeDispatch } from "./clock.js";
 export type { TickClock } from "./clock.js";

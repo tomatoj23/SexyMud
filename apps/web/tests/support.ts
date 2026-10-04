@@ -1,4 +1,4 @@
-import { customCode, customEvent, serializeWorld } from "@sexymud/core";
+import { customCode, customEvent, serializeWorld, summaryOf } from "@sexymud/core";
 import type {
   CmdSetSource,
   CommandSpec,
@@ -11,6 +11,7 @@ import type {
   WorldState,
 } from "@sexymud/core";
 import type { CloudSaveRecord } from "../src/game/cloudSaveStore.js";
+import type { SlotView } from "../src/game/cloudSync.js";
 
 /**
  * Shared rig pieces for the host tests: the synthetic commands, their verb
@@ -41,6 +42,11 @@ export function snapshotFixture(options: { nowTick?: number; flags?: string[] } 
     due: [{ dueTick: 70, payload: { kind: "fuse" } }],
   };
   return serializeWorld(world, meta);
+}
+
+/** A `save` view as the machine builds one — snapshot AND summary (#46). */
+export function saveView(snapshot: Snapshot): SlotView {
+  return { kind: "save", snapshot, summary: summaryOf(snapshot) };
 }
 
 export const greet: CommandSpec<WorldRuntime> = {

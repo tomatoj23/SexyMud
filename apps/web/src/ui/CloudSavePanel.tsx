@@ -61,22 +61,23 @@ function statusLine(view: StatusView, local: SlotView): string {
 }
 
 /**
- * What the player sees of one slot in the comparison — a TOTAL reader: a
- * hostile payload (`data: null`) is still a `save` view at the envelope
- * level, and the summary must never throw on it — a crash here would take
- * the whole panel down, salvage button included (M7's law; the summary
- * module of #46 absorbs this). Exported for its direct pin.
+ * What the player sees of one slot in the comparison — words over the
+ * summary fields and NOTHING else (#46 D1): the payload drill is gone from
+ * this layer, the format knowledge lives beside the migration chain, and v3
+ * touches only that module (D2). The total-reader law rode with it (M7): a
+ * hostile payload (`data: null`) never reaches these words un-summarized —
+ * `summaryOf` never throws, so no payload can take the panel down, salvage
+ * button included. Exported for its direct pin.
  */
 export function slotSummary(view: SlotView): string {
   if (view.kind === "unknown") return "未检查";
   if (view.kind === "empty") return "无存档";
   if (view.kind === "corrupt") return "存档损坏";
   if (view.kind === "unavailable") return "存储不可访问";
-  const data: unknown = view.snapshot.data;
-  const nowTick =
-    typeof data === "object" && data !== null ? (data as { nowTick?: unknown }).nowTick : undefined;
-  const progress = typeof nowTick === "number" ? ` · 进度 ${nowTick} tick` : "";
-  return `存档 v${view.snapshot.version}${progress}`;
+  const { version, nowTick } = view.summary;
+  // An absent tick is an absent suffix (AC3) — absence shows nothing.
+  const progress = nowTick === undefined ? "" : ` · 进度 ${nowTick} tick`;
+  return `存档 v${version}${progress}`;
 }
 
 /** The two-step confirm shared by every destructive exit (decision D7). */

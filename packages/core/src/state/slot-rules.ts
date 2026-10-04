@@ -23,7 +23,11 @@ import type { EntityRecord, SaveDataV1, SaveDataV2, WorldMeta } from "./snapshot
  *
  * Three readers take their fields off each row (one table, three readers): `readSaveData`
  * reads `validate`, `restoreWorld` reads `absent`, `migrations` reads
- * `absent.migrate`. The generic steps below are those three halves; the
+ * `absent.migrate`. The law above names these three LOAD readers; the
+ * display summary (`save/summary.ts`, #46) is deliberately not a fourth —
+ * its tolerance is display-only (absent AND malformed both answer "no
+ * summary"), and whether a save is damaged stays the load path's verdict.
+ * The generic steps below are those three halves; the
  * engine's own consumers always hand them THIS table — the table is not
  * runtime-injectable (`DERIVED_ENTITY_KEYS` law: only its "no injection" half
  * applies here, since these rows do not derive compile-time shapes — the
@@ -136,7 +140,7 @@ const isTagMap: SlotValidator = (value, what) => {
 };
 
 /** The tick definition of `clock.ts` assertTick: a non-negative safe integer. */
-const isTickValue = (value: unknown): value is number =>
+export const isTickValue = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 /**

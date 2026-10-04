@@ -1,4 +1,11 @@
-import { migrateSnapshot, restoreWorld, type SaveStore, type Snapshot } from "@sexymud/core";
+import {
+  migrateSnapshot,
+  restoreWorld,
+  summaryOf,
+  type SaveStore,
+  type SaveSummary,
+  type Snapshot,
+} from "@sexymud/core";
 import { CloudSaveError, type ReplaceResult } from "./cloudSaveStore.js";
 import { LocalSaveUnavailableError, type RawLocalRead } from "./localSaveStore.js";
 import { parseSnapshotText } from "./saveText.js";
@@ -62,13 +69,25 @@ import { parseSnapshotText } from "./saveText.js";
 export type SlotView =
   | { kind: "unknown" }
   | { kind: "empty" }
-  | { kind: "save"; snapshot: Snapshot }
+  /**
+   * A save: the raw snapshot (the machine compares bytes — #31) AND its
+   * summary, generated at the read point (#46 D1). The panel renders the
+   * summary fields and drills nothing; what the payload carries is the
+   * summary module's knowledge (`save/summary.ts`, beside the migration
+   * chain), not this layer's.
+   */
+  | { kind: "save"; snapshot: Snapshot; summary: SaveSummary }
   | { kind: "corrupt" }
   /** The storage itself could not be reached (#32 D4) — there are no bytes to show. */
   | { kind: "unavailable" };
 
 /** What a READ of a slot can produce — `unknown` is "never read", not a read result. */
 type ReadSlotView = Exclude<SlotView, { kind: "unknown" }>;
+
+/** A `save` view out of a snapshot — summary generated where the view is built (#46). */
+function saveView(snapshot: Snapshot): ReadSlotView {
+  return { kind: "save", snapshot, summary: summaryOf(snapshot) };
+}
 
 /** The last sync action's verdict — what the status line says. */
 export type SyncOutcome =
@@ -404,7 +423,7 @@ export class CloudSync {
       const snapshot = view.snapshot;
       const result = await this.cloud.replace(snapshot);
       if (result.outcome === "saved") {
-        this.views.remote = { kind: "save", snapshot };
+        this.views.remote = saveView(snapshot);
         this.settle("saved", "upload");
         return { phase: "idle" };
       }
@@ -431,7 +450,7 @@ export class CloudSync {
         }
         throw error;
       }
-      this.views.remote = record === null ? { kind: "empty" } : { kind: "save", snapshot: record };
+      this.views.remote = record === null ? { kind: "empty" } : saveView(record);
       if (record === null) {
         this.settle("remote-empty", "download");
         return { phase: "idle" };
@@ -585,7 +604,7 @@ export class CloudSync {
           action: "import",
         };
       }
-      this.views.local = { kind: "save", snapshot };
+      this.views.local = saveView(snapshot);
       this.settle("imported", "import");
       return { phase: "idle" };
     });
@@ -682,7 +701,7 @@ export class CloudSync {
   private async remoteViewToleratingCorrupt(): Promise<ReadSlotView> {
     try {
       const record = await this.cloud.load();
-      return record === null ? { kind: "empty" } : { kind: "save", snapshot: record };
+      return record === null ? { kind: "empty" } : saveView(record);
     } catch (error) {
       if (error instanceof CloudSaveError && error.kind === "corrupt") return { kind: "corrupt" };
       throw error;
@@ -708,7 +727,7 @@ export class CloudSync {
   private async readLocalView(): Promise<ReadSlotView> {
     try {
       const record = await this.local.load();
-      return record === null ? { kind: "empty" } : { kind: "save", snapshot: record };
+      return record === null ? { kind: "empty" } : saveView(record);
     } catch (error) {
       return { kind: error instanceof LocalSaveUnavailableError ? "unavailable" : "corrupt" };
     }
@@ -735,7 +754,7 @@ export class CloudSync {
   private rawView(raw: RawLocalRead): ReadSlotView {
     if (raw.kind !== "text") return { kind: raw.kind };
     try {
-      return { kind: "save", snapshot: parseSnapshotText(raw.text) };
+      return saveView(parseSnapshotText(raw.text));
     } catch {
       return { kind: "corrupt" };
     }

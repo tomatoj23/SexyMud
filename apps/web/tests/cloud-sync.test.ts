@@ -14,7 +14,7 @@ import {
   type SlotView,
   type SyncRefusal,
 } from "../src/game/cloudSync.js";
-import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
+import { anchorDamaged, memoryStorage, saveView, snapshotFixture } from "./support.js";
 
 /**
  * The host's cloud-sync surface (#30): the sync STATUS ("saved / not saved /
@@ -218,8 +218,8 @@ describe("CloudSync — probe shows both sides; sync is never automatic (decisio
     await sync.probe();
 
     expect(sync.state).toEqual({ phase: "conflict", cause: "compare" });
-    expect(sync.localView).toEqual({ kind: "save", snapshot: localSnapshot });
-    expect(sync.remoteView).toEqual({ kind: "save", snapshot: remoteSnapshot });
+    expect(sync.localView).toEqual(saveView(localSnapshot));
+    expect(sync.remoteView).toEqual(saveView(remoteSnapshot));
   });
 
   it("a corrupt remote is a VISIBLE damage, not a probe failure — the player sees what is there", async () => {
@@ -338,7 +338,7 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
     await sync.upload();
 
     expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
-    expect(sync.remoteView).toEqual({ kind: "save", snapshot: theirs });
+    expect(sync.remoteView).toEqual(saveView(theirs));
   });
 
   it("offline: upload fails 'network' and BOTH stores are untouched — 'not saved' never pretends 'saved' (decision D8)", async () => {
@@ -353,7 +353,7 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
     expect(sync.state).toEqual({ phase: "failed", failure: "network", action: "upload" });
     expect(transport.slots.has(KEY)).toBe(false); // remote untouched
     await expect(local.load()).resolves.toEqual(mine); // local untouched too
-    expect(sync.localView).toEqual({ kind: "save", snapshot: mine }); // but the read DID refresh the view
+    expect(sync.localView).toEqual(saveView(mine)); // but the read DID refresh the view
   });
 
   it("an UNREPAIRABLE corrupt record reports 'corrupt', not a phantom 'another device' conflict (decision D8)", async () => {
@@ -388,7 +388,7 @@ describe("CloudSync — upload: observe then write (decision D8)", () => {
     await sync.upload();
 
     expect(sync.state).toEqual({ phase: "conflict", cause: "save" });
-    expect(sync.remoteView).toEqual({ kind: "save", snapshot: theirs });
+    expect(sync.remoteView).toEqual(saveView(theirs));
   });
 
   it("a race that writes a NEW damaged row is the RACE — 'conflict' with the damage visible in the view (decision D3 edge)", async () => {
@@ -528,7 +528,7 @@ describe("CloudSync — the upload payload is the LOCAL SLOT's current content (
 
     await sync.upload();
 
-    expect(sync.localView).toEqual({ kind: "save", snapshot: newer });
+    expect(sync.localView).toEqual(saveView(newer));
   });
 });
 
@@ -543,7 +543,7 @@ describe("CloudSync — download: cloud into the local slot", () => {
 
     expect(sync.last).toBe("downloaded");
     await expect(local.load()).resolves.toEqual(snapshot);
-    expect(sync.localView).toEqual({ kind: "save", snapshot }); // the success path refreshes the local view
+    expect(sync.localView).toEqual(saveView(snapshot)); // the success path refreshes the local view
   });
 
   it("an empty cloud is 'remote-empty', not a failure — and local is untouched", async () => {
@@ -751,7 +751,7 @@ describe("CloudSync — state changes are observable (the panel follows, never p
 });
 
 describe("CloudSync — the comparison views carry what the dialog shows", () => {
-  it("a save view carries the snapshot (version and tick readable for the dialog)", async () => {
+  it("a save view carries the summary the dialog renders — generated at the read point (#46 D1)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const { transport, sync } = rig();
     const snapshot = snapshotFixture({ nowTick: 42 });
@@ -762,8 +762,12 @@ describe("CloudSync — the comparison views carry what the dialog shows", () =>
     const view: SlotView = sync.remoteView;
     expect(view).toMatchObject({ kind: "save" });
     if (view.kind === "save") {
-      expect(view.snapshot.version).toBe(snapshot.version);
-      expect(view.snapshot.data).toMatchObject({ nowTick: 42 });
+      // Literal values, not `summaryOf` output: the ATTACHMENT (at the read
+      // point) and the CONTENT are both pinned here — the reader's own
+      // tolerance classes are core's save-summary.test.
+      expect(view.summary).toEqual({ version: snapshot.version, nowTick: 42 });
+      // The raw snapshot still rides along — the machine compares bytes (#31).
+      expect(view.snapshot).toEqual(snapshot);
     }
   });
 });
@@ -871,7 +875,7 @@ describe("CloudSync — import: the export channel's dual (#33)", () => {
 
     // AC3: the success path refreshes the local view with the imported save.
     expect(sync.last).toBe("imported");
-    expect(sync.localView).toEqual({ kind: "save", snapshot: JSON.parse(V1_TEXT) });
+    expect(sync.localView).toEqual(saveView(JSON.parse(V1_TEXT)));
     // Stored UNMIGRATED — v1 bytes, none of the v2 scalars added in transit.
     expect(localStorage.getItem(KEY)).toBe(V1_TEXT);
     // A second commit finds no escrow — the confirm is answered once.
@@ -1138,7 +1142,7 @@ describe("CloudSync — export: the escape hatch ships the SLOT's own bytes (#34
     expect(sync.state.phase).toBe("idle");
     expect(sync.last).toBe("exported");
     expect(await fileTexts(files)).toEqual([JSON.stringify(newer)]);
-    expect(sync.localView).toEqual({ kind: "save", snapshot: newer }); // the read is the refresh
+    expect(sync.localView).toEqual(saveView(newer)); // the read is the refresh
   });
 
   it("AC1 byte fidelity: the file is the stored TEXT — formatting and all, never a re-serialization", async () => {

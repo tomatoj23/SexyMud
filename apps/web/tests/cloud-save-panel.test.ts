@@ -6,16 +6,19 @@ import { LocalSaveUnavailableError, type RawLocalRead } from "../src/game/localS
 import { CloudSync, type CloudSlot, type LocalSlot, type SlotView } from "../src/game/cloudSync.js";
 import { slotSummary } from "../src/ui/CloudSavePanel.js";
 import { mountPanel, type PanelRig } from "./panel-rig.js";
-import { snapshotFixture } from "./support.js";
+import { saveView, snapshotFixture } from "./support.js";
 
 /**
  * The panel's own tests (#34's pure-function pins, #45's W6 render pins).
  *
- * The summary reader is pinned as a TOTAL function (#34 复查轮; M7's law): a
- * hostile payload (`data: null`) is still a `save` view at the envelope
- * level, and the summary must never throw on it — a crash here would take
- * the whole panel down, salvage button included (#34 D2 makes that button the
- * player's escape hatch).
+ * The summary chain is pinned as TOTAL (#34 复查轮; M7's law): a hostile
+ * payload (`data: null`) is still a `save` view at the envelope level, and
+ * nothing between the bytes and the words may throw on it — a crash here
+ * would take the whole panel down, salvage button included (#34 D2 makes
+ * that button the player's escape hatch). Since #46 the reader itself lives
+ * beside the migration chain (`summaryOf`, pinned in core's
+ * save-summary.test); what this layer pins is that the WHOLE chain renders
+ * and that the panel reads the summary fields alone.
  *
  * The render pins (#45 W6) carry the judgment-discipline contract: the
  * machine owns every judgment — what is destructive and what it costs
@@ -25,11 +28,7 @@ import { snapshotFixture } from "./support.js";
  * import button, #34's export door visibility.
  */
 
-function saveView(snapshot: Snapshot): SlotView {
-  return { kind: "save", snapshot };
-}
-
-describe("CloudSavePanel — slotSummary is a total reader (M7)", () => {
+describe("CloudSavePanel — the summary chain is total and the panel words it (M7/#46)", () => {
   it("a hostile payload (`data: null`) never crashes the summary — no progress suffix, panel alive", () => {
     // Envelope-clean but payload-hostile: parseSnapshotText accepts it (the
     // envelope check is only `{version, data}`), so the view is a `save` —
@@ -53,6 +52,18 @@ describe("CloudSavePanel — slotSummary is a total reader (M7)", () => {
     expect(slotSummary({ kind: "empty" })).toBe("无存档");
     expect(slotSummary({ kind: "corrupt" })).toBe("存档损坏");
     expect(slotSummary({ kind: "unavailable" })).toBe("存储不可访问");
+  });
+
+  it("the panel renders the SUMMARY fields alone — the payload drill is gone, not merely hidden (#46 AC1)", () => {
+    // A summary that disagrees with its own snapshot: whatever the payload
+    // holds, the words come from `view.summary` — v3 may move or rename
+    // `nowTick` and touch only the summary module, never this layer (D2).
+    const lying: SlotView = {
+      kind: "save",
+      snapshot: { version: 2, data: { nowTick: 42 } } as Snapshot,
+      summary: { version: 3, nowTick: 7 },
+    };
+    expect(slotSummary(lying)).toBe("存档 v3 · 进度 7 tick");
   });
 });
 
