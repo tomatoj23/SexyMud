@@ -37,7 +37,10 @@ import { cloudSaveTransportContract, type TransportTarget } from "./transport-co
  * 真语义；③文档 id 的 `~` 拼接在真实 REST 路径上的通行；④探测失败的分辨
  * （#43 D1）——SDK 门面把探测失败吞成 `null`（3.10.1 实装查证），真机上
  * 「探测失败」与「无会话」在门面缝合流；binding 已不自吞、裁定住缝上，
- * 冒烟时留意此残余。If any misbehaves, the failure is loud here — never
+ * 冒烟时留意此残余。**已裁（2026-10-04）**：(a) 维持——残余危害有界（误标
+ * 「无会话」→ 弹登录，不伪造会话、不动存档语义）；(b) 降为条件触发：真机
+ * 出现「弱网被误登出」投诉时另开小票，优先 binding 侧二次信号交叉验证，
+ * 深探 `oauthInstance` 留备选、不 patch SDK。If any misbehaves, the failure is loud here — never
  * silent.
  *
  * Since #44 this file also carries the transport contract suite's THIRD
