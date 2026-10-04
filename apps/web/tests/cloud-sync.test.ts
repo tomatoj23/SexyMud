@@ -606,6 +606,42 @@ describe("CloudSync — conflict adjudication: three explicit exits (decision D7
     expect(sync.last).toBe("dismissed");
     expect(remoteText(transport)).toBe(JSON.stringify(theirs)); // the cloud is untouched
   });
+
+  it("an emptied LOCAL slot under a standing comparison settles with 'local-empty' — pressing an exit IS the ruling (R6)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+    localStorage.removeItem(KEY); // the local slot vanished behind the machine
+
+    await sync.upload(); // keep-local — pressed with nothing left to keep
+
+    // The R6 side of the asymmetry: the export case's D5 pin says a non-exit
+    // preserves the adjudication; an exit's absence is instead its honest
+    // verdict and SETTLES the ruling — absence is not failure, so it cannot
+    // "cover", it simply closes.
+    expect(sync.state.phase).toBe("idle");
+    expect([sync.last, sync.lastFrom]).toEqual(["local-empty", "upload"]);
+    expect(remoteText(transport)).toBe(JSON.stringify(snapshotFixture({ nowTick: 99 }))); // nothing written
+  });
+
+  it("a VANISHED cloud slot under a standing comparison settles with 'remote-empty' — the exit's absence is a verdict, not a cover (R6)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const { transport, local, sync } = rig();
+    await local.save(snapshotFixture({ nowTick: 20 }));
+    seedRemote(transport, snapshotFixture({ nowTick: 99 }));
+    await sync.probe();
+    expect(sync.state.phase).toBe("conflict");
+    transport.slots.delete(KEY); // the cloud save vanished behind the machine
+
+    await sync.download(); // keep-remote — pressed with nothing left to take
+
+    expect(sync.state.phase).toBe("idle");
+    expect([sync.last, sync.lastFrom]).toEqual(["remote-empty", "download"]);
+    await expect(local.load()).resolves.toEqual(snapshotFixture({ nowTick: 20 })); // local untouched
+  });
 });
 
 describe("CloudSync — an auth failure ends the instance (decision D6)", () => {
