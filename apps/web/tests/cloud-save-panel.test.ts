@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CloudSaveError } from "../src/game/cloudSaveStore.js";
 import { LocalSaveUnavailableError, type RawLocalRead } from "../src/game/localSaveStore.js";
 import { CloudSync, type CloudSlot, type LocalSlot, type SlotView } from "../src/game/cloudSync.js";
-import { slotSummary } from "../src/ui/CloudSavePanel.js";
+import { slotSummary, statusLine } from "../src/ui/CloudSavePanel.js";
 import { mountPanel, type PanelRig } from "./panel-rig.js";
 import { saveView, snapshotFixture } from "./support.js";
 
@@ -53,6 +53,13 @@ describe("CloudSavePanel — the summary chain is total and the panel words it (
     expect(slotSummary({ kind: "empty" })).toBe("无存档");
     expect(slotSummary({ kind: "corrupt" })).toBe("存档损坏");
     expect(slotSummary({ kind: "unavailable" })).toBe("存储不可访问");
+  });
+
+  it("the dead session's status word is the EMPTY word — the law's direct pin (#42 D2)", () => {
+    // "空词" needs teeth: any word here — even an innocuous one like
+    // "尚未同步" — re-opens "who speaks the death" (and a bare verdict word
+    // would paper over the failed action).
+    expect(statusLine({ kind: "auth-expired" }, { kind: "unknown" })).toBe("");
   });
 
   it("the panel renders the SUMMARY fields alone — the payload drill is gone, not merely hidden (#46 AC1)", () => {
@@ -144,7 +151,7 @@ afterEach(() => {
   for (const panel of mounted.splice(0)) panel.unmount();
 });
 
-/** Both cover pins share this setup: a standing "已存到云端" verdict to bury. */
+/** Both verdict-hiding pins share this setup: a standing "已存到云端" verdict to bury. */
 async function standSavedVerdict(panel: PanelRig, local: FakeLocal): Promise<void> {
   local.snapshot = snapshotFixture({ nowTick: 20 });
   local.text = JSON.stringify(local.snapshot);
@@ -316,18 +323,21 @@ describe("CloudSavePanel — rendered discipline (#45 W6: the judgments are the 
 
   it("D2 the death words live in AuthPanel alone — the panel's two copies are deleted (#42)", async () => {
     const { panel, local, cloud } = mountRig();
-    // The terminal state must still COVER a standing verdict (#42 killed the
-    // words, not the cover — a failed action must never read "存了").
+    // The terminal state must keep a standing verdict from showing through
+    // (#42 killed the words, not the precedence — a failed action must never
+    // read "存了").
     await standSavedVerdict(panel, local);
+    const before = panel.text(); // the standing verdict is on the status line
 
     cloud.failing = new CloudSaveError("auth", "session expired");
     await panel.click("重新检查");
 
-    // The two CloudSavePanel death texts are gone: no status word and no
-    // guidance paragraph — the panel claims no death (#42 D2).
-    expect(panel.text()).not.toContain("登录已过期");
-    expect(panel.text()).not.toContain("重新登录");
-    expect(panel.text()).not.toContain("已存到云端"); // the old verdict stays covered
+    // TOTAL silence, not merely "no death words": the status word dies and
+    // nothing takes its place — no paragraph, no other delta at all.
+    expect(panel.text()).toBe(before.replace("已存到云端 ✓（存了）", ""));
+    expect(panel.text()).not.toContain("登录已过期"); // the death is not this panel's to speak
+    expect(panel.text()).not.toContain("重新登录"); // …and so is the guidance (#42 D2)
+    expect(panel.text()).not.toContain("已存到云端"); // the old verdict stays buried
   });
 
   it("an expired session greys nothing — and the refusal names the dead gesture distinctly", async () => {
@@ -337,8 +347,9 @@ describe("CloudSavePanel — rendered discipline (#45 W6: the judgments are the 
 
     expect(panel.button("重新检查").disabled).toBe(false); // D5: the guard tail is gone
     await panel.click("重新检查");
-    expect(panel.text()).toContain("此操作未执行"); // the machine's refusal, on the error line (AuthPanel's law)
-    expect(panel.text()).toContain("登录已过期"); // "a dead session says so" — the machine's own word
+    // The machine's own verbatim word ("a dead session says so") — and
+    // nothing else: no advice tail, the guidance is AuthPanel's one copy.
+    expect(panel.text()).toContain("登录已过期，此操作未执行。");
     expect(panel.text()).not.toContain("重新登录"); // …and no guidance: that copy lives in AuthPanel (#42 D2)
   });
 });

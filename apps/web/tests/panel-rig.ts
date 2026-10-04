@@ -1,6 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import type { CloudAuth } from "../src/game/cloudAuth.js";
 import type { CloudSync } from "../src/game/cloudSync.js";
+import { AuthPanel } from "../src/ui/AuthPanel.js";
 import { CloudSavePanel } from "../src/ui/CloudSavePanel.js";
 
 /**
@@ -56,7 +58,6 @@ export function mountPanel(sync: CloudSync): PanelRig {
   act(() => {
     root.render(createElement(CloudSavePanel, { sync }));
   });
-
   function button(label: string): HTMLButtonElement {
     const all = [...container.querySelectorAll("button")];
     const [found, extra] = all.filter((candidate) => candidate.textContent?.trim() === label);
@@ -97,6 +98,27 @@ export function mountPanel(sync: CloudSync): PanelRig {
       });
     },
     unmount(): void {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+/**
+ * The login panel's rig (#42): the same query shape minus the picker —
+ * AuthPanel's seams are its words too. Drive the auth state BEFORE mounting;
+ * a post-mount transition would need its own `act` scope.
+ */
+export function mountAuthPanel(auth: CloudAuth): Pick<PanelRig, "text" | "unmount"> {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(createElement(AuthPanel, { auth }));
+  });
+  return {
+    text: () => container.textContent ?? "",
+    unmount: () => {
       act(() => root.unmount());
       container.remove();
     },

@@ -27,14 +27,15 @@ const VERDICT: Record<SyncOutcome, string> = {
  * The status line words ONE machine judgment ({@link StatusView}, decision
  * D8): the machine resolved the precedence — a standing failure covers the
  * old verdict — so this reader only chooses words. Per action the failure
- * names what did not happen.
+ * names what did not happen. Exported for its direct pin (slotSummary's
+ * precedent).
  */
-function statusLine(view: StatusView, local: SlotView): string {
+export function statusLine(view: StatusView, local: SlotView): string {
   if (view.kind === "busy") return "同步中…";
   // A dead session renders NOTHING here (#42 D2): the death words' one home
   // is AuthPanel (the session machine owns the re-login guidance), and the
-  // old verdict stays COVERED — only the words died, not the cover, so a
-  // failed action can never read "存了".
+  // old verdict still does not show through — only the words died, not the
+  // precedence, so a failed action can never read "存了".
   if (view.kind === "auth-expired") return "";
   if (view.kind === "conflict") return "冲突——请选择以哪边继续";
   if (view.kind === "failed") {
