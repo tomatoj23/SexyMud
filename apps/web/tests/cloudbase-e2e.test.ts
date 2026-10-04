@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
+import type { CloudAuthClient, CloudAuthSession } from "../src/game/cloudAuth.js";
 import { CloudBaseSaveTransport } from "../src/game/cloudbaseTransport.js";
 import type { CloudBaseDb } from "../src/game/cloudbaseTransport.js";
 import {
@@ -9,6 +10,7 @@ import {
   type CloudbaseApp,
 } from "../src/game/cloudbaseSdk.js";
 import { snapshotFixture } from "./support.js";
+import { cloudSaveTransportContract, type TransportTarget } from "./transport-contract.js";
 
 /**
  * The real-backend smoke (#30 AC: "真实 CloudBase 后端上 load/save 端到端跑通") —
@@ -37,6 +39,15 @@ import { snapshotFixture } from "./support.js";
  * 「探测失败」与「无会话」在门面缝合流；binding 已不自吞、裁定住缝上，
  * 冒烟时留意此残余。If any misbehaves, the failure is loud here — never
  * silent.
+ *
+ * Since #44 this file also carries the transport contract suite's THIRD
+ * target — the CloudBase transport against this same real backend (decision
+ * D3: the real adapter enters the contract, the smoke above is retained). The
+ * contract's live-unauth case is calibration point ① 的常驻钉：the real
+ * backend's own unauthenticated signal must classify `auth`, and it fails
+ * loudly if the real error shape is not the table's. One file owns the real
+ * backend on purpose — parallel test files must never fight over the test
+ * account's session — and each contract case takes its own slot key.
  */
 
 const envId = process.env["CLOUDBASE_ENV_ID"];
@@ -88,4 +99,63 @@ describe.skipIf(!configured)("CloudBase e2e — the adapter against a real backe
     await deviceA.save(replacement);
     await expect(deviceB.load()).resolves.toEqual(replacement);
   });
+
+  cloudSaveTransportContract("CloudBase transport × real backend", realBackendTarget());
 });
+
+/**
+ * The contract's third target (#44 D3): the same real backend, opened lazily
+ * for one sign-in shared by every case here. `cloudbase.init` is a factory —
+ * the shipped `init` of `@cloudbase/js-sdk@3.10.1` constructs a fresh app per
+ * call (its own request instance), so this app living beside the smoke's own
+ * is sound. The smoke above signs in for itself and is therefore immune to
+ * whatever order the two blocks run in; the live-unauth case signs the shared
+ * session out LAST and drops the cache, so nothing after it depends on a dead
+ * session either. Fault injection is absent here by nature — a real backend
+ * cannot be told to be offline — and those cases are skipped, visibly.
+ */
+/** The signed-in real backend every contract case here shares. */
+interface RealBackend {
+  auth: CloudAuthClient;
+  db: CloudBaseDb;
+  session: CloudAuthSession;
+}
+
+let realSession: Promise<RealBackend> | null = null;
+let realCase = 0;
+
+function signedInBackend(): Promise<RealBackend> {
+  realSession ??= (async () => {
+    const cloudbase = (await import("@cloudbase/js-sdk")).default;
+    const app: CloudbaseApp = cloudbase.init({ env: envId! });
+    const auth = createCloudbaseAuthClient(app);
+    return {
+      auth,
+      db: createCloudbaseSaveDb(app),
+      session: await auth.signIn(testUser!, testPassword!),
+    };
+  })();
+  return realSession;
+}
+
+function realBackendTarget(): TransportTarget {
+  return {
+    can: { liveUnauth: true },
+    async open() {
+      const { auth, db, session } = await signedInBackend();
+      // A per-case slot: the contract never clobbers another case's rows (the
+      // smoke's own `e2e-…` keys stay untouched too), and no cleanup is
+      // attempted — same as the smoke, these rows are the test env's to keep.
+      const key = `ct-${Date.now()}-${++realCase}`;
+      return {
+        key,
+        transport: new CloudBaseSaveTransport(db, session, { mintRevision: randomUUID }),
+        other: () => new CloudBaseSaveTransport(db, session, { mintRevision: randomUUID }),
+        expireSession: async () => {
+          realSession = null; // this session is dead — a later case signs in afresh
+          await auth.signOut();
+        },
+      };
+    },
+  };
+}

@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { restoreWorld } from "@sexymud/core";
 import type { EntityState, SaveStore, Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
-import type {
-  CloudSaveFailureKind,
-  CloudSaveRecord,
-  CloudSaveTransport,
-} from "../src/game/cloudSaveStore.js";
+import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore } from "../src/game/localSaveStore.js";
-import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
+import {
+  anchorDamaged,
+  expectFailure,
+  FakeTransport,
+  memoryStorage,
+  snapshotFixture,
+} from "./support.js";
 
 /**
  * The cloud-backed `SaveStore` — the first REMOTE implementation of the port
@@ -35,74 +37,8 @@ import { anchorDamaged, memoryStorage, snapshotFixture } from "./support.js";
  * error classification) are the `CloudSaveTransport` contract itself.
  */
 
-/** A RAM transport that keeps the contract's law: `write` is an atomic CAS. */
-class FakeTransport implements CloudSaveTransport {
-  /**
-   * Raw rows exactly as `read` hands them out — a damaged one is seeded AS-IS
-   * (bad `revision` or bad `text`), because the store's own verdicts are the
-   * seam here (#32 D6: no knob may reach through the store to fake its
-   * internals).
-   */
-  readonly slots = new Map<string, CloudSaveRecord>();
-  /** When set, both operations reject with this failure kind — the offline / auth-expiry paths. */
-  failing: CloudSaveFailureKind | null = null;
-  /** Fires once right after a read — "another device wrote just now". */
-  onceAfterRead: (() => void) | null = null;
-  private minted = 0;
-
-  private maybeFail(): void {
-    if (this.failing) throw new CloudSaveError(this.failing, `transport: ${this.failing}`);
-  }
-
-  async read(key: string): Promise<CloudSaveRecord | null> {
-    this.maybeFail();
-    const slot = this.slots.get(key);
-    const hook = this.onceAfterRead;
-    if (hook) {
-      this.onceAfterRead = null;
-      hook();
-    }
-    return slot ? { ...slot } : null;
-  }
-
-  async write(key: string, text: string, expectedRevision: string | null): Promise<string> {
-    this.maybeFail();
-    const slot = this.slots.get(key);
-    const current = slot ? slot.revision : null;
-    if (current !== expectedRevision) {
-      throw new CloudSaveError(
-        "conflict",
-        `transport: revision is ${String(current)}, expected ${String(expectedRevision)}`,
-      );
-    }
-    const revision = `rev-${++this.minted}`;
-    this.slots.set(key, { text, revision });
-    return revision;
-  }
-}
-
 /** `serializeWorld` output at a chosen tick — the exact same format the local store saves. */
 const fixture = (nowTick = 20): Snapshot => snapshotFixture({ nowTick });
-
-/** Seed the slot with a raw record — the state some earlier session left behind. */
-function seed(transport: FakeTransport, text: string, revision = "seed"): void {
-  transport.slots.set("save-slot-1", { text, revision });
-}
-
-/**
- * Asserts a call failed the way the contract says it must: a `CloudSaveError`
- * carrying the expected KIND — the host reacts differently to each kind, so a
- * bare "it threw" (or a kind-only match) would survive a taxonomy collapse
- * into plain objects.
- */
-async function expectFailure(promise: Promise<unknown>, kind: CloudSaveFailureKind): Promise<void> {
-  const error: unknown = await promise.then(
-    () => null,
-    (caught: unknown) => caught,
-  );
-  expect(error, `expected the call to reject with "${kind}"`).toBeInstanceOf(CloudSaveError);
-  expect((error as CloudSaveError).kind).toBe(kind);
-}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -136,7 +72,7 @@ describe("CloudSaveStore — the remote SaveStore (spec/04 §1.6, ADR-0036)", ()
 
     // What the local store wrote, the cloud store reads…
     const transport = new FakeTransport();
-    seed(transport, localStorage.getItem("save-slot-1")!);
+    transport.seed("save-slot-1", localStorage.getItem("save-slot-1")!);
     const cloud = new CloudSaveStore(transport, "save-slot-1");
     await expect(cloud.load()).resolves.toEqual(snapshot);
 
@@ -164,7 +100,7 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
 
   it("a save without a prior load may only CREATE — it can never blind-overwrite another device's save", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expectFailure(store.save(fixture(30)), "conflict");
@@ -210,7 +146,7 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
 
   it("load → save overwrites: reading first is how a session deliberately replaces the remote save", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await store.load();
@@ -238,8 +174,8 @@ describe("CloudSaveStore — writes are compare-and-swap (decision D2)", () => {
 describe("CloudSaveStore — failures are loud and classified (decision D5)", () => {
   it("offline: load rejects 'network' — never null (null means 'no save', never 'no network')", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
-    transport.failing = "network";
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
+    transport.failing = new CloudSaveError("network", "offline");
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expectFailure(store.load(), "network");
@@ -247,7 +183,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
 
   it("offline: save rejects 'network' and the remote record is untouched — no silent local fallback", async () => {
     const transport = new FakeTransport();
-    transport.failing = "network";
+    transport.failing = new CloudSaveError("network", "offline");
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expectFailure(store.save(fixture(20)), "network");
@@ -256,7 +192,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
 
   it("an expired session rejects 'auth' — distinguishable from offline, so the host re-logins instead of retrying", async () => {
     const transport = new FakeTransport();
-    transport.failing = "auth";
+    transport.failing = new CloudSaveError("auth", "session expired");
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expectFailure(store.load(), "auth");
@@ -265,7 +201,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
 
   it("a corrupt remote record is a loud 'corrupt' — not an empty slot to quietly start over in", async () => {
     const transport = new FakeTransport();
-    seed(transport, "{not json");
+    transport.seed("save-slot-1", "{not json");
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expectFailure(store.load(), "corrupt");
@@ -274,7 +210,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
   it("JSON that is not a snapshot envelope is 'corrupt' too", async () => {
     for (const text of [JSON.stringify({ hello: "world" }), JSON.stringify({ version: 2 })]) {
       const transport = new FakeTransport();
-      seed(transport, text);
+      transport.seed("save-slot-1", text);
       const store = new CloudSaveStore(transport, "save-slot-1");
       await expectFailure(store.load(), "corrupt");
     }
@@ -282,7 +218,7 @@ describe("CloudSaveStore — failures are loud and classified (decision D5)", ()
 
   it("a corrupt record is still repairable: the failed load armed the revision, so the reset save lands", async () => {
     const transport = new FakeTransport();
-    seed(transport, "{not json");
+    transport.seed("save-slot-1", "{not json");
     const store = new CloudSaveStore(transport, "save-slot-1");
     await expectFailure(store.load(), "corrupt");
 
@@ -346,7 +282,7 @@ describe("CloudSaveStore — versions pass through, the engine migrates (decisio
       data: { entities: { jia: { id: "jia", locationId: "room-a", flags: ["seen"] } } },
     };
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(v1));
+    transport.seed("save-slot-1", JSON.stringify(v1));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     const loaded = await store.load();
@@ -367,7 +303,7 @@ describe("CloudSaveStore — versions pass through, the engine migrates (decisio
   it("a save from a NEWER client fails loudly — downgrading would have to throw the v2 scalars away", async () => {
     const v3: Snapshot = { version: 3, data: { entities: {} } };
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(v3));
+    transport.seed("save-slot-1", JSON.stringify(v3));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     const loaded = await store.load();
@@ -415,7 +351,7 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
   it("an existing save is deliberately replaced — 'saved'", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "saved" });
@@ -424,7 +360,7 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
   it("a text-damaged row is REPAIRED — 'saved' (the #29 repair path, now one call)", async () => {
     const transport = new FakeTransport();
-    seed(transport, "{not json"); // bad text row: the anchor still arms
+    transport.seed("save-slot-1", "{not json"); // bad text row: the anchor still arms
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expect(store.replace(fixture(20))).resolves.toEqual({ outcome: "saved" });
@@ -443,7 +379,7 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
   it("a real race is 'conflict' — the verdict is the other session's write, never the damage", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
     transport.onceAfterRead = () => {
       transport.slots.set("save-slot-1", { text: JSON.stringify(fixture(99)), revision: "theirs" });
@@ -467,7 +403,7 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
   it("a race that DELETES the row is the race too — deleting is somebody writing (decision D3)", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
     transport.onceAfterRead = () => {
       transport.slots.delete("save-slot-1");
@@ -534,7 +470,7 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
   it("the write advances the observation — a following plain save CASes forward, not into the past", async () => {
     const transport = new FakeTransport();
-    seed(transport, JSON.stringify(fixture(20)));
+    transport.seed("save-slot-1", JSON.stringify(fixture(20)));
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expect(store.replace(fixture(30))).resolves.toEqual({ outcome: "saved" });
@@ -544,7 +480,7 @@ describe("CloudSaveStore — replace: observe, write and adjudicate in ONE call 
 
   it("a transport failure still rejects — offline is never dressed up as 'unrepairable'", async () => {
     const transport = new FakeTransport();
-    transport.failing = "network";
+    transport.failing = new CloudSaveError("network", "offline");
     const store = new CloudSaveStore(transport, "save-slot-1");
 
     await expectFailure(store.replace(fixture(20)), "network");

@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Snapshot } from "@sexymud/core";
 import { CloudSaveError, CloudSaveStore } from "../src/game/cloudSaveStore.js";
-import type { CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
 import { LocalSaveStore, LocalSaveUnavailableError } from "../src/game/localSaveStore.js";
 import {
   CloudSync,
@@ -14,7 +13,7 @@ import {
   type SlotView,
   type SyncRefusal,
 } from "../src/game/cloudSync.js";
-import { anchorDamaged, memoryStorage, saveView, snapshotFixture } from "./support.js";
+import { anchorDamaged, FakeTransport, memoryStorage, saveView, snapshotFixture } from "./support.js";
 
 /**
  * The host's cloud-sync surface (#30): the sync STATUS ("saved / not saved /
@@ -57,52 +56,6 @@ import { anchorDamaged, memoryStorage, saveView, snapshotFixture } from "./suppo
  * slot — the store never migrates).
  */
 
-/** A RAM transport keeping the contract's law: `write` is an atomic CAS. */
-class FakeTransport implements CloudSaveTransport {
-  /**
-   * Raw rows exactly as `read` hands them out — a damaged one is seeded
-   * AS-IS (bad `revision` or bad `text`), the store's own verdicts being the
-   * seam here (#32 D6).
-   */
-  readonly slots = new Map<string, CloudSaveRecord>();
-  /** When set, both operations reject with this error — the offline / auth-expiry paths. */
-  failing: Error | null = null;
-  /** When set, only `write` rejects — the session dying mid-flow. */
-  failWrite: Error | null = null;
-  /** Fires once right after a read — "another device wrote just now". */
-  onceAfterRead: (() => void) | null = null;
-  /** Call accounting — "no retries, no store pokes" must be provable. */
-  reads = 0;
-  writes = 0;
-  private minted = 0;
-
-  async read(key: string): Promise<CloudSaveRecord | null> {
-    this.reads += 1;
-    if (this.failing) throw this.failing;
-    const slot = this.slots.get(key);
-    const hook = this.onceAfterRead;
-    if (hook) {
-      this.onceAfterRead = null;
-      hook();
-    }
-    return slot ? { ...slot } : null;
-  }
-
-  async write(key: string, text: string, expectedRevision: string | null): Promise<string> {
-    this.writes += 1;
-    if (this.failing) throw this.failing;
-    if (this.failWrite) throw this.failWrite;
-    const slot = this.slots.get(key);
-    const current = slot ? slot.revision : null;
-    if (current !== expectedRevision) {
-      throw new CloudSaveError("conflict", `transport: revision is ${String(current)}, expected ${String(expectedRevision)}`);
-    }
-    const revision = `rev-${++this.minted}`;
-    this.slots.set(key, { text, revision });
-    return revision;
-  }
-}
-
 const KEY = "save-slot-1";
 
 /** The rig: real stores over a fake transport, a spy for session expiry. */
@@ -122,7 +75,7 @@ function remoteText(transport: FakeTransport): string | undefined {
 
 /** Seeds the remote slot directly — the state some other device left behind. */
 function seedRemote(transport: FakeTransport, snapshot: Snapshot): void {
-  transport.slots.set(KEY, { text: JSON.stringify(snapshot), revision: "seed" });
+  transport.seed(KEY, JSON.stringify(snapshot));
 }
 
 /** A `Storage` that throws on access — storage disabled / privacy mode. */

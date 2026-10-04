@@ -11,8 +11,22 @@ import type {
   WorldRuntime,
   WorldState,
 } from "@sexymud/core";
-import { CloudAuth, type AuthState, type CloudAuthClient } from "../src/game/cloudAuth.js";
-import type { CloudSaveRecord } from "../src/game/cloudSaveStore.js";
+import {
+  CloudAuth,
+  type AuthState,
+  type CloudAuthClient,
+  type CloudAuthSession,
+} from "../src/game/cloudAuth.js";
+import { CloudSaveError } from "../src/game/cloudSaveStore.js";
+import type { CloudSaveFailureKind, CloudSaveRecord, CloudSaveTransport } from "../src/game/cloudSaveStore.js";
+import { CloudBaseSaveTransport } from "../src/game/cloudbaseTransport.js";
+import type {
+  CloudBaseDb,
+  CloudBaseDbCollection,
+  CloudBaseDbResult,
+  CloudBaseDbTransaction,
+  CloudBaseDbTransactionDocument,
+} from "../src/game/cloudbaseTransport.js";
 import type { SlotView } from "../src/game/cloudSync.js";
 
 /**
@@ -21,6 +35,12 @@ import type { SlotView } from "../src/game/cloudSync.js";
  * RAM `localStorage`, a snapshot through the real serializer). Synthetic
  * after the settle.test.ts precedent — M4 lands the mechanism, not the real
  * consumers.
+ *
+ * #44 (decision D2) folds the transport-layer fakes and their fault knobs in
+ * here too — ONE `FakeTransport` where cloud-sync and cloud-save-store each
+ * had a copy, ONE `FakeDb` where cloudbase-transport held its own, and one
+ * `expectFailure` where two files spelled the same contract check with two
+ * different types. The three suites consume this same set.
  */
 
 /**
@@ -147,6 +167,220 @@ export function memoryStorage(): Storage {
  */
 export function anchorDamaged(text: string): CloudSaveRecord {
   return { text, revision: 17 as unknown as string };
+}
+
+/**
+ * A RAM transport keeping the contract's law: `write` is an atomic CAS (#44
+ * D2 — the ONE fake, where cloud-sync and cloud-save-store each wrote a copy
+ * of the same law). Raw rows live in `slots` exactly as `read` hands them out
+ * — a damaged one is seeded AS-IS (bad `revision` or bad `text`), because the
+ * consumer's own verdicts are the seam here (#32 D6: no knob may reach
+ * through the store to fake its internals). Revision tokens are minted
+ * GLOBALLY (as real UUIDs are), never per device.
+ */
+let mintedRevisions = 0;
+
+export class FakeTransport implements CloudSaveTransport {
+  /**
+   * The backend's rows, raw — pass the SAME map to a second instance to give
+   * "another device" a real shared backend (the CAS race then is real).
+   */
+  readonly slots: Map<string, CloudSaveRecord>;
+  /**
+   * When set, both operations reject with this error — the offline /
+   * auth-expiry paths. It takes the ERROR as-is, not a failure kind: a
+   * conforming transport throws {@link CloudSaveError}, and a RAW rejection
+   * is how a test drives the host's defensive reading of a contract-violating
+   * transport (cloud-sync's "unclassified rejection" case).
+   */
+  failing: Error | null = null;
+  /** When set, only `write` rejects — the session dying mid-flow. */
+  failWrite: Error | null = null;
+  /** Fires once right after a read — "another device wrote just now". */
+  onceAfterRead: (() => void) | null = null;
+  /** Call accounting — "no retries, no store pokes" must be provable. */
+  reads = 0;
+  writes = 0;
+
+  constructor(sharedBackend?: Map<string, CloudSaveRecord>) {
+    this.slots = sharedBackend ?? new Map<string, CloudSaveRecord>();
+  }
+
+  /** Seeds a raw row AS-IS — the state some earlier session left behind. */
+  seed(key: string, text: string, revision = "seed"): void {
+    this.slots.set(key, { text, revision });
+  }
+
+  async read(key: string): Promise<CloudSaveRecord | null> {
+    this.reads += 1;
+    if (this.failing) throw this.failing;
+    const slot = this.slots.get(key);
+    const hook = this.onceAfterRead;
+    if (hook) {
+      this.onceAfterRead = null;
+      hook();
+    }
+    return slot ? { ...slot } : null;
+  }
+
+  async write(key: string, text: string, expectedRevision: string | null): Promise<string> {
+    this.writes += 1;
+    if (this.failing) throw this.failing;
+    if (this.failWrite) throw this.failWrite;
+    const slot = this.slots.get(key);
+    const current = slot ? slot.revision : null;
+    if (current !== expectedRevision) {
+      throw new CloudSaveError(
+        "conflict",
+        `transport: revision is ${String(current)}, expected ${String(expectedRevision)}`,
+      );
+    }
+    const revision = `rev-${++mintedRevisions}`;
+    this.slots.set(key, { text, revision });
+    return revision;
+  }
+}
+
+/** A thrown backend failure in SDK shape — `code`/`errorCode`/`statusCode` are its signals. */
+export function backendFailure(shape: Record<string, unknown>): Error {
+  return Object.assign(new Error("backend: boom"), shape);
+}
+
+/**
+ * A RAM CloudBase whose document operations carry the DOCUMENTED semantics
+ * (#44 D2 — the shared semantic baseline, where cloudbase-transport.test.ts
+ * held its own half-copy of the CAS simulation):
+ * `where({…}).update(…)` applies only to rows matching the whole filter and
+ * reports `updated`; a transaction's `create` is insert-only (an occupied
+ * `_id` is `already_exists`), its `get` returns ONE row or null (the real
+ * in-transaction shape, unlike the array a plain `get` returns), and a
+ * rolled-back transaction applies nothing. Revision tokens are minted
+ * GLOBALLY (as real UUIDs are), never per device.
+ */
+export class FakeDb implements CloudBaseDb {
+  readonly rows = new Map<string, { text: unknown; revision: unknown }>();
+  /** When set, every operation THROWS this — the offline path. */
+  failing: Error | null = null;
+  /** When set, doc operations RESOLVE carrying this code — the SDK's error channel. */
+  coded: { code: string; message?: string } | null = null;
+  /** When set, only `commit` throws — the half-written-row path. */
+  failCommit: Error | null = null;
+  /** When set, `update` reports this count instead — "no count back" / overcount. */
+  updateResult: { updated?: number } | null = null;
+  /** Fires inside a transaction after its `get`, before its `create` — the other device commits first. */
+  raceCreate: (() => void) | null = null;
+  rollbacks = 0;
+  private counter = 0;
+
+  /** The transport's minter: fresh and unique for the whole fake backend. */
+  mintRevision(): string {
+    return `t${++this.counter}`;
+  }
+
+  collection(name: string): CloudBaseDbCollection {
+    const rows = this.rows;
+    const fake = this;
+    const probe = () => {
+      if (fake.failing) throw fake.failing;
+      return fake.coded;
+    };
+    return {
+      doc(id: string) {
+        return {
+          async get() {
+            const coded = probe();
+            if (coded) return { ...coded };
+            const row = rows.get(id);
+            return { data: row ? [{ _id: id, ...row }] : [] };
+          },
+        };
+      },
+      where(filter: Record<string, unknown>) {
+        return {
+          async update(data: Record<string, unknown>) {
+            const coded = probe();
+            if (coded) return { ...coded };
+            if (fake.updateResult) return fake.updateResult;
+            const id = String(filter["_id"]);
+            const row = rows.get(id);
+            const matches =
+              row !== undefined &&
+              Object.entries(filter).every(([field, value]) =>
+                field === "_id" ? true : (row as Record<string, unknown>)[field] === value,
+              );
+            if (!matches) return { updated: 0 };
+            rows.set(id, { text: data["text"], revision: data["revision"] });
+            return { updated: 1 };
+          },
+        };
+      },
+    };
+  }
+
+  startTransaction(): Promise<CloudBaseDbTransaction> {
+    // Transaction bootstrap THROWS coded failures (verified in the SDK runtime).
+    if (this.failing) return Promise.reject(this.failing);
+    if (this.coded) return Promise.reject(backendFailure({ code: this.coded.code }));
+    const rows = this.rows;
+    const failCommit = this.failCommit;
+    const raceCreate = this.raceCreate;
+    const fake = this;
+    const staged: { id: string; row: { text: unknown; revision: unknown } }[] = [];
+    const document = (id: string): CloudBaseDbTransactionDocument => ({
+      async get() {
+        // The REAL in-transaction shape: one row or null — not an array.
+        const row = staged.find((s) => s.id === id)?.row ?? rows.get(id);
+        return { data: row ? { _id: id, ...row } : null };
+      },
+      async create(data: Record<string, unknown>) {
+        raceCreate?.();
+        if (staged.some((s) => s.id === id) || rows.has(id)) {
+          throw backendFailure({ code: "already_exists" });
+        }
+        staged.push({ id, row: { text: data["text"], revision: data["revision"] } });
+        return { inserted: 1 };
+      },
+    });
+    return Promise.resolve({
+      collection: () => ({ doc: document }),
+      async commit() {
+        if (failCommit) throw failCommit;
+        for (const { id, row } of staged) rows.set(id, row);
+      },
+      async rollback() {
+        fake.rollbacks += 1;
+        staged.length = 0;
+      },
+    });
+  }
+}
+
+/**
+ * Asserts a call failed the way the contract says it must: a `CloudSaveError`
+ * carrying the expected KIND — the host reacts differently to each kind, so a
+ * bare "it threw" (or a kind-only match) would survive a taxonomy collapse
+ * into plain objects (#44 D2: one copy — cloud-save-store and
+ * cloudbase-transport each had one, same name, different parameter type).
+ */
+export async function expectFailure(
+  promise: Promise<unknown>,
+  kind: CloudSaveFailureKind,
+): Promise<void> {
+  const error: unknown = await promise.then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+  expect(error, `expected the call to reject with "${kind}"`).toBeInstanceOf(CloudSaveError);
+  expect((error as CloudSaveError).kind).toBe(kind);
+}
+
+/** The two account fixtures every adapter rig binds transports to (#44 D2). */
+export const alice: CloudAuthSession = { uid: "uid-alice", account: "阿丽" };
+export const bob: CloudAuthSession = { uid: "uid-bob", account: "阿波" };
+
+/** A transport under test — minter shared with the fake backend (decision D4). */
+export function makeTransport(db: FakeDb, session: CloudAuthSession = alice): CloudBaseSaveTransport {
+  return new CloudBaseSaveTransport(db, session, { mintRevision: () => db.mintRevision() });
 }
 
 /**
