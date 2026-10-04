@@ -11,10 +11,11 @@ import type { Snapshot } from "../src/types.js";
  *
  * Three laws are pinned here (AC3, D3):
  *
- *   - **total**: the reader NEVER throws — `data: null` is today's real crash
- *     input (`null.nowTick` TypeError) and it must answer like any other
- *     hostile payload. A throw here would take the whole panel down, salvage
- *     button included (M7's law).
+ *   - **total**: the reader NEVER throws on the JSON envelopes the save
+ *     channel hands it — `data: null` is the payload that crashed the drill
+ *     before its guard (`null.nowTick` TypeError), and it must answer like
+ *     any other hostile payload. A throw here would take the whole panel
+ *     down, salvage button included (M7's law).
  *   - **display tolerance**: an absent or malformed field answers NO summary
  *     (the key is simply not there) — the progress line's own law, "missing
  *     `nowTick` shows no progress suffix", read one level down. The display
@@ -25,7 +26,7 @@ import type { Snapshot } from "../src/types.js";
  */
 describe("summaryOf (the current-version summary reader, #46)", () => {
   it("a normal save's summary carries the version and the tick it displays", () => {
-    expect(summaryOf({ version: SAVE_VERSION, data: { nowTick: 42 } } as Snapshot)).toEqual({
+    expect(summaryOf({ version: SAVE_VERSION, data: { nowTick: 42 } } as Snapshot)).toStrictEqual({
       version: SAVE_VERSION,
       nowTick: 42,
     });
@@ -35,7 +36,7 @@ describe("summaryOf (the current-version summary reader, #46)", () => {
     // The load path's "absent means empty" fills 0 (SLOT_RULES); the DISPLAY
     // must not borrow that fill, or every old save would grow a "进度 0 tick"
     // line it never had (AC3: the suffix's semantics are unchanged).
-    expect(summaryOf({ version: SAVE_VERSION, data: {} } as Snapshot)).toEqual({
+    expect(summaryOf({ version: SAVE_VERSION, data: {} } as Snapshot)).toStrictEqual({
       version: SAVE_VERSION,
     });
   });
@@ -48,12 +49,12 @@ describe("summaryOf (the current-version summary reader, #46)", () => {
       rngState: 1,
       due: [],
     });
-    expect(summaryOf(snapshot)).toEqual({ version: SAVE_VERSION, nowTick: 7 });
+    expect(summaryOf(snapshot)).toStrictEqual({ version: SAVE_VERSION, nowTick: 7 });
   });
 
   it("a hostile payload (`data: null`) never throws — the M7 crash input answers no summary", () => {
     const hostile = { version: SAVE_VERSION, data: null } as unknown as Snapshot;
-    expect(summaryOf(hostile)).toEqual({ version: SAVE_VERSION });
+    expect(summaryOf(hostile)).toStrictEqual({ version: SAVE_VERSION });
   });
 
   it.each([
@@ -66,7 +67,7 @@ describe("summaryOf (the current-version summary reader, #46)", () => {
     ["an unsafe integer", 2 ** 53],
   ])("a malformed nowTick (%s) answers no summary — display tolerance, never a throw", (_label, nowTick) => {
     const damaged = { version: SAVE_VERSION, data: { nowTick } } as unknown as Snapshot;
-    expect(summaryOf(damaged)).toEqual({ version: SAVE_VERSION });
+    expect(summaryOf(damaged)).toStrictEqual({ version: SAVE_VERSION });
   });
 
   it.each([
@@ -75,13 +76,13 @@ describe("summaryOf (the current-version summary reader, #46)", () => {
     ["undefined", undefined],
   ])("a payload that is not a record (%s) answers no summary — never a throw", (_label, data) => {
     const damaged = { version: SAVE_VERSION, data } as unknown as Snapshot;
-    expect(summaryOf(damaged)).toEqual({ version: SAVE_VERSION });
+    expect(summaryOf(damaged)).toStrictEqual({ version: SAVE_VERSION });
   });
 
   it("reads the CURRENT shape only — an older payload's absent field stays absent", () => {
     // No cross-version tolerance (D2): a v1 payload carries no nowTick at
     // all, and the summary says so — the display for it is "存档 v1" with no
     // suffix, unchanged from the drill it replaces.
-    expect(summaryOf({ version: 1, data: { entities: {} } } as Snapshot)).toEqual({ version: 1 });
+    expect(summaryOf({ version: 1, data: { entities: {} } } as Snapshot)).toStrictEqual({ version: 1 });
   });
 });

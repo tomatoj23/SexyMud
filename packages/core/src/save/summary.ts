@@ -22,10 +22,14 @@ export interface SaveSummary {
 }
 
 /**
- * summaryOf — a TOTAL reader (AC3, D3): it never throws, on any envelope,
- * including `data: null` (the real crash the panel's drill died on —
- * `null.nowTick` is a TypeError, and a throw here would take the whole panel
- * down, salvage button included; M7's law).
+ * summaryOf — a TOTAL reader (AC3, D3): it never throws on what the save
+ * channel hands it. That input is a JSON envelope and nothing else (both
+ * stores parse through `parseSnapshotText`), so `data: null` — the payload
+ * that crashed the panel's drill before its guard — is just the most
+ * hostile of the legal ones, and a throw here would take the whole panel
+ * down, salvage button included (M7's law). Exotic JS objects (a throwing
+ * getter, a Symbol) are OUTSIDE this contract: they never crossed the JSON
+ * boundary this reader fronts.
  *
  * Two tolerances, both DISPLAY ones — judging corruption is the load path's
  * job (`restoreWorld` / C6's "malformed is refused"), never this reader's:

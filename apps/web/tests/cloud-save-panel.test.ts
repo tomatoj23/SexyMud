@@ -13,10 +13,11 @@ import { saveView, snapshotFixture } from "./support.js";
  *
  * The summary chain is pinned as TOTAL (#34 复查轮; M7's law): a hostile
  * payload (`data: null`) is still a `save` view at the envelope level, and
- * nothing between the bytes and the words may throw on it — a crash here
- * would take the whole panel down, salvage button included (#34 D2 makes
- * that button the player's escape hatch). Since #46 the reader itself lives
- * beside the migration chain (`summaryOf`, pinned in core's
+ * nothing between the bytes and the words may throw on it (the input domain
+ * is JSON — the stores hand over parsed envelopes, nothing more) — a crash
+ * here would take the whole panel down, salvage button included (#34 D2
+ * makes that button the player's escape hatch). Since #46 the reader itself
+ * lives beside the migration chain (`summaryOf`, pinned in core's
  * save-summary.test); what this layer pins is that the WHOLE chain renders
  * and that the panel reads the summary fields alone.
  *

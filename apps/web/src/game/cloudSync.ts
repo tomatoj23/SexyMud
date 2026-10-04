@@ -84,7 +84,13 @@ export type SlotView =
 /** What a READ of a slot can produce — `unknown` is "never read", not a read result. */
 type ReadSlotView = Exclude<SlotView, { kind: "unknown" }>;
 
-/** A `save` view out of a snapshot — summary generated where the view is built (#46). */
+/**
+ * A `save` view out of a snapshot — summary generated where the view is
+ * built (#46). Call sites build it OUTSIDE their read/catch blocks (#46 复查):
+ * a read verdict classifies the store's BYTES, and the summary built after
+ * the read must never change that class — the blanket catches in
+ * `readLocalView`/`rawView` would otherwise turn a readable slot "corrupt".
+ */
 function saveView(snapshot: Snapshot): ReadSlotView {
   return { kind: "save", snapshot, summary: summaryOf(snapshot) };
 }
@@ -699,13 +705,14 @@ export class CloudSync {
 
   /** The remote slot's view, absorbing `corrupt` into the view instead of failing. */
   private async remoteViewToleratingCorrupt(): Promise<ReadSlotView> {
+    let record: Snapshot | null;
     try {
-      const record = await this.cloud.load();
-      return record === null ? { kind: "empty" } : saveView(record);
+      record = await this.cloud.load();
     } catch (error) {
       if (error instanceof CloudSaveError && error.kind === "corrupt") return { kind: "corrupt" };
       throw error;
     }
+    return record === null ? { kind: "empty" } : saveView(record);
   }
 
   /**
@@ -725,12 +732,13 @@ export class CloudSync {
    * find nothing.
    */
   private async readLocalView(): Promise<ReadSlotView> {
+    let record: Snapshot | null;
     try {
-      const record = await this.local.load();
-      return record === null ? { kind: "empty" } : saveView(record);
+      record = await this.local.load();
     } catch (error) {
       return { kind: error instanceof LocalSaveUnavailableError ? "unavailable" : "corrupt" };
     }
+    return record === null ? { kind: "empty" } : saveView(record);
   }
 
   /**
@@ -753,11 +761,13 @@ export class CloudSync {
    */
   private rawView(raw: RawLocalRead): ReadSlotView {
     if (raw.kind !== "text") return { kind: raw.kind };
+    let snapshot: Snapshot;
     try {
-      return saveView(parseSnapshotText(raw.text));
+      snapshot = parseSnapshotText(raw.text);
     } catch {
       return { kind: "corrupt" };
     }
+    return saveView(snapshot);
   }
 
   private transition(next: SyncState): SyncState {

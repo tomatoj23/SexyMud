@@ -145,7 +145,7 @@ packages/core/          引擎（可独立发布的库，零题材词）
     conditions.ts       条件求值与谓词注册表（独立横切契约，M1-T3 已落——不并入 effects/）
     events.ts           事件构造一处（按 type 一族 factory + 扩展臂 customEvent，#41）
     command/            解析、命令集合并、分发（M1-T1/T2 已落）
-    save/               版本化存档迁移链
+    save/               版本化存档迁移链＋展示摘要读取（summaryOf，#46）
     world/              房间、出口、实体、hook
     state/              typed 状态、derived、快照（v1 可读／v2 写出）
     time/               游戏内时间求值（calendar.ts／tuning.ts，M4-T2）
