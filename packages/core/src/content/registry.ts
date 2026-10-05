@@ -261,6 +261,13 @@ type TaggedEntity = FlattenableEntry;
  */
 const NO_TAGS: TagMap = Object.freeze({});
 
+/**
+ * What `byTag` answers for a pair no entity carries — the exact dual of
+ * NO_TAGS: one frozen empty list shared by every such answer, so an unknown
+ * pair is as unforgeable as an unknown id's empty map.
+ */
+const EMPTY_IDS: readonly string[] = Object.freeze([]);
+
 /** dimension → key → ids, all sorted once at build time. */
 type TagIndex = ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
 
@@ -420,7 +427,10 @@ export interface CollectionDecl {
    * through prototype flattening. `false` for exits: they live inside rooms,
    * arrive through the already-flattened room, and a room's `exits` is
    * replaced wholesale — an exit list is flattened with its room, never on
-   * its own.
+   * its own. On a `false` row the `prototype*` pair has no consumer and is
+   * left untouched (for exits that is constructive, see prototype.ts); a
+   * future non-flattening row would inherit the same silence, so declare it
+   * knowingly.
    */
   readonly flatten: boolean;
   /**
@@ -444,36 +454,36 @@ export interface CollectionDecl {
   readonly expose: string | null;
 }
 
-const COMMANDS: CollectionDecl = {
+const COMMANDS: CollectionDecl = Object.freeze({
   what: "command",
   flatten: true,
   placeable: false,
   expose: "commands",
-};
-const ROOMS: CollectionDecl = {
+});
+const ROOMS: CollectionDecl = Object.freeze({
   what: "room",
   flatten: true,
   placeable: false,
   expose: "rooms",
-};
-const NPCS: CollectionDecl = {
+});
+const NPCS: CollectionDecl = Object.freeze({
   what: "npc",
   flatten: true,
   placeable: true,
   expose: "npcs",
-};
-const MONSTERS: CollectionDecl = {
+});
+const MONSTERS: CollectionDecl = Object.freeze({
   what: "monster",
   flatten: true,
   placeable: true,
   expose: "monsters",
-};
-const EXITS: CollectionDecl = {
+});
+const EXITS: CollectionDecl = Object.freeze({
   what: "exit",
   flatten: false,
   placeable: false,
   expose: null,
-};
+});
 
 /**
  * The declaration table (issue #39): five rows — the four host-input
@@ -485,13 +495,13 @@ const EXITS: CollectionDecl = {
  * business (ADR-0004), and the query side still knows no collections
  * (ADR-0029 §2).
  */
-export const COLLECTIONS: readonly CollectionDecl[] = [
+export const COLLECTIONS: readonly CollectionDecl[] = Object.freeze([
   COMMANDS,
   ROOMS,
   NPCS,
   MONSTERS,
   EXITS,
-];
+]);
 
 /** One collection's live state during assembly: its declaration and its id map. */
 interface CollectionSlot {
@@ -533,7 +543,9 @@ interface CollectionTable {
    * obligations, not types (see CollectionDecl), so the typed world-graph
    * checks name their entry type here; the cast is sound because the host
    * input is typed (`createContentRegistry`'s parameter) and ingest preserves
-   * the entries it was handed.
+   * the entries it was handed. Hand out the map only after the row has
+   * settled — flattening REPLACES the map, derived rows claim into it — so
+   * callers read it after their row's phase, never before.
    */
   idMap<T extends FlattenableEntry>(decl: CollectionDecl): ReadonlyMap<string, T>;
   /** Obligation 3 — the placeable union: every placeable row's ids. */
@@ -554,6 +566,14 @@ interface CollectionTable {
    * the typed face is the hand-written ContentRegistry interface (the thin
    * sugar a new collection adds), and the five non-collection members are
    * added by the caller and type-checked there.
+   *
+   * Member ENUMERATION order follows the table (a plural/singular pair per
+   * row), so `exit` — added after the spread — enumerates AFTER the four
+   * pairs rather than between the rooms pair and the npcs pair as the old
+   * hand-written literal had it. No consumer enumerates a registry (grep
+   * 2026-10-05: zero `Object.keys`/spread/`JSON.stringify` over one in
+   * packages/ or apps/), and the interface never promised an order — it is
+   * a declared consequence of the generated face, not a silent one.
    */
   surface(): ContentRegistry;
   /** D3 — the closing deep freeze over every row's entities (see deepFreeze). */
@@ -566,22 +586,49 @@ interface CollectionTable {
  * being immutable is the registry's whole contract; it used to be kept by
  * hand (only `NO_TAGS` was actually frozen) and a runtime write would fork
  * `byTag` from `tagsOf` silently. Frozen, the same write throws in the
- * mutator's hands. One shared object graph is walked once — an already
- * frozen value (NO_TAGS, a shared sub-object) is left where it is.
+ * mutator's hands.
+ *
+ * Recursion does NOT stop at an already-frozen container: a host that
+ * shallow-froze its own entries before handing them over would otherwise
+ * keep a mutable graph inside a frozen shell — the exact fork this exists
+ * to kill (probed 2026-10-05, /fh). One `seen` memo per freeze pass walks
+ * each object once and keeps a cyclic (host-assembled, non-JSON) graph from
+ * looping forever. Scope is the JSON-shaped content domain: `Map`/`Set`
+ * interiors and functions are outside the content shapes (the schema gate
+ * admits none), and `Object.freeze` could not seal those in any case.
  */
-function deepFreeze<T>(value: T): T {
-  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+function deepFreeze<T>(value: T, seen: Set<object>): T {
+  if (typeof value !== "object" || value === null || seen.has(value)) {
     return value;
   }
-  Object.freeze(value);
+  seen.add(value);
+  if (!Object.isFrozen(value)) {
+    Object.freeze(value);
+  }
   for (const nested of Object.values(value)) {
-    deepFreeze(nested);
+    deepFreeze(nested, seen);
   }
   return value;
 }
 
+/**
+ * The member names the read face writes BY HAND (the non-collection members
+ * of ContentRegistry). A declaration row may not claim one: its generated
+ * member would be overwritten by the hand-written one in the return literal
+ * — silently.
+ */
+const RESERVED_MEMBERS: ReadonlySet<string> = new Set([
+  "exit",
+  "byTag",
+  "tagsOf",
+  "calendar",
+  "settings",
+]);
+
 function createAssembly(): CollectionTable {
   const slots: CollectionSlot[] = [];
+  /** Member names already claimed by an ingested row (what + expose). */
+  const takenNames = new Set<string>();
 
   const slotOf = (decl: CollectionDecl): CollectionSlot => {
     const slot = slots.find((candidate) => candidate.decl === decl);
@@ -593,6 +640,34 @@ function createAssembly(): CollectionTable {
 
   return {
     ingest(decl, entries, idOwners) {
+      // Declaration hygiene: `what` and `expose` BECOME member names on the
+      // read surface (obligation 6), so an empty name, a hand-written
+      // member's name, or another row's name fails HERE instead of silently
+      // overwriting a member — or, on a plain object, vanishing into
+      // `Object.prototype`. `what` only names a member for exposed rows;
+      // the exits row's `exit` is the hand-written lookup itself.
+      for (const [field, name] of [
+        ["what", decl.what],
+        ["expose", decl.expose],
+      ] as const) {
+        if (name === null) {
+          continue;
+        }
+        if (name === "") {
+          throw new Error(`content registry: collection "${decl.what}" declares an empty ${field}`);
+        }
+        if (decl.expose !== null && RESERVED_MEMBERS.has(name)) {
+          throw new Error(
+            `content registry: collection "${decl.what}" ${field} "${name}" collides with a hand-written member`,
+          );
+        }
+        if (takenNames.has(name)) {
+          throw new Error(
+            `content registry: collection "${decl.what}" ${field} "${name}" collides with another collection's member`,
+          );
+        }
+        takenNames.add(name);
+      }
       const slot: CollectionSlot = { decl, byId: new Map() };
       slots.push(slot);
       for (const entry of entries) {
@@ -635,7 +710,9 @@ function createAssembly(): CollectionTable {
     },
 
     surface() {
-      const members: Record<string, unknown> = {};
+      // Null prototype: a row legitimately named `__proto__` must become an
+      // OWN member, not vanish into Object.prototype's setter.
+      const members: Record<string, unknown> = Object.create(null);
       for (const slot of slots) {
         const expose = slot.decl.expose;
         if (expose === null) {
@@ -657,9 +734,12 @@ function createAssembly(): CollectionTable {
     },
 
     freezeAll() {
+      // ONE memo across every entity: a sub-graph shared by two entities is
+      // walked (and frozen) once.
+      const seen = new Set<object>();
       for (const slot of slots) {
         for (const entry of slot.byId.values()) {
-          deepFreeze(entry);
+          deepFreeze(entry, seen);
         }
       }
     },
@@ -693,6 +773,13 @@ export function buildContentRegistry(
   content: Readonly<Record<string, readonly FlattenableEntry[] | undefined>>,
   options: ContentRegistryOptions = {},
 ): ContentRegistry {
+  // The config tables are validated FIRST: they are the pack's own
+  // declarations and the checks are self-contained, so a bad calendar is
+  // reported before any collection work runs. Both are optional — see
+  // ContentRegistryOptions.
+  assertSettingsTable(options.settings);
+  assertCalendar(options.calendar);
+
   // The build derives the exits row itself (its source is the flattened
   // rooms), so the table it is handed must carry the engine's rows — a
   // caller may APPEND rows (the drill appends one), never drop one.
@@ -701,13 +788,6 @@ export function buildContentRegistry(
       throw new Error(`content registry: table is missing collection "${required.what}"`);
     }
   }
-
-  // The config tables are validated FIRST: they are the pack's own
-  // declarations and the checks are self-contained, so a bad calendar is
-  // reported before any collection work runs. Both are optional — see
-  // ContentRegistryOptions.
-  assertSettingsTable(options.settings);
-  assertCalendar(options.calendar);
 
   const assembly = createAssembly();
 
@@ -719,12 +799,16 @@ export function buildContentRegistry(
   // Obligation 1 — de-duplication — one step per declaration ROW and nothing
   // else: a new collection joins this loop by existing. A row with
   // `expose: null` has no host input (the exits row is derived from rooms,
-  // below) and joins the table where it is derived.
+  // below) and joins the table where it is derived. The input lookup is an
+  // OWN-property read: a plain content object inherits `__proto__` and
+  // friends from Object.prototype, and an inherited value must never be
+  // read as a collection's entries.
   for (const decl of table) {
     if (decl.expose === null) {
       continue;
     }
-    assembly.ingest(decl, content[decl.expose] ?? [], idOwners);
+    const entries = Object.hasOwn(content, decl.expose) ? content[decl.expose] : undefined;
+    assembly.ingest(decl, entries ?? [], idOwners);
   }
 
   // Obligation 2 — flattening: after de-duplication (ids are the keys it
@@ -854,7 +938,7 @@ export function buildContentRegistry(
       return found;
     },
     byTag(dimension: string, key: string): readonly string[] {
-      return byPair.get(dimension)?.get(key) ?? [];
+      return byPair.get(dimension)?.get(key) ?? EMPTY_IDS;
     },
     tagsOf(id: string): TagMap {
       return byEntity.get(id) ?? NO_TAGS;

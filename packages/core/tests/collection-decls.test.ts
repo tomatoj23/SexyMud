@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandEntry } from "../src/command/entry.js";
+import type { AccessRules } from "../src/conditions.js";
 import type { EntryCommon, TagMap } from "../src/content/entry.js";
 import type { CollectionDecl, ContentRegistry, DimensionTable } from "../src/content/registry.js";
 import { COLLECTIONS, buildContentRegistry, createContentRegistry } from "../src/content/registry.js";
@@ -72,10 +73,11 @@ function exitEntry(overrides: Partial<ExitEntry> = {}): ExitEntry {
 /** A synthetic dimensions table (ADR-0029 §5): dimension → closed key set. */
 const dimensions: DimensionTable = { zone: ["town", "wild"] };
 
-/** ③ 条目类型一处 — the fake collection's entry type. */
+/** ③ 条目类型一处 — the fake collection's entry type (gates included: an entry is an entry). */
 interface QuestEntry extends EntryCommon {
   readonly id: string;
   readonly name: string;
+  readonly preconditions?: AccessRules;
 }
 
 /** ① 声明一行 — the fake collection's declaration row (the whole edit). */
@@ -126,7 +128,9 @@ describe("新增集合演练（issue #39 AC1：声明一行即接通，六义务
     expect(() =>
       buildWithQuests({ quests: [questEntry({ id: "q-a" }), questEntry({ id: "q-a" })] }),
     ).toThrow(/duplicate quest id "q-a"/);
-    expect(() => buildWithQuests({ quests: [questEntry({ id: "" })] })).toThrow(/empty id/);
+    expect(() => buildWithQuests({ quests: [questEntry({ id: "" })] })).toThrow(
+      /quest entry with an empty id/,
+    );
   });
 
   it("义务 2：展平——假集合照常同集合继承（tags 互补合并、prototypeParent 剥掉）", () => {
@@ -184,6 +188,16 @@ describe("新增集合演练（issue #39 AC1：声明一行即接通，六义务
     expect(() =>
       buildWithQuests({ quests: [questEntry({ tags: { zone: ["nowhere"] } })] }, { dimensions }),
     ).toThrow(/tags key "nowhere" outside dimension "zone"/);
+
+    // The SAME feed closes the gate vocabulary (one feed, both closures):
+    // a typo'd `has_tag` dimension on the fake collection fails at load.
+    const gated: QuestEntry = {
+      ...questEntry({ id: "q-gate" }),
+      preconditions: { default: false, use: { has_tag: ["znou", "town"] } },
+    };
+    expect(() => buildWithQuests({ quests: [gated] }, { dimensions })).toThrow(
+      /has_tag references unknown dimension "znou"/,
+    );
   });
 
   it("义务 5：排序曝光——假集合 plural id 升序、与装载顺序无关", () => {
@@ -208,9 +222,54 @@ describe("新增集合演练（issue #39 AC1：声明一行即接通，六义务
   });
 
   it("缝契约：表可增行、不可缺行——引擎五路必须在表里（exits 由 build 自己派生）", () => {
-    expect(() => buildContentRegistry([QUESTS], { quests: [questEntry()] })).toThrow(
-      /table is missing collection "command"/,
-    );
+    for (const row of COLLECTIONS) {
+      expect(
+        () => buildContentRegistry(COLLECTIONS.filter((candidate) => candidate !== row), {}),
+        `missing ${row.what}`,
+      ).toThrow(new RegExp(`table is missing collection "${row.what}"`));
+    }
+  });
+
+  it("声明卫生：成员名空名/撞手写成员/撞他行当场失败；`__proto__` 之名不蒸发（/fh）", () => {
+    // `what`/`expose` BECOME member names — a collision would silently
+    // overwrite (or lose) a member of the read surface.
+    expect(() =>
+      buildContentRegistry(
+        [...COLLECTIONS, { what: "byTag", flatten: true, placeable: false, expose: "notes" }],
+        {},
+      ),
+    ).toThrow(/collides with a hand-written member/);
+    expect(() =>
+      buildContentRegistry(
+        [...COLLECTIONS, QUESTS, { what: "note", flatten: true, placeable: false, expose: "quests" }],
+        {},
+      ),
+    ).toThrow(/collides with another collection's member/);
+    expect(() =>
+      buildContentRegistry([...COLLECTIONS, { what: "", flatten: true, placeable: false, expose: "notes" }], {}),
+    ).toThrow(/declares an empty what/);
+    // `__proto__` is an ordinary member name on the generated face (null
+    // prototype): it must land as a member, not vanish into Object.prototype
+    // — and the input lookup must read the OWN key, not the inherited
+    // Object.prototype value a plain content object carries for that name.
+    const protoRow: CollectionDecl = {
+      what: "proto",
+      flatten: true,
+      placeable: false,
+      expose: "__proto__",
+    };
+    const face = buildContentRegistry([...COLLECTIONS, protoRow], {
+      ["__proto__"]: [{ id: "p-1" }],
+    }) as unknown as Record<string, unknown>;
+    const plural = face["__proto__"] as readonly { id: string }[];
+    expect(plural.map((entry) => entry.id)).toEqual(["p-1"]);
+    // …and with NO input for that name the lookup must see "absent": the
+    // inherited Object.prototype value there is not a collection's entries.
+    const empty = buildContentRegistry([...COLLECTIONS, protoRow], {}) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect((empty["__proto__"] as readonly unknown[]).length).toBe(0);
   });
 
   it("结构钉：五路全进表；exits 行的义务只有 id 空间＋entities 喂表（不展平、无 getter 对）", () => {
@@ -246,6 +305,13 @@ describe("build 末尾深冻结（issue #39 AC3：honor system 收口）", () =>
 
   it("写条目当场失败——顶层与嵌套（tags／exits／放置清单）都冻", () => {
     const registry = worldRegistry();
+
+    // Precision first: every surface written below exists and IS frozen —
+    // the throws are about frozen-ness, not about a missing shape.
+    expect(Object.isFrozen(registry.room("room-x-001"))).toBe(true);
+    expect(Object.isFrozen(registry.room("room-x-001").tags)).toBe(true);
+    expect(Object.isFrozen(registry.room("room-x-001").exits)).toBe(true);
+    expect(Object.isFrozen(registry.exit("exit-x-001-north"))).toBe(true);
 
     // A top-level field: the entry object itself is frozen.
     expect(() => {
@@ -283,6 +349,21 @@ describe("build 末尾深冻结（issue #39 AC3：honor system 收口）", () =>
     }).toThrow(TypeError);
     expect(() => {
       (registry.byTag("zone", "town") as unknown as unknown[]).push("forged-id");
+    }).toThrow(TypeError);
+    // The empty answer is frozen too — NO_TAGS' exact dual on the byTag side.
+    expect(Object.isFrozen(registry.byTag("zone", "nope"))).toBe(true);
+  });
+
+  it("宿主浅冻的条目照样被深冻——外冻内不冻＝分叉后门（/fh 探针钉）", () => {
+    // A host that froze its own entries before handing them over must not
+    // keep a mutable graph inside a frozen shell: `tags` would fork from
+    // `byTag` exactly the way D3 exists to prevent.
+    const room = roomEntry({ tags: { zone: ["town"] } });
+    Object.freeze(room);
+    const registry = createContentRegistry({ rooms: [room] }, { dimensions });
+    expect(Object.isFrozen(registry.room("room-x-001").tags)).toBe(true);
+    expect(() => {
+      (registry.room("room-x-001").tags as TagMap as { zone: string[] }).zone = ["wild"];
     }).toThrow(TypeError);
   });
 });
