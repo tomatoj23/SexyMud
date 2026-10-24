@@ -18,7 +18,7 @@
 
 `rooms/`、`npcs/` 两个集合的 schema **已落**（M1-T6：`schemas/rooms.schema.json`（含出口子实体——出口即命令，门禁词汇表 `enter`／`traverse`）+ `schemas/npcs.schema.json`（`monsterId` 引用不复制）+ 引擎类型 `packages/core/src/world/entry.ts` + 首批柳青镇内容）；`commands/` schema **已落**（M1-T5，`schemas/commands.schema.json`，首批条目 4 条）。
 
-> 引擎侧的装配由注册表的**集合声明表**按行驱动（#39：`packages/core/src/content/registry.ts` 的 `COLLECTIONS`，装配义务与深冻结口径见 spec/03 §6.1）——声明表**不豁免** §4 的三处同步义务，新集合照旧要走 schema／引擎类型／`content.md` 三处。
+> 引擎侧的装配由注册表的**集合声明表**按行驱动（#39：`packages/core/src/content/registry.ts` 的 `COLLECTIONS`，装配义务与深冻结口径见 spec/03 §6.1）——声明表**不豁免** §4 的三处同步义务，新集合照旧要走 `schemas`／core 类型／`content.md` 三处。
 
 > `schemas/common.schema.json`（M3-T1）是**第二个被引用库**：四个条目通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）属于**每一个条目集合**（config 四类与 condition 除外），因此只有一份定义，14 个集合 schema 统一 `$ref` 引用——「标签形状只有一种」由此从**约定**变成**结构**（ADR-0029 §1）。跨文件 `$ref` 因此有两个库：`content:check` 按 `$id` 预注册全部 schema，单元测试须把用到的库都 `addSchema` 之后再 compile（否则报 `can't resolve reference`）。
 >
