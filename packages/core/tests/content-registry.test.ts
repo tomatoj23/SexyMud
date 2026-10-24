@@ -4,6 +4,7 @@ import type { CommandEntry } from "../src/command/entry.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import type { DimensionTable } from "../src/content/registry.js";
+import type { WorldTable } from "../src/content/config.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../src/world/entry.js";
 
 /**
@@ -384,6 +385,49 @@ describe("createContentRegistry: world collections (issue #6)", () => {
  * load, naming BOTH sides, because "which two things collided" is the whole
  * content of the error.
  */
+describe("createContentRegistry: the world table (issue #49)", () => {
+  /** The pack's world-guidance declaration, as a host hands it over. */
+  const worldTable = (startRoomId: string): WorldTable => ({ id: "world", startRoomId });
+
+  it("is optional — no world table is no failure, and it reads back as handed", () => {
+    const bare = createContentRegistry({ rooms: [roomEntry()] });
+    expect(bare.world).toBeUndefined();
+
+    const world = worldTable("room-x-001");
+    const registry = createContentRegistry({ rooms: [roomEntry()] }, { world });
+    // The one-copy arrangement, as calendar and settings: the read face hands
+    // back the SAME validated object, not a copy.
+    expect(registry.world).toBe(world);
+  });
+
+  it("fails at load when startRoomId points at a room the pack never loaded", () => {
+    expect(() =>
+      createContentRegistry({ rooms: [roomEntry()] }, { world: worldTable("room-nope") }),
+    ).toThrow(/startRoomId "room-nope", which no room answers/);
+  });
+
+  it("checks the table's own shape — a host that assembled it in code gets the gate's failure too", () => {
+    // The type cannot express a missing or ill-typed startRoomId; the damage
+    // fixture precedent (`anchorDamaged`) casts to get past it and under the
+    // loud guard.
+    for (const bad of [
+      { startRoomId: "" },
+      { startRoomId: 7 },
+      {},
+    ] as unknown as WorldTable[]) {
+      expect(() => createContentRegistry({ rooms: [roomEntry()] }, { world: bad })).toThrow(
+        /startRoomId/,
+      );
+    }
+    expect(() =>
+      createContentRegistry(
+        { rooms: [roomEntry()] },
+        { world: "room-x-001" as unknown as WorldTable },
+      ),
+    ).toThrow(/world table must be an object/);
+  });
+});
+
 describe("createContentRegistry: one id space (#15 follow-up)", () => {
   it("跨集合重名大声失败，报错点名两侧类型（命令 / 房间 / 出口 / 人物 / 怪物）", () => {
     // Commands load first, so the command is the first taker of the id.

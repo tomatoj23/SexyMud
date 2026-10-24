@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "config.world.schema.json",
+  "title": "世界引导表（content/config/world.json）",
+  "description": "内容包的**开场声明**（#49，spec/03 §6.1）：`startRoomId` 是新档落进世界的那个房间，换包即换起始房间（验收标准 2）。引擎零题材词——它只认一个房间 id，为什么从这间开始是包的叙事。\n\n**配置三分法（spec/06 §6）**：本文件是 **STRUCTURE**（装配图：世界从哪里开始），故**不进 `settings.json`**（TUNING 只收数字；Q1 裁决：落专表不落 settings 加字段）。\n\n**双句校验分层（ADR-0003，Q8 裁决）**：① **声明缺失**（本文件不存在）与**可达性**（以起始房间为根 BFS 出口图、不可达的非模板房间逐个列出）归 `content:check` 发布门禁——门禁大声失败，不静默兜底；② **id 指向查无此房**归注册表加载期引用校验（`createContentRegistry(content, { world })`，与出口 targetRoomId 同律：悬空引用在加载期即抛错）。声明 `prototypeKey` 的模板条目豁免可达性覆盖判定（Q2 裁决——模板是待继承的坯子，不是玩家走得到的房间）。\n\n三处同步（ADR-0003）：① 本文件；② 引擎 —— `packages/core/src/content/config.ts`（`WorldTable` 契约与 `assertWorldTable`）＋ `registry.ts`（startRoomId 引用校验与 `world` 读回）；③ `docs/agents/content.md` 的世界引导表节。",
+  "type": "object",
+  "required": ["id", "startRoomId"],
+  "properties": {
+    "id": { "type": "string", "const": "world", "description": "文件自身的戳记（引擎从不读它）。" },
+    "startRoomId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "起始房间 id（引用，不做格式断言——房间 id 的形状归 rooms.schema.json 管，存在性归注册表加载期校验，与出口 targetRoomId 同律）。新游戏落进这间房、存档里的房间从内容包消失时也回退到它。"
+    }
+  },
+  "additionalProperties": false
+}

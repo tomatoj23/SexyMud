@@ -1,6 +1,6 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**20 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）是**新落的集合 schema**，其余 **15 个**需随本规格重估（**限定语**：= 20 − 3 新落集合 − 2 被引用库；这 15 个里含 `config` 四类与 **11 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（4 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
+> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**21 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）是**新落的集合 schema**，其余 **16 个**需随本规格重估（**限定语**：= 21 − 3 新落集合 − 2 被引用库；这 16 个里含 `config` 五类与 **11 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（5 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕／`world`〔#49 新增〕）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合
@@ -20,7 +20,7 @@
 
 > 引擎侧的装配由注册表的**集合声明表**按行驱动（#39：`packages/core/src/content/registry.ts` 的 `COLLECTIONS`，装配义务与深冻结口径见 spec/03 §6.1）——声明表**不豁免** §4 的三处同步义务，新集合照旧要走 `schemas`／core 类型／`content.md` 三处。
 
-> `schemas/common.schema.json`（M3-T1）是**第二个被引用库**：四个条目通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）属于**每一个条目集合**（config 四类与 condition 除外），因此只有一份定义，14 个集合 schema 统一 `$ref` 引用——「标签形状只有一种」由此从**约定**变成**结构**（ADR-0029 §1）。跨文件 `$ref` 因此有两个库：`content:check` 按 `$id` 预注册全部 schema，单元测试须把用到的库都 `addSchema` 之后再 compile（否则报 `can't resolve reference`）。
+> `schemas/common.schema.json`（M3-T1）是**第二个被引用库**：四个条目通用字段（`tags`／`flags`／`prototypeKey`／`prototypeParent`）属于**每一个条目集合**（config 五类与 condition 除外），因此只有一份定义，14 个集合 schema 统一 `$ref` 引用——「标签形状只有一种」由此从**约定**变成**结构**（ADR-0029 §1）。跨文件 `$ref` 因此有两个库：`content:check` 按 `$id` 预注册全部 schema，单元测试须把用到的库都 `addSchema` 之后再 compile（否则报 `can't resolve reference`）。
 >
 > `schemas/condition.schema.json`（M1-T3）是**被引用库**，不是集合 schema：条件内嵌于 commands / martial 等条目，没有 `content/condition/` 目录。集合 schema 以 `$ref` 引用它（单表达式 → `condition.schema.json`；门禁映射 → `#/definitions/accessRules`）。它不进 `content:check` 的正向映射，其 draft-07 合法性与递归结构由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试，即 spec/06 §3.1 缺口在该文件上的闭合）。
 
@@ -48,6 +48,8 @@ corepack pnpm content:check
   - `content/config/<名>.json` → `schemas/config.<名>.schema.json`
 - **跨文件 `$ref` 已支持**（M1-T5）：管线启动时按 `$id` 预注册 `schemas/` 下全部 schema，集合 schema 可互相引用（如 `commands.schema.json` → `condition.schema.json#/definitions/accessRules`）。
 - **全部 schema 都会被编译**做 draft-07 合法性检查（2026-09-01 缺口清扫）：有内容映射者编译失败即硬失败（干净 INVALID，退出码 1）；无内容者的违规以 **WARN** 呈现、不阻塞——设计草稿随其集合落地时重估，warn 级信号好过不可见。Ajv 的日志级 strict 警告（如 strictTypes 联合类型）也统一走 WARN 前缀。
+- **原型环检测**（M3-T6，#19）：按集合遍历 `prototypeParent` 图，成环即失败并打印环（细节见 spec/03 §6.1）。
+- **世界可达性**（#49）：`content/config/world.json` 声明起始房间（缺失即失败）；以它为根 BFS 出口图，不可达的**非模板**房间（声明 `prototypeKey` 者豁免）逐个列出并失败，全可达时零输出。走**静态出口图**（门禁不挡连通性）；**startRoomId 指向查无此房**不在此查——那是注册表加载期引用校验的事（ADR-0003 分层，与出口 `targetRoomId` 同律）。迷你包是测试夹具、不在 `content/` 范围，其可达性由 `tests/mini-content-pack.test.ts` 钉。
 - 退出码即结果
 
 ⚠️ **不得用 `npm run` 调用** —— 违反硬标准 3（ADR-0007）。
@@ -87,7 +89,7 @@ corepack pnpm content:check
 | 类 | 内容 | 放哪 |
 |---|---|---|
 | **STRUCTURE** | 装配图：模块路径、typeclass、cmdset | **不进** settings，用 `$ref` 指向内容 |
-| **STRUCTURE**（结构性配置） | 没有内容集合可挂的装配图：**维度表、显示档位区间表、日历的环与段** | **另开** `content/config/<名>.json`（`dimensions`／`display-tiers`／`calendar`），**不进** settings |
+| **STRUCTURE**（结构性配置） | 没有内容集合可挂的装配图：**维度表、显示档位区间表、日历的环与段、起始房间** | **另开** `content/config/<名>.json`（`dimensions`／`display-tiers`／`calendar`／`world`），**不进** settings |
 | **TUNING** | 数字：战斗/成长/经济/上限/时长/节流 | **进** `content/config/settings.json` |
 | **POLICY** | 决策：权限层级、多会话模式、默认策略 | **另开** `content/config/policy.json` |
 

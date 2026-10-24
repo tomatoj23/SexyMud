@@ -16,11 +16,12 @@
 // as WARN lines — design drafts get re-evaluated when their content lands,
 // and a warn-level signal beats invisibility (spec/06 §3.1).
 //
-// Four checks run, and all four are hard failures except where noted:
+// Five checks run, and all five are hard failures except where noted:
 //   1. every content file against its collection schema,
 //   2. the dead-concept gate (banned-terms.json),
 //   3. prototype cycles in the `prototypeParent` graph (added M3-T6, #19),
-//   4. draft-07 legality of the unmapped schemas (WARN only).
+//   4. draft-07 legality of the unmapped schemas (WARN only),
+//   5. world reachability from the declared start room (added #49).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -272,6 +273,82 @@ if (cycles.length > 0) {
   console.log(
     `OK      prototype graph: no cycle across ${prototypeEntries.length} file(s), ${parented} of them declaring prototypeParent`,
   );
+}
+
+// Reachability (issue #49): BFS the exit graph from the pack's declared
+// start room and list every NON-TEMPLATE room the walk never reaches —
+// a pack publishes with a start room and a world a player can walk. The
+// division of labour stays ADR-0003's: the DECLARATION (this file must
+// exist) and CONNECTIVITY are the gate's business; WHERE startRoomId
+// points is the registry's load-time reference check. The walk needs a
+// root, though, so a start room no room answers is reported here as this
+// check's own precondition — not as a second implementation of the
+// registry's check.
+//
+// Template entries (those declaring `prototypeKey`) are exempt from the
+// coverage claim: a template is a blank to inherit from, not a room a
+// player walks to (Q2). The walk itself is over the DECLARED exit lists,
+// not flattened ones — the same line the cycle check draws, and for the
+// same reason: re-implementing the flattener offline would be a copy that
+// drifts from the original. Preconditions are no barrier: a gated edge is
+// still an edge — its refusal copy is the game's business, connectivity
+// is the pack's.
+//
+// Scope is content/ only: the mini pack under packages/ is a test fixture,
+// and its reachability is pinned by its own test file (the #48 test
+// decision). Silent when everything is reachable — a pass line here would
+// only train authors to skip the tail.
+const worldFile = join(root, "content", "config", "world.json");
+if (!files.includes(worldFile)) {
+  failed = true;
+  console.error(
+    "MISSING content/config/world.json — every pack must declare its start room (startRoomId)",
+  );
+} else {
+const worldData = prototypeEntries.find(({ file }) => file === worldFile)?.data;
+// Absent from prototypeEntries → the file failed to parse and the main
+// loop already failed the run on it; `null` (a literal-null file) is the
+// schema's failure the same way. Either way this pass has no root to add.
+if (worldData !== undefined && worldData !== null) {
+    const rooms = prototypeEntries
+      .filter(({ file }) => collectionOf(file) === "rooms")
+      .map(({ data }) => data);
+    const roomsById = new Map(rooms.map((room) => [room.id, room]));
+    const startId = worldData.startRoomId;
+    if (typeof startId !== "string" || !roomsById.has(startId)) {
+      failed = true;
+      console.error(
+        `NO ROOT   content/config/world.json declares startRoomId "${String(startId)}", which no room under content/rooms/ answers — the reachability walk cannot start (the registry raises the same dangling reference at load)`,
+      );
+    } else {
+      const seen = new Set();
+      const queue = [startId];
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        for (const exit of roomsById.get(id)?.exits ?? []) {
+          if (roomsById.has(exit.targetRoomId)) {
+            queue.push(exit.targetRoomId);
+          }
+        }
+      }
+      const unreachable = rooms
+        .filter((room) => room.prototypeKey === undefined && !seen.has(room.id))
+        .map((room) => room.id)
+        .sort();
+      if (unreachable.length > 0) {
+        failed = true;
+        for (const id of unreachable) {
+          console.error(
+            `UNREACHABLE room "${id}" — no walk from start room "${startId}" reaches it (template entries declaring prototypeKey are exempt)`,
+          );
+        }
+      }
+    }
+  }
 }
 
 // Reverse scan: this loop only ever walks content/, so a schema that no content

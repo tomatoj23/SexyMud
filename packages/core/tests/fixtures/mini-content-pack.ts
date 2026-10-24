@@ -9,7 +9,7 @@ import type {
   MonsterRecord,
 } from "../../src/content/registry.js";
 import type { NpcEntry, RoomEntry } from "../../src/world/entry.js";
-import type { Calendar, SettingsTable } from "../../src/content/config.js";
+import type { Calendar, SettingsTable, WorldTable } from "../../src/content/config.js";
 
 /**
  * The second content pack (issue #12, spec/00 acceptance criterion 2):
@@ -92,6 +92,8 @@ export interface LoadedPack {
   readonly calendar?: Calendar;
   /** The pack's own tuning numbers (config/settings.json), when it has one. */
   readonly settings?: SettingsTable;
+  /** The pack's own start-room declaration (config/world.json, issue #49). */
+  readonly world?: WorldTable;
   /**
    * Every file's raw JSON text, concatenated. A pack's theme lives in its
    * copy as much as in its verbs, so the "no other pack's vocabulary" scan
@@ -114,6 +116,7 @@ export function loadPack(rootDir: string): LoadedPack {
     dimensions: readDimensions(rootDir),
     calendar: readConfig<Calendar>(rootDir, "calendar"),
     settings: readConfig<SettingsTable>(rootDir, "settings"),
+    world: readConfig<WorldTable>(rootDir, "world"),
     text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...configTexts].join("\n"),
   };
 }
@@ -132,12 +135,18 @@ export function packRegistry(rootDir: string): ContentRegistry {
       npcs: pack.npcs,
       monsters: pack.monsters,
     },
-    // The config tables travel WITH the pack (ADR-0029 §5, ADR-0032 §3): the
-    // same loader that finds rooms/ finds config/, so swapping the directory
-    // swaps the tag vocabulary AND the calendar AND the tuning numbers. A
-    // pack with none hands over `undefined`, and the corresponding checks are
-    // then skipped — missing tables fail at first USE, not here.
-    { dimensions: pack.dimensions, calendar: pack.calendar, settings: pack.settings },
+    // The config tables travel WITH the pack (ADR-0029 §5, ADR-0032 §3,
+    // issue #49): the same loader that finds rooms/ finds config/, so
+    // swapping the directory swaps the tag vocabulary, the calendar, the
+    // tuning numbers AND the start room. A pack with none hands over
+    // `undefined`, and the corresponding checks are then skipped — missing
+    // tables fail at first USE, not here.
+    {
+      dimensions: pack.dimensions,
+      calendar: pack.calendar,
+      settings: pack.settings,
+      world: pack.world,
+    },
   );
 }
 

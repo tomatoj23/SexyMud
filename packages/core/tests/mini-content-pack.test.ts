@@ -375,6 +375,67 @@ describe("the mini pack assembles through the same host path (issue #12)", () =>
     expect(validateDimensions({ section: ["外部"] })).toBe(false);
     expect(validateDimensions({ section: ["near-death"] })).toBe(false);
   });
+
+  it("declares its own start room — neither pack starts where the other does (issue #49)", () => {
+    // The declaration face of 「换包即换起始房间」: one assembly path
+    // (packRegistry), two directories, two start rooms — the dimensions
+    // table's arrangement, one channel over. Read back out of the REGISTRY
+    // (the validated one-copy source), not off the disk.
+    const mini = packRegistry(MINI_PACK_DIR).world;
+    const wuxia = packRegistry(WUXIA_PACK_DIR).world;
+    expect(mini?.startRoomId).toBe("room-orb-001");
+    expect(wuxia?.startRoomId).toBe("room-lq-001");
+    expect(mini?.startRoomId).not.toBe(wuxia?.startRoomId);
+
+    // Both packs' world.json clear the same schema WHOLE, id stamp included
+    // (the calendar's arrangement, #27): the gate is pack-neutral.
+    const validateWorld = new Ajv({ allErrors: true }).compile(
+      JSON.parse(readFileSync(resolvePath(schemasDir, "config.world.schema.json"), "utf8")),
+    );
+    expect(validateWorld(loadPack(MINI_PACK_DIR).world)).toBe(true);
+    expect(validateWorld(loadPack(WUXIA_PACK_DIR).world)).toBe(true);
+  });
+
+  it("reaches every non-template room from its start room (issue #49)", () => {
+    // The mini pack is a test fixture, not content/ — content:check's BFS
+    // never sees it, so its reachability is pinned HERE (the #48 test
+    // decision, seam 4). Preconditions are no barrier: the walk is over the
+    // STATIC exit graph (a gated edge is still an edge — its refusal copy is
+    // the game's business, connectivity is the pack's).
+    const registry = packRegistry(MINI_PACK_DIR);
+    const start = registry.world?.startRoomId;
+    expect(start).toBeDefined();
+
+    const seen = new Set<string>();
+    const queue = [start!];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      for (const exit of registry.room(id).exits) {
+        queue.push(exit.targetRoomId);
+      }
+    }
+
+    // Template entries are exempt from the coverage claim (Q2): room-orb-000
+    // declares prototypeKey and has NO inbound edge — it is a blank to
+    // inherit from, not a room a player walks to. Pin BOTH halves of that
+    // exemption so it cannot rot into a cover for real dead rooms.
+    const template = registry.room("room-orb-000");
+    expect(template.prototypeKey).toBe("room-orb-000");
+    const inbound = registry.rooms.flatMap((room) =>
+      room.exits.filter((exit) => exit.targetRoomId === "room-orb-000"),
+    );
+    expect(inbound).toEqual([]);
+
+    const unreachable = registry.rooms
+      .filter((room) => room.prototypeKey === undefined)
+      .filter((room) => !seen.has(room.id))
+      .map((room) => room.id);
+    expect(unreachable).toEqual([]);
+  });
 });
 
 describe("走 — the mini pack walks through the engine's traversal adapter", () => {

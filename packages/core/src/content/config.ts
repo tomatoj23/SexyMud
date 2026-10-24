@@ -14,6 +14,11 @@
  * fail loudly about, at the moment it first needs time (spec/04 §3.3). A
  * registry that threw on absence would be encoding engine requirements into
  * the content loader, which is the coupling that rule exists to prevent.
+ *
+ * The WORLD table (issue #49) rides the same channel for a different spec:
+ * it is world-guidance STRUCTURE (spec/03 §6.1 — where a new game starts),
+ * not one of spec/04's two tables, but its road is identical: host reads
+ * `config/world.json`, hands it over, the registry checks it.
  */
 
 /**
@@ -56,6 +61,18 @@ export interface SettingsGroup {
 /** The settings table: group name → its bag of numbers. */
 export interface SettingsTable {
   readonly [group: string]: SettingsGroup | undefined;
+}
+
+/**
+ * The pack's world-guidance declaration (`content/config/world.json`,
+ * issue #49): where a new game starts. One room id is the whole table — why
+ * THAT room is the pack's storytelling, and the engine knows none of it.
+ */
+export interface WorldTable {
+  /** The file's own stamp (the schema pins it to "world"); the engine never reads it. */
+  readonly id?: string;
+  /** The room a new game lands in — and the fallback when a save's room is gone (#52). */
+  readonly startRoomId: string;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -165,5 +182,25 @@ export function assertSettingsTable(settings: SettingsTable | undefined): void {
     if (!isPlainObject(value)) {
       throw new Error(`content registry: settings group "${group}" must be an object`);
     }
+  }
+}
+
+/**
+ * Load-time shape check for the world table (issue #49). Where startRoomId
+ * POINTS is the registry's referential-integrity step — it needs the loaded
+ * rooms, so it lives in the build beside the exit checks; that it is a
+ * non-empty string is checked HERE, so a host that assembled the table in
+ * code and bypassed content:check gets the same failure the gate would have
+ * given it (the standing arrangement of the checks above).
+ */
+export function assertWorldTable(world: WorldTable | undefined): void {
+  if (world === undefined) {
+    return;
+  }
+  if (!isPlainObject(world)) {
+    throw new Error("content registry: world table must be an object");
+  }
+  if (typeof world.startRoomId !== "string" || world.startRoomId === "") {
+    throw new Error("content registry: world table must declare startRoomId as a non-empty string");
   }
 }

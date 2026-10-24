@@ -6,10 +6,11 @@
 
 ```
 content/
-├── config/           # 结构性配置：dimensions、display-tiers、settings、calendar（维度表／
-│                     #   显示档位区间表／阈值与公式常数／日历——引擎零写死数量的载体；
+├── config/           # 结构性配置：dimensions、display-tiers、settings、calendar、world（维度表／
+│                     #   显示档位区间表／阈值与公式常数／日历／世界引导表——引擎零写死数量的载体；
 │                     #   settings 顶层九类封闭，组内开放，见 spec/06 §6；
-│                     #   calendar 见下文「日历集合」节，M4-T2 已落）
+│                     #   calendar 见下文「日历集合」节，M4-T2 已落；
+│                     #   world 见下文「世界引导表」节，#49 已落）
 │                     #   ⚠️ realms（境界序列）已随 ADR-0019 删除；造诣是纯显示层
 ├── effects/          # 效果定义：primitive 组合条目（武功/怪物/层主共用）
 ├── martial/          # 武功（招式 + 心法），字段 kind 区分
@@ -138,6 +139,18 @@ assets/               # 美术资产（MVP 允许为空）
 - 速率／时长／冷却默认这类**数字**不在这里，归 `settings.json` 的 `time` 组（三分法：本文件是 STRUCTURE，settings 是 TUNING）。缺 `calendar` 或 `settings.time` 时**引擎侧首次用到时间才大声失败**，没有默认公历。
 
 三处同步（ADR-0003）：① `schemas/config.calendar.schema.json`；② 引擎 —— `packages/core/src/content/config.ts`（`Calendar` 契约与 `assertCalendar`）＋ `src/time/calendar.ts`（`createGameTime`／`ringPeriod`／`segmentIndexAt`）；③ 本节（内容作者入口）。
+
+## 世界引导表（content/config/world.json，#49 已落）
+
+一包一份，`id` 恒为 `world`，只带一个字段：`startRoomId`（起始房间 id）。**它是「新游戏从哪开始」的唯一声明**：新档落进这间房、存档里的房间从内容包消失时也回退到它（回退流程随 #52 落）。为什么从这间开始是包的叙事——引擎零题材词，只认一个房间 id。换包即换起始房间（验收标准 2），迷你包的测试钉的就是这一点。
+
+- **双句校验分层（ADR-0003）**：① **声明缺失**（world.json 不存在）与**可达性**（以起始房间为根 BFS 出口图，不可达的**非模板**房间逐个列出并失败）归 `content:check` 发布门禁；② **id 指向查无此房**归注册表加载期引用校验（`createContentRegistry(content, { world })`）——与出口 `targetRoomId` 同律，悬空引用在加载期即抛错。
+- **模板条目豁免覆盖判定**（Q2 裁决）：声明 `prototypeKey` 的房间是待继承的坯子、不是玩家走得到的房间，不计入可达性覆盖；无入边的普通房间会逐个点名。
+- 走**静态出口图**：门禁（preconditions）不挡连通性——带门禁的边也是边，拒绝文案是游戏的事，连通是包的事。
+- 迷你包（测试夹具）不在 `content:check` 范围，其可达性由 `tests/mini-content-pack.test.ts` 钉。
+- 引擎读法：宿主读出后经 `createContentRegistry` 的 `world` 入参交入，从注册表 `world` 读回（与 `calendar`／`settings` 同一单份读回安排）；引擎侧**首次要用它**（落新档）而包没声明时大声失败，不静默兜底。
+
+三处同步（ADR-0003）：① `schemas/config.world.schema.json`；② 引擎 —— `packages/core/src/content/config.ts`（`WorldTable` 契约与 `assertWorldTable`）＋ `src/content/registry.ts`（startRoomId 引用校验与 `world` 读回）；③ 本节（内容作者入口）。
 
 ## combat-text 与效果
 

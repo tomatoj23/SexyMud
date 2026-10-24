@@ -2,8 +2,8 @@ import type { CommandEntry } from "../command/entry.js";
 import { forEachHasTag } from "../conditions.js";
 import type { AccessRules } from "../conditions.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
-import { assertCalendar, assertSettingsTable } from "./config.js";
-import type { Calendar, SettingsTable } from "./config.js";
+import { assertCalendar, assertSettingsTable, assertWorldTable } from "./config.js";
+import type { Calendar, SettingsTable, WorldTable } from "./config.js";
 import type { EntryCommon, TagMap } from "./entry.js";
 import { compareIds } from "./order.js";
 import { flattenCollection } from "./prototype.js";
@@ -46,13 +46,14 @@ import type { FlattenableEntry } from "./prototype.js";
  * AND `has_tag` gate arguments, the two ways content names a tag pair (#27).
  * See the comments on buildTagIndex and closeGateTags.
  *
- * The three config tables ride the same channel: `dimensions`, `settings`
- * and `calendar` are all handed over by the host (which read config/ itself)
- * and all validated here for the one thing a schema cannot check —
- * consistency BETWEEN values in one file. None of them is REQUIRED: the
- * registry does not know what the engine needs, and a missing calendar or
- * `time` group is the engine's failure to raise when it first wants time
- * (spec/04 §3.3), not a load-time one.
+ * The config tables ride the same channel: `dimensions`, `settings`,
+ * `calendar` and `world` are all handed over by the host (which read config/
+ * itself) and validated here for what a schema cannot check — consistency
+ * BETWEEN values in one file, or (for `world`) a reference into the loaded
+ * collections. None of them is REQUIRED: the registry does not know what the
+ * engine needs, and a missing calendar or `time` group is the engine's
+ * failure to raise when it first wants time (spec/04 §3.3), not a load-time
+ * one.
  *
  * The load order is a contract, not an arrangement (spec/03 §6.1):
  *
@@ -116,6 +117,14 @@ export interface ContentRegistryOptions {
    * absent → nothing to check (spec/04 §3.3).
    */
   readonly calendar?: Calendar;
+  /**
+   * The pack's world-guidance declaration (`config/world.json`, issue #49).
+   * Present → startRoomId is checked against the loaded rooms (a dangling
+   * start room is a dangling reference, like an exit's targetRoomId); absent
+   * → nothing to check here — the engine side fails loudly the first time it
+   * wants to place a new game (the calendar's arrangement).
+   */
+  readonly world?: WorldTable;
 }
 
 /** The read side of loaded content: lookups over validated collections. */
@@ -199,6 +208,13 @@ export interface ContentRegistry {
    * one-copy arrangement as `calendar`.
    */
   readonly settings: SettingsTable | undefined;
+  /**
+   * The pack's world-guidance declaration, `undefined` when the host had
+   * none — the same one-copy arrangement as `calendar`. The start-room
+   * consumers (a new game's landing, the save-fallback) take it from here,
+   * so swapping the content directory swaps the start room with it.
+   */
+  readonly world: WorldTable | undefined;
 }
 
 /**
@@ -564,7 +580,7 @@ interface CollectionTable {
    * be typed without a mapped type — the derivation route the C5 review
    * rejected — so the result is asserted to the interface it half-implements;
    * the typed face is the hand-written ContentRegistry interface (the thin
-   * sugar a new collection adds), and the five non-collection members are
+   * sugar a new collection adds), and the six non-collection members are
    * added by the caller and type-checked there.
    *
    * Member ENUMERATION order follows the table (a plural/singular pair per
@@ -623,6 +639,7 @@ const RESERVED_MEMBERS: ReadonlySet<string> = new Set([
   "tagsOf",
   "calendar",
   "settings",
+  "world",
 ]);
 
 function createAssembly(): CollectionTable {
@@ -779,6 +796,7 @@ export function buildContentRegistry(
   // ContentRegistryOptions.
   assertSettingsTable(options.settings);
   assertCalendar(options.calendar);
+  assertWorldTable(options.world);
 
   // The build derives the exits row itself (its source is the flattened
   // rooms), so the table it is handed must carry the engine's rows — a
@@ -867,6 +885,16 @@ export function buildContentRegistry(
     }
   }
 
+  // The world table's one reference (issue #49): a startRoomId no room
+  // answers is a dangling reference like an exit's targetRoomId — same
+  // failure, same step of the load order (referential integrity, spec/03
+  // §6.1).
+  if (options.world !== undefined && !roomsById.has(options.world.startRoomId)) {
+    throw new Error(
+      `content registry: world table declares startRoomId "${options.world.startRoomId}", which no room answers`,
+    );
+  }
+
   // Placement lists reference world entities across collections: an id
   // placed in a room must be known to a PLACEABLE collection (obligation 3 —
   // the union is generated from the table, so a new placeable collection is
@@ -926,7 +954,7 @@ export function buildContentRegistry(
   assembly.freezeAll();
 
   // Obligations 5+6 — the read surface — generated from the table (plural +
-  // singular lookup per exposed row); the five non-collection members stay
+  // singular lookup per exposed row); the six non-collection members stay
   // hand-written and type-checked against ContentRegistry right here.
   return {
     ...assembly.surface(),
@@ -945,6 +973,7 @@ export function buildContentRegistry(
     },
     calendar: options.calendar,
     settings: options.settings,
+    world: options.world,
   };
 }
 
