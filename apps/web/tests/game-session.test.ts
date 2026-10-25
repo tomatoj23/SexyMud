@@ -286,6 +286,29 @@ describe("the save loop — 「继续」 back to where the player stood (#52)", 
     // a damaged payload stays the load path's loud business (spec/04).
     await expect(rig.session.continueGame()).rejects.toThrow("save: stored text is not JSON");
   });
+
+  it("routes a malformed payload to the ENGINE's verdict — the peek never pre-crashes", async () => {
+    // The pre-assembly room peek reads the raw payload BEFORE restoreWorld
+    // validates it; whatever is wrong with the payload itself must still be
+    // answered in the engine's corruption vocabulary (spec/04 §1.4), never
+    // by a TypeError off this peek and never by the session's own words.
+    const cases: readonly { name: string; snapshot: unknown }[] = [
+      { name: "data null", snapshot: { version: 2, data: null } },
+      { name: "entities missing", snapshot: { version: 2, data: {} } },
+      { name: "entities not an object", snapshot: { version: 2, data: { entities: "gone" } } },
+      { name: "entities an array", snapshot: { version: 2, data: { entities: [] } } },
+    ];
+    for (const item of cases) {
+      const store: SaveStore = {
+        load: () => Promise.resolve(item.snapshot as never),
+        save: async () => {},
+      };
+      const rig = makeSession(undefined, store);
+      await expect(rig.session.continueGame(), item.name).rejects.toThrow(
+        /snapshot: data(\.entities)? is not an object/,
+      );
+    }
+  });
 });
 
 describe("the fallback — the saved room left the pack (#52 AC3)", () => {

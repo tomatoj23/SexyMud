@@ -322,35 +322,53 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       // The room check runs BEFORE assembly, on the raw payload: restoreWorld
       // (inside assembleWorld) validates and throws there, so content drift
       // needs its answer first — a room that left the pack is NOT a corrupt
-      // save (#52 AC3), and the two must never share a verdict. A
-      // locationId that is not even a plausible id is left for the loud
-      // path: this peek judges drift, never damage.
-      const data = snapshot.data as SaveDataV2;
-      const savedPlayer = data.entities["player"];
-      if (savedPlayer === undefined) {
-        throw new Error("game session: the save carries no player entity — nothing to resume");
-      }
+      // save (#52 AC3), and the two must never share a verdict. The peek
+      // therefore judges drift ONLY: a payload that does not even carry a
+      // well-formed data/entities shape — or a player record that is not an
+      // object — is passed through UNTOUCHED, so the engine's corruption
+      // verdict is the one that fires (spec/04 §1.4; saveText's D3: the two
+      // layers name their own damage) — never a TypeError off this peek,
+      // never this session's own words.
+      const payload = snapshot.data;
+      const entities =
+        typeof payload === "object" && payload !== null && !Array.isArray(payload)
+          ? (payload as SaveDataV2).entities
+          : undefined;
+      const mapOk =
+        typeof entities === "object" && entities !== null && !Array.isArray(entities);
       let toLoad = snapshot;
       let fellBack = false;
-      if (
-        typeof savedPlayer.locationId === "string" &&
-        savedPlayer.locationId !== "" &&
-        !pack.registry.rooms.some((room) => room.id === savedPlayer.locationId)
-      ) {
-        fellBack = true;
-        // Loaded saves are construction data: the relocation is a plain
-        // rewrite of the record (the same right a host has over initial
-        // placement), on a COPY — the store's object is never touched.
-        toLoad = {
-          ...snapshot,
-          data: {
-            ...data,
-            entities: {
-              ...data.entities,
-              player: { ...savedPlayer, locationId: world.startRoomId },
-            },
-          },
-        };
+      if (mapOk) {
+        const savedPlayer = entities["player"];
+        if (savedPlayer === undefined) {
+          // A well-formed entities map with no player row is unusable HERE —
+          // this game's saves always carry the player. A wiring bug to be
+          // heard, not damage (the map itself already passed the shape gate).
+          throw new Error("game session: the save carries no player entity — nothing to resume");
+        }
+        if (typeof savedPlayer === "object" && savedPlayer !== null && !Array.isArray(savedPlayer)) {
+          const savedRoom = savedPlayer.locationId;
+          if (
+            typeof savedRoom === "string" &&
+            savedRoom !== "" &&
+            !pack.registry.rooms.some((room) => room.id === savedRoom)
+          ) {
+            fellBack = true;
+            // Loaded saves are construction data: the relocation is a plain
+            // rewrite of the record (the same right a host has over initial
+            // placement), on a COPY — the store's object is never touched.
+            toLoad = {
+              ...snapshot,
+              data: {
+                ...(payload as SaveDataV2),
+                entities: {
+                  ...entities,
+                  player: { ...savedPlayer, locationId: world.startRoomId },
+                },
+              },
+            };
+          }
+        }
       }
 
       bucket = openBucket();
