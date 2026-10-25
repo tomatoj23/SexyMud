@@ -372,6 +372,20 @@ describe("the name slot (#52 — a display field, persisted verbatim)", () => {
     expect("name" in record).toBe(false);
   });
 
+  it("never persists a NON-STRING name either — garbage in the tree is nameless out", () => {
+    // A hand-set name that is not a string (a JS host, an `as any`) is no
+    // more a claim than the empty string: persisting one would be the
+    // engine writing a key its own load path rejects (owner ruling
+    // 2026-10-25, #52 audit N-1) — write-side elision, read-side refusal.
+    const runtime = makeRuntime();
+    createObject(runtime, { entity: player("player-1"), locationId: "room-a" }, silent);
+    runtime.state.entities["player-1"]!.name = 42 as unknown as string;
+    expect("name" in save(runtime.state).data.entities["player-1"]!).toBe(false);
+
+    runtime.state.entities["player-1"]!.name = null as unknown as string;
+    expect("name" in save(runtime.state).data.entities["player-1"]!).toBe(false);
+  });
+
   it("rejects a malformed name (present but not a non-empty string) — the thirteenth class", () => {
     const withName = (name: unknown) =>
       ({

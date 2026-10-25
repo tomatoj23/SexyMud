@@ -211,11 +211,14 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
   for (const id of Object.keys(world.entities).sort()) {
     // Object.keys just read this map: the lookup cannot miss.
     const state = world.entities[id]!;
-    // `name` rides only when set (#52): a nameless entity's record is
-    // byte-identical to what it was before the slot existed — "a field
-    // that was never written is not persisted" — and the empty string is
-    // never written either (the host defaults before it writes; the read
-    // side refuses the claim outright).
+    // `name` rides only when it is a NON-EMPTY STRING (#52): a nameless
+    // entity's record is byte-identical to what it was before the slot
+    // existed ("a field that was never written is not persisted") — and the
+    // writer makes no nameless claim of any kind: the empty string is never
+    // written (the host defaults before it writes), nor is a non-string (a
+    // JS host's garbage) — writing either would be the engine handing its
+    // own load path a key it rejects outright (owner ruling 2026-10-25, #52
+    // audit N-1: write-side elision, read-side refusal).
     const { name, ...persistent } = state;
     // Canonicalize FIRST, strip LAST: the live arrays' order is untouched,
     // and a field cannot be resurrected by a later step — the strip is the
@@ -224,7 +227,7 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
     entities[id] = stripDerived(
       {
         ...persistent,
-        ...(name !== undefined && name !== "" ? { name } : {}),
+        ...(typeof name === "string" && name !== "" ? { name } : {}),
         flags: [...state.flags].sort(),
         tags: canonicalTags(state.tags),
         cooldowns: canonicalCooldowns(state.cooldowns),
