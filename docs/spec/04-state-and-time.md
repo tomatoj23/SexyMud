@@ -249,7 +249,7 @@ content/config/calendar.json   →   schemas/config.calendar.schema.json
 | `content/config/calendar.json`（新） | 环、段名、每段 tick 数 | **STRUCTURE** |
 | `content/config/settings.json` 的 `time` 组 | 回复速率、buff 时长、冷却默认（键名一律带 tick 单位） | **TUNING** |
 
-- 走与 `dimensions` **同一条通道**：`createContentRegistry(content, { dimensions?, settings?, calendar? })`，由宿主装载器读 `config/` 后传入。引擎**不读文件**（照 `tests/fixtures/mini-content-pack.ts` 里 `readDimensions` 的先例）。
+- 走与 `dimensions` **同一条通道**：`createContentRegistry(content, { dimensions?, settings?, calendar?, … })`——时间相关的是 `settings?`／`calendar?` 两张（通道上还有 `world?`，世界引导表，#49；非时间表不在本节展开）。由宿主装载器读 `config/` 后传入。引擎**不读文件**（照 `tests/fixtures/mini-content-pack.ts` 里 `readDimensions` 的先例）。
 - 注册表**校验跨字段一致性**（如「环周期 > 0」「段 id 在环内唯一」）——那是 schema 管不了的那类约束，与今天的引用完整性同一层。
 - **缺 `settings.time` 或 `calendar` 时，由引擎侧在首次使用时间时大声失败**，不是注册表加载期：注册表不该知道引擎需要哪些参数（与它今天不知道引擎用不用 `byTag` 同一分寸）。
 - **新增 schema 需走 ADR-0003 的三处同步**：`core` 类型／编辑器表单（`apps/editor` 今日仍是占位）／`docs/agents/content.md` 字段说明。

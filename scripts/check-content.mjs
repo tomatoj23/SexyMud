@@ -305,11 +305,11 @@ if (!files.includes(worldFile)) {
     "MISSING content/config/world.json — every pack must declare its start room (startRoomId)",
   );
 } else {
-const worldData = prototypeEntries.find(({ file }) => file === worldFile)?.data;
-// Absent from prototypeEntries → the file failed to parse and the main
-// loop already failed the run on it; `null` (a literal-null file) is the
-// schema's failure the same way. Either way this pass has no root to add.
-if (worldData !== undefined && worldData !== null) {
+  const worldData = prototypeEntries.find(({ file }) => file === worldFile)?.data;
+  // Absent from prototypeEntries → the file failed to parse and the main
+  // loop already failed the run on it; `null` (a literal-null file) is the
+  // schema's failure the same way. Either way this pass has no root to add.
+  if (worldData !== undefined && worldData !== null) {
     const rooms = prototypeEntries
       .filter(({ file }) => collectionOf(file) === "rooms")
       .map(({ data }) => data);
