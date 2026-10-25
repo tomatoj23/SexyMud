@@ -69,6 +69,12 @@ import type { DueItem } from "../time/due.js";
  * "absent" is still read as tick 0, never as corruption). `cooldowns` is the
  * third (#23): "absent" means empty, never "the cooldowns were lost".
  *
+ * `name` (#52) is the one record slot that is optional BOTH sides and never
+ * filled: absent on the wire means NAMELESS (not "the default name") — the
+ * default is the host's theme word (Q5) and the engine owns none — so
+ * serializeWorld writes it only when set, and restore leaves its absence
+ * alone (the "unfilled" row, state/slot-rules.ts).
+ *
  * Each optional slot's tolerance is one row in `state/slot-rules.ts`, and
  * the reader half of that row says one thing: a late optional slot is
  * tolerated when ABSENT and refused when MALFORMED. `id` is the one field
@@ -205,13 +211,20 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
   for (const id of Object.keys(world.entities).sort()) {
     // Object.keys just read this map: the lookup cannot miss.
     const state = world.entities[id]!;
+    // `name` rides only when set (#52): a nameless entity's record is
+    // byte-identical to what it was before the slot existed — "a field
+    // that was never written is not persisted" — and the empty string is
+    // never written either (the host defaults before it writes; the read
+    // side refuses the claim outright).
+    const { name, ...persistent } = state;
     // Canonicalize FIRST, strip LAST: the live arrays' order is untouched,
     // and a field cannot be resurrected by a later step — the strip is the
     // last thing that happens to a record, so the table stays authoritative
     // whichever field it names.
     entities[id] = stripDerived(
       {
-        ...state,
+        ...persistent,
+        ...(name !== undefined && name !== "" ? { name } : {}),
         flags: [...state.flags].sort(),
         tags: canonicalTags(state.tags),
         cooldowns: canonicalCooldowns(state.cooldowns),

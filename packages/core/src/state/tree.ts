@@ -72,6 +72,19 @@ export interface EntityState {
    * empty (§1.4), never "recompute will fill it in".
    */
   cooldowns: Record<string, number>;
+  /**
+   * The occupant's DISPLAY name (#52; #48 D4): a plain string the engine
+   * stores, saves and replays — and never reads. It is a display field, not
+   * an identity: the actor id stays what it is, and the engine renders
+   * nothing from it (the render voice's `names` face is the host's merge).
+   * Absent means NAMELESS, and the default name is the HOST's word (Q5: a
+   * theme word like a default player name never crosses into the engine) —
+   * which is why this is the one tree slot `addEntity` does not seed and
+   * `restoreWorld` does not fill: nameless is a reading of its own, not a
+   * stand-in for some engine constant (the `name` row in
+   * state/slot-rules.ts, absent "unfilled").
+   */
+  name?: string;
 }
 
 /**

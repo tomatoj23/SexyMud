@@ -43,6 +43,27 @@ export interface HostCopy {
   readonly saveFailed: string;
   /** The visible line when opening a new game itself failed (a wiring or pack break). */
   readonly openFailed: string;
+  /**
+   * The one-line notice when the saved room is gone from the current pack
+   * (#52): the save is NOT corrupt — the world moved on — so the player is
+   * set down at the declared start room and told why, in one line.
+   */
+  readonly saveRoomGone: string;
+  /**
+   * The visible line when continuing failed (a damaged or unreachable save)
+   * — the loud-failure path's surface; the verdict itself stays the load
+   * path's (spec/04).
+   */
+  readonly continueFailed: string;
+  /**
+   * The overwrite confirmation's words (#52): a new game over an existing
+   * save asks ONCE — never a silent overwrite, never lost progress.
+   */
+  readonly overwrite: {
+    readonly prompt: string;
+    readonly confirmLabel: string;
+    readonly cancelLabel: string;
+  };
 }
 
 export const WEB_HOST_COPY: HostCopy = {
@@ -72,4 +93,11 @@ export const WEB_HOST_COPY: HostCopy = {
   },
   saveFailed: "（本地存档暂不可用，这一步之后的进度未能保存。）",
   openFailed: "开局失败——世界配置有误，无法进入江湖。",
+  saveRoomGone: "上次所在之处已不在江湖之中，你回到了起点。",
+  continueFailed: "续档失败——存档读不出来。",
+  overwrite: {
+    prompt: "江湖中已有旧档——重开新游戏将覆盖旧进度，无法找回。",
+    confirmLabel: "覆盖旧档，重开",
+    cancelLabel: "先不",
+  },
 };

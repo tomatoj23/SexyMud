@@ -36,16 +36,37 @@ const GAME_SLOT_KEY = "game-slot-1";
  */
 export default function App() {
   const cloud = useMemo(() => setupCloud(import.meta.env.VITE_CLOUDBASE_ENV_ID), []);
+  // The game's own slot, ONE instance for every face of it: the existence
+  // probe below, the new game's autosave, and 「继续」's load all read and
+  // write the same key.
+  const gameSlot = useMemo(() => new LocalSaveStore(GAME_SLOT_KEY), []);
   const [game, setGame] = useState<{ session: GameSession; view: TerminalView } | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
+  const [continueFailed, setContinueFailed] = useState(false);
+  const [hasSave, setHasSave] = useState(false);
 
-  const startNewGame = (name: string) => {
-    const assembly = createPlayableSession({
+  useEffect(() => {
+    // The 「继续」 door's light is BYTES EXIST (#52) — not "a good save
+    // exists": damage is judged on the click, by the load path that owns
+    // the verdict, so a damaged save still lights the door and still fails
+    // loudly where failing loudly lives.
+    gameSlot
+      .readRaw()
+      .then((raw) => setHasSave(raw.kind === "text"))
+      .catch(() => setHasSave(false));
+  }, [gameSlot]);
+
+  /** One session wired to one terminal — both doors open the game the same way. */
+  const openSession = () =>
+    createPlayableSession({
       pack: loadShippedPack(),
-      store: new LocalSaveStore(GAME_SLOT_KEY),
+      store: gameSlot,
       viewport: VIEWPORT,
       copy: WEB_HOST_COPY,
     });
+
+  const startNewGame = (name: string) => {
+    const assembly = openSession();
     // The output lines are pulled by snapshot, so lines published before the
     // terminal mounts are simply there when it first renders. A failed open
     // (a broken pack, a missing world table) stays ON the title screen and
@@ -54,6 +75,22 @@ export default function App() {
       .startNewGame(name)
       .then(() => setGame(assembly))
       .catch(() => setOpenFailed(true));
+  };
+
+  const continueGame = () => {
+    setContinueFailed(false);
+    const assembly = openSession();
+    assembly.session
+      .continueGame()
+      .then((outcome) => {
+        // "no-save" is the honest no-op: the door was lit on bytes that
+        // vanished between the probe and the click — there is nothing to
+        // resume and nothing to say.
+        if (outcome === "resumed") setGame(assembly);
+      })
+      // A store that fails loudly on load keeps its own verdict (#52 AC3's
+      // other half); the surface here is one line, not a silent no-op.
+      .catch(() => setContinueFailed(true));
   };
 
   return (
@@ -67,7 +104,18 @@ export default function App() {
               {WEB_HOST_COPY.openFailed}
             </p>
           ) : null}
-          <TitleScreen defaultName={WEB_HOST_COPY.defaultPlayerName} onNewGame={startNewGame} />
+          {continueFailed ? (
+            <p style={{ color: "#b91c1c", textAlign: "center", marginTop: 48 }}>
+              {WEB_HOST_COPY.continueFailed}
+            </p>
+          ) : null}
+          <TitleScreen
+            defaultName={WEB_HOST_COPY.defaultPlayerName}
+            hasSave={hasSave}
+            overwrite={WEB_HOST_COPY.overwrite}
+            onContinue={continueGame}
+            onNewGame={startNewGame}
+          />
         </>
       )}
       {cloud ? (

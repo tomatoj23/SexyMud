@@ -311,6 +311,84 @@ describe("tags in the save (M3-T5, #17; ADR-0029 §1)", () => {
   });
 });
 
+describe("the name slot (#52 — a display field, persisted verbatim)", () => {
+  /** A world with one NAMED player: the host sets the display name at construction (#48 D4). */
+  function namedPlayerWorld(): WorldState {
+    const runtime = makeRuntime();
+    createObject(runtime, { entity: player("player-1"), locationId: "room-a" }, silent);
+    runtime.state.entities["player-1"]!.name = "张三丰";
+    return runtime.state;
+  }
+
+  it("round-trips a set name through the JSON boundary, verbatim", () => {
+    const wire = JSON.parse(JSON.stringify(save(namedPlayerWorld()))) as Snapshot;
+    const restored = load(wire);
+
+    expect(save(namedPlayerWorld()).data.entities["player-1"]!.name).toBe("张三丰");
+    expect(restored.entities["player-1"]!.name).toBe("张三丰");
+  });
+
+  it("saves a nameless entity nameless — the record carries exactly the tree's own fields", () => {
+    // "A field that was never written is not persisted" (ADR-0022): most
+    // entities are never named, and their bytes are unchanged by the slot.
+    const record = save(onePlayerWorld()).data.entities["player-1"]!;
+    expect(Object.keys(record)).toEqual([
+      "id",
+      "locationId",
+      "flags",
+      "tags",
+      "lastSeenTick",
+      "cooldowns",
+    ]);
+    expect("name" in load(save(onePlayerWorld())).entities["player-1"]!).toBe(false);
+  });
+
+  it("reads an OLD save that predates the slot nameless — the default name is the HOST's word", () => {
+    // 「少侠」 never appears here: the engine restores nameless and stays
+    // silent (Q5 — the default application point is the host, and a theme
+    // word would cross the engine-purity red line to say it).
+    const oldSave = {
+      version: SAVE_VERSION,
+      data: realPayload,
+    } as Snapshot;
+
+    const restored = load(JSON.parse(JSON.stringify(oldSave)) as Snapshot);
+    expect("name" in restored.entities["player-1"]!).toBe(false);
+  });
+
+  it("is idempotent: saving a restored save yields the same bytes", () => {
+    const first = save(namedPlayerWorld());
+    expect(save(load(first))).toEqual(first);
+  });
+
+  it("never persists an empty name — the writer makes no nameless claim", () => {
+    // A live tree hand-set to "" (no host writes it — they default first)
+    // saves NAMELESS: the empty string is not a claim a save may carry, and
+    // the read side refuses it outright (the thirteenth class below).
+    const runtime = makeRuntime();
+    createObject(runtime, { entity: player("player-1"), locationId: "room-a" }, silent);
+    runtime.state.entities["player-1"]!.name = "";
+    const record = save(runtime.state).data.entities["player-1"]!;
+    expect("name" in record).toBe(false);
+  });
+
+  it("rejects a malformed name (present but not a non-empty string) — the thirteenth class", () => {
+    const withName = (name: unknown) =>
+      ({
+        version: SAVE_VERSION,
+        data: { entities: { "player-1": { id: "player-1", locationId: "room-a", flags: [], name } } },
+      }) as Snapshot;
+
+    expect(() => load(withName(42))).toThrow(
+      /entity "player-1"\.name is not a non-empty string/,
+    );
+    // The empty string is a written claim that does not hold, not namelessness.
+    expect(() => load(withName(""))).toThrow(
+      /entity "player-1"\.name is not a non-empty string/,
+    );
+  });
+});
+
 describe("derived fields (spec/04 §1.3)", () => {
   it("registers none today — every field of EntityState is a fact", () => {
     expect(DERIVED_ENTITY_KEYS).toEqual([]);

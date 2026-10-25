@@ -76,6 +76,39 @@ describe("one row, three readers (the add-a-slot drill)", () => {
     );
   });
 
+  it("an unfilled row tolerates absence WITHOUT inventing a default — the reading is the reader's (#52)", () => {
+    // `name` is the row this policy was cut for: a display field whose
+    // DEFAULT is a theme word (「少侠」) that belongs to the host (Q5), so the
+    // engine's row declares everything it knows — absence is fine, a present
+    // value must be a non-empty string — and invents nothing: nameless is a
+    // reading of its own, not a stand-in for some engine constant.
+    const rules: SlotRuleTable<"name"> = { name: SLOT_RULES.entity.name };
+
+    // readSaveData's half: absence passes silently, malformation is answered.
+    expect(() => validateSlots({}, rules, label)).not.toThrow();
+    expect(() => validateSlots({ name: "张三丰" }, rules, label)).not.toThrow();
+    expect(() => validateSlots({ name: 42 }, rules, label)).toThrow(
+      /entity "player-1"\.name is not a non-empty string/,
+    );
+    // The empty string is malformation, not namelessness: a writer that set
+    // "" wrote a claim, and the claim does not hold.
+    expect(() => validateSlots({ name: "" }, rules, label)).toThrow(
+      /entity "player-1"\.name is not a non-empty string/,
+    );
+
+    // restoreWorld's half: absence stays absence — no key is invented, not
+    // even an undefined-valued one (toStrictEqual, the "a fill that wrote an
+    // undefined-valued key is a miss too" law).
+    expect(fillAbsentSlots({}, rules)).toStrictEqual({});
+    expect(fillAbsentSlots({ name: "张三丰" }, rules)).toStrictEqual({ name: "张三丰" });
+
+    // migrations' half: an unfilled row is never recorded — there is no
+    // default to record, and "never settled"-style facts are the filled
+    // rows' vocabulary.
+    expect(fillMigrationDefaults({}, rules)).toStrictEqual({});
+    expect(fillMigrationDefaults({ name: "张三丰" }, rules)).toStrictEqual({});
+  });
+
   it("a required row's kind check doubles as its presence check — same error class as always", () => {
     // "flags is a list of strings", and absent is neither: the validator
     // answers a missing required slot with the error class it has always

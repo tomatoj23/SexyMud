@@ -250,3 +250,134 @@ describe("the chunker's inputs are live — width folds, both ends real (#51 AC3
     expect(narrow.lines.length).toBeGreaterThan(wide.lines.length);
   });
 });
+
+describe("the save loop — 「继续」 back to where the player stood (#52)", () => {
+  it("resumes the saved position and name — a second session over the same store", async () => {
+    const store = new MemoryStore();
+    const first = makeSession(undefined, store);
+    await first.session.startNewGame("张三丰");
+    await first.session.submit("北"); // 001 → 002
+
+    const second = makeSession(undefined, store);
+    const outcome = await second.session.continueGame();
+
+    expect(outcome).toBe("resumed");
+    expect(second.session.playerName()).toBe("张三丰");
+    expect(second.session.status().roomName).toBe("柳青镇街市");
+    // The opening screen is the screen every command produces: one automatic
+    // look at the room the player stands in. The arrival narrative is NOT
+    // replayed — that beat belongs to a NEW arrival, not a return.
+    expect(second.lines).not.toContain("你行至柳青镇口，脚下官道化作青石街面。");
+    expect(second.lines).toContain("〔柳青镇街市〕");
+  });
+
+  it("answers no-save honestly when the slot is empty", async () => {
+    const rig = makeSession();
+    await expect(rig.session.continueGame()).resolves.toBe("no-save");
+  });
+
+  it("propagates a store that fails loudly — corruption keeps its own verdict", async () => {
+    const failing: SaveStore = {
+      load: () => Promise.reject(new Error("save: stored text is not JSON")),
+      save: async () => {},
+    };
+    const rig = makeSession(undefined, failing);
+    // #52 AC3's other half: the room-gone fallback is NOT damage judgement —
+    // a damaged payload stays the load path's loud business (spec/04).
+    await expect(rig.session.continueGame()).rejects.toThrow("save: stored text is not JSON");
+  });
+});
+
+describe("the fallback — the saved room left the pack (#52 AC3)", () => {
+  it("lands on the declared start room with one host line — the save is not judged corrupt", async () => {
+    const store = new MemoryStore();
+    const first = makeSession(undefined, store);
+    await first.session.startNewGame("少侠");
+    await first.session.submit("北"); // now standing in room-lq-002
+    // Content drift, simulated: the room the save stands in exists in no pack.
+    const saved = store.saved.at(-1)!;
+    (saved.data as { entities: Record<string, { locationId: string }> }).entities[
+      "player"
+    ]!.locationId = "room-demolished";
+
+    const rig = makeSession(undefined, store);
+    const outcome = await rig.session.continueGame();
+
+    expect(outcome).toBe("resumed");
+    expect(rig.session.status().roomName).toBe("柳青镇镇口");
+    // The notice is 22 columns and folds at this rig's 40-column viewport
+    // (「点。」 rides down together — kinsoku); the join reads it whole, the
+    // saveFailed precedent.
+    expect(rig.lines.join("")).toContain(WEB_HOST_COPY.saveRoomGone);
+    // The notice is the FIRST beat, then the ordinary screen: the look.
+    expect(rig.lines.join("").indexOf(WEB_HOST_COPY.saveRoomGone)).toBeLessThan(
+      rig.lines.join("").indexOf("〔柳青镇镇口〕"),
+    );
+    expect(rig.lines).toContain("〔柳青镇镇口〕");
+  });
+});
+
+describe("the name rides the payload — a display field, host-defaulted (#52 AC4)", () => {
+  it("startNewGame writes the display name into the save's player record", async () => {
+    const store = new MemoryStore();
+    const rig = makeSession(undefined, store);
+    await rig.session.startNewGame("张三丰");
+
+    const record = (
+      store.saved.at(-1)!.data as { entities: Record<string, Record<string, unknown>> }
+    ).entities["player"]!;
+    expect(record.name).toBe("张三丰");
+  });
+
+  it("an old save without the field reads back the HOST's default name", async () => {
+    const store = new MemoryStore();
+    const first = makeSession(undefined, store);
+    await first.session.startNewGame("张三丰");
+    delete (
+      store.saved.at(-1)!.data as { entities: Record<string, Record<string, unknown>> }
+    ).entities["player"]!.name;
+
+    const second = makeSession(undefined, store);
+    await second.session.continueGame();
+
+    expect(second.session.playerName()).toBe("少侠");
+  });
+
+  it("stamps the applied name back onto the tree — an old nameless save learns the name", async () => {
+    const store = new MemoryStore();
+    const first = makeSession(undefined, store);
+    await first.session.startNewGame("张三丰");
+    delete (
+      store.saved.at(-1)!.data as { entities: Record<string, Record<string, unknown>> }
+    ).entities["player"]!.name;
+
+    const second = makeSession(undefined, store);
+    await second.session.continueGame();
+
+    // The continue's own autosave (the opening look settles) already carries
+    // the name it is played under — the payload never stays nameless again.
+    const record = (
+      store.saved.at(-1)!.data as { entities: Record<string, Record<string, unknown>> }
+    ).entities["player"]!;
+    expect(record.name).toBe("少侠");
+  });
+
+  it("the payload carries no command history — session state never persists (#52 AC5)", async () => {
+    const store = new MemoryStore();
+    const rig = makeSession(undefined, store);
+    await rig.session.startNewGame("");
+    await rig.session.submit("北");
+    await rig.session.submit("说 天色不错");
+
+    // The wire is the engine's snapshot and nothing else: the four v2 slots,
+    // no history, no input log — a reopened game starts with an empty stream.
+    const wire = JSON.parse(JSON.stringify(store.saved.at(-1)!)) as Record<string, unknown>;
+    expect(Object.keys(wire.data as object).sort()).toEqual([
+      "due",
+      "entities",
+      "nowTick",
+      "rngState",
+    ]);
+    expect(wire).not.toHaveProperty("history");
+  });
+});

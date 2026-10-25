@@ -6,8 +6,10 @@ import type { EntityRecord, SaveDataV1, SaveDataV2, WorldMeta } from "./snapshot
  * (readSaveData / restoreWorld / migrations) plus a docstring layer above
  * them (#40, spec/04 §1.4–§1.5):
  *
- *   - **absent** — the ABSENCE POLICY: "required" (absence is corruption) or
- *     a default (absence is tolerated and filled). The default is declared
+ *   - **absent** — the ABSENCE POLICY: "required" (absence is corruption),
+ *     a default (absence is tolerated and filled), or "unfilled" (absence is
+ *     tolerated and left absent — the default, when one applies, is the
+ *     READER's own to declare, #52). The default is declared
  *     ONCE here and both fill sites read it (AC5: the migration's fill and
  *     the reader's fill were two hard-coded copies of the same number);
  *     `migrate: true` additionally says the migration RECORDS this slot's
@@ -72,6 +74,13 @@ export type SlotDefault =
  * list of strings", and absent is neither), which is exactly the error class
  * a missing required slot has always produced. A `required` row never gets a
  * migration fill: a migration must not invent the slot it would be guessing.
+ *
+ * An `unfilled` row is the third policy (#52, cut for `name`): absence is a
+ * READING of its own — tolerated and left absent, no default invented,
+ * because the default (when one applies) is the reader's own to declare: the
+ * default player name is the host's theme word (Q5), and an engine constant
+ * would word it wrong for every other host. The variant demands a validator
+ * — a slot nobody fills and nobody checks would be no row at all.
  */
 export type SlotRule =
   | { absent: "required"; validate: SlotValidator }
@@ -83,7 +92,8 @@ export type SlotRule =
         migrate?: true;
       };
       validate?: SlotValidator;
-    };
+    }
+  | { absent: "unfilled"; validate: SlotValidator };
 
 /** Slots by name, in declaration order — the order the readers answer in. */
 export type SlotRuleTable<K extends string = string> = Record<K, SlotRule>;
@@ -206,6 +216,11 @@ export const SLOT_RULES: {
     // `lastSeenTick = nowTick` predates the slot and no longer governs.
     lastSeenTick: { absent: { default: 0, migrate: true }, validate: isTick },
     cooldowns: { absent: { default: {} }, validate: isCooldownMap },
+    // The unfilled policy's first row (#52): a display name the engine
+    // carries verbatim. Absent reads absent (nameless — the host applies its
+    // own default word); a present value must be a non-empty string, for the
+    // empty string is a written claim, not namelessness.
+    name: { absent: "unfilled", validate: isNonEmptyString },
   },
   world: {
     // The scalars a v1 save predates entirely: the migration records "never
@@ -269,6 +284,14 @@ export function fillAbsentSlots<K extends string>(
   const slots = values as Record<string, unknown>;
   const filled = {} as Record<K, unknown>;
   for (const [slot, rule] of Object.entries(rules) as [K, SlotRule][]) {
+    if (rule.absent === "unfilled") {
+      // Absence stays absence — no key is invented, not even an
+      // undefined-valued one (the "a fill that wrote an undefined-valued key
+      // is a miss too" law): the default, when one applies, is the reader's
+      // own to declare.
+      if (slots[slot] !== undefined) filled[slot] = slots[slot];
+      continue;
+    }
     if (rule.absent === "required") {
       if (slots[slot] !== undefined) filled[slot] = slots[slot];
       continue;
@@ -293,7 +316,11 @@ export function fillMigrationDefaults<K extends string>(
   const slots = values as Record<string, unknown>;
   const filled: Partial<Record<K, unknown>> = {};
   for (const [slot, rule] of Object.entries(rules) as [K, SlotRule][]) {
-    if (rule.absent === "required" || !rule.absent.migrate) continue;
+    // An unfilled row is never recorded: there is no default to record, and
+    // the facts migrations record ("never settled" and its kin) are the
+    // filled rows' vocabulary.
+    if (rule.absent === "required" || rule.absent === "unfilled") continue;
+    if (!rule.absent.migrate) continue;
     if (slots[slot] === undefined) filled[slot] = freshDefault(rule.absent.default);
   }
   return filled;
