@@ -48,6 +48,7 @@ corepack pnpm content:check
   - `content/config/<名>.json` → `schemas/config.<名>.schema.json`
 - **跨文件 `$ref` 已支持**（M1-T5）：管线启动时按 `$id` 预注册 `schemas/` 下全部 schema，集合 schema 可互相引用（如 `commands.schema.json` → `condition.schema.json#/definitions/accessRules`）。
 - **全部 schema 都会被编译**做 draft-07 合法性检查（2026-09-01 缺口清扫）：有内容映射者编译失败即硬失败（干净 INVALID，退出码 1）；无内容者的违规以 **WARN** 呈现、不阻塞——设计草稿随其集合落地时重估，warn 级信号好过不可见。Ajv 的日志级 strict 警告（如 strictTypes 联合类型）也统一走 WARN 前缀。
+- **死概念门禁**（`scripts/banned-terms.json`）：被 ADR 废弃的概念词不得回流内容——`content/` 全量 JSON 逐行扫描，error 级命中即失败、warn 级（行文里合法的非机制用法）只报不挡；词表与分级规则住该文件。
 - **原型环检测**（M3-T6，#19）：按集合遍历 `prototypeParent` 图，成环即失败并打印环（细节见 spec/03 §6.1）。
 - **世界可达性**（#49）：`content/config/world.json` 声明起始房间（缺失即失败）；以它为根 BFS 出口图，不可达的**非模板**房间（声明 `prototypeKey` 者豁免）逐个列出并失败，全可达时零输出。走**静态出口图**（门禁不挡连通性）；**startRoomId 指向查无此房**不在此查——那是注册表加载期引用校验的事（ADR-0003 分层，与出口 `targetRoomId` 同律）。迷你包是测试夹具、不在 `content/` 范围，其可达性由 `tests/mini-content-pack.test.ts` 钉。
 - 退出码即结果
