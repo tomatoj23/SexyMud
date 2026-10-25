@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import type { OutputSpan, StyleName } from "@sexymud/core";
+import { CommandInput } from "./CommandInput.js";
 import type { TerminalView } from "./terminalView.js";
 
 /**
@@ -61,19 +62,9 @@ const streamStyle = {
   whiteSpace: "pre",
 } as const;
 
-const inputStyle = { flex: 1, fontSize: 16, padding: "8px 12px" } as const;
-const sendStyle = { fontSize: 16, padding: "8px 20px" } as const;
-
 export function GameTerminal(props: { readonly view: TerminalView }) {
   const view = props.view;
   const snapshot = useSyncExternalStore(view.subscribe, view.getSnapshot);
-  const [draft, setDraft] = useState("");
-
-  const send = () => {
-    const raw = draft;
-    setDraft("");
-    view.submitCommand(raw);
-  };
 
   const status = snapshot.status;
   return (
@@ -90,37 +81,9 @@ export function GameTerminal(props: { readonly view: TerminalView }) {
           </div>
         ))}
       </div>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          send();
-        }}
-        style={{ display: "flex", gap: 8, padding: "8px 0" }}
-      >
-        <input
-          type="text"
-          aria-label="命令输入"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter submits EXPLICITLY: the browser's implicit form
-            // submission is a courtesy some embedded webviews do not run
-            // (verified in the in-app browser: a trusted, unprevented
-            // Enter still fires no submit event). preventDefault keeps the
-            // courtesy path from double-firing where it does work. IME
-            // composition guard lands with the input component (#53).
-            if (event.key === "Enter") {
-              event.preventDefault();
-              send();
-            }
-          }}
-          style={inputStyle}
-          autoFocus
-        />
-        <button type="submit" style={sendStyle}>
-          发送
-        </button>
-      </form>
+      {/* The input face is the command input component (#53): IME-safe,
+          history-capable — one input surface since #51, evolved in place. */}
+      <CommandInput onSubmit={(raw) => view.submitCommand(raw)} />
     </div>
   );
 }

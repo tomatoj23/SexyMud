@@ -153,6 +153,17 @@ export interface TypingRig {
   pressEnter(): Promise<void>;
   /** Fires a REAL keydown Enter at the input — the explicit-submit pin. */
   pressKeyEnter(): Promise<void>;
+  /**
+   * Fires a REAL keydown at the input with any key (#53) — the history
+   * arrows' gesture, and the IME's own key signal: `isComposing: true`
+   * fires the Chrome/Firefox half of the guard (no composition events
+   * around it, the key itself says a composition owns it).
+   */
+  pressKey(key: string, init?: { readonly isComposing?: boolean }): Promise<void>;
+  /** Opens an IME composition on the input — the G3 guard's setup gesture. */
+  composeStart(): void;
+  /** Closes the composition; the guard's grace timer starts HERE (D2). */
+  composeEnd(): void;
   unmount(): void;
 }
 
@@ -201,6 +212,15 @@ function buttonOf(container: HTMLElement, label: string): HTMLButtonElement {
 
 /** The typing half both rigs share, bound to one mounted container. */
 function typingRigOf(container: HTMLElement, input: () => HTMLInputElement): Omit<TypingRig, "unmount"> {
+  /** One REAL keydown at the input — Enter's and the arrows' shared path. */
+  const fireKey = async (key: string, isComposing = false): Promise<void> => {
+    await act(async () => {
+      input().dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, isComposing }),
+      );
+      await turn();
+    });
+  };
   return {
     text: () => container.textContent ?? "",
     button: (label: string) => buttonOf(container, label),
@@ -225,12 +245,17 @@ function typingRigOf(container: HTMLElement, input: () => HTMLInputElement): Omi
         await turn();
       });
     },
-    async pressKeyEnter() {
-      await act(async () => {
-        input().dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-        );
-        await turn();
+    pressKeyEnter: () => fireKey("Enter"),
+    pressKey: (key: string, init?: { readonly isComposing?: boolean }) =>
+      fireKey(key, init?.isComposing ?? false),
+    composeStart() {
+      act(() => {
+        input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      });
+    },
+    composeEnd() {
+      act(() => {
+        input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
       });
     },
   };

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { setupCloud, type CloudStack } from "./cloudSetup.js";
 import type { CloudSync } from "./game/cloudSync.js";
-import { LocalSaveStore } from "./game/localSaveStore.js";
+import { LocalSaveStore, LocalSaveUnavailableError } from "./game/localSaveStore.js";
 import { loadShippedPack } from "./game/browserPack.js";
 import { createPlayableSession } from "./game/gameSession.js";
 import type { GameSession } from "./game/gameSession.js";
@@ -13,6 +13,9 @@ import { GameTerminal } from "./ui/GameTerminal.js";
 import { TitleScreen } from "./ui/TitleScreen.js";
 
 const pageStyle = { margin: "0 auto", fontFamily: "system-ui, sans-serif" } as const;
+
+/** The failure lines' shared look — one face for every door that failed. */
+const failureLineStyle = { color: "#b91c1c", textAlign: "center", marginTop: 48 } as const;
 
 /**
  * The tracer bullet's first cut terminal geometry (#48 D7): the width and
@@ -42,7 +45,15 @@ export default function App() {
   const gameSlot = useMemo(() => new LocalSaveStore(GAME_SLOT_KEY), []);
   const [game, setGame] = useState<{ session: GameSession; view: TerminalView } | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
-  const [continueFailed, setContinueFailed] = useState(false);
+  // The 「继续」 failure's CLASS, not a bare flag (#52 复核 N-2, #53): the
+  // two troubles point at opposite doors (#32 D4), so the face carries which
+  // door — corrupt opens the overwrite ask, unavailable says how to retry.
+  const [continueFailedKind, setContinueFailedKind] = useState<"corrupt" | "unavailable" | null>(
+    null,
+  );
+  // The corrupt door's handle (#53/N-2): a rising signal — each click walks
+  // the player into the SAME overwrite ask 「新游戏」 fires.
+  const [overwriteAskSignal, setOverwriteAskSignal] = useState(0);
   const [hasSave, setHasSave] = useState(false);
 
   useEffect(() => {
@@ -78,7 +89,7 @@ export default function App() {
   };
 
   const continueGame = () => {
-    setContinueFailed(false);
+    setContinueFailedKind(null);
     const assembly = openSession();
     assembly.session
       .continueGame()
@@ -88,9 +99,16 @@ export default function App() {
         // resume and nothing to say.
         if (outcome === "resumed") setGame(assembly);
       })
-      // A store that fails loudly on load keeps its own verdict (#52 AC3's
-      // other half); the surface here is one line, not a silent no-op.
-      .catch(() => setContinueFailed(true));
+      // A load that fails loudly keeps its verdict (#52 AC3); the SURFACE
+      // splits by class (#53/N-2): unreachable storage is its own door
+      // (check settings), everything a load can throw here — the store's
+      // corrupt verdict on the envelope, the engine's own damage verdict on
+      // the payload — is the repair/overwrite door.
+      .catch((error: unknown) => {
+        setContinueFailedKind(
+          error instanceof LocalSaveUnavailableError ? "unavailable" : "corrupt",
+        );
+      });
   };
 
   return (
@@ -100,19 +118,33 @@ export default function App() {
       ) : (
         <>
           {openFailed ? (
-            <p style={{ color: "#b91c1c", textAlign: "center", marginTop: 48 }}>
-              {WEB_HOST_COPY.openFailed}
+            <p style={failureLineStyle}>{WEB_HOST_COPY.openFailed}</p>
+          ) : null}
+          {continueFailedKind === "corrupt" ? (
+            <p style={failureLineStyle}>
+              {WEB_HOST_COPY.continueFailed.corrupt}{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  // The exit's job is done once the player is in the ask:
+                  // the failure line steps aside for the overwrite flow
+                  // (a cancelled ask still leaves 「新游戏」 as the way back).
+                  setContinueFailedKind(null);
+                  setOverwriteAskSignal((count) => count + 1);
+                }}
+              >
+                {WEB_HOST_COPY.continueFailed.corruptExitLabel}
+              </button>
             </p>
           ) : null}
-          {continueFailed ? (
-            <p style={{ color: "#b91c1c", textAlign: "center", marginTop: 48 }}>
-              {WEB_HOST_COPY.continueFailed}
-            </p>
+          {continueFailedKind === "unavailable" ? (
+            <p style={failureLineStyle}>{WEB_HOST_COPY.continueFailed.unavailable}</p>
           ) : null}
           <TitleScreen
             defaultName={WEB_HOST_COPY.defaultPlayerName}
             hasSave={hasSave}
             overwrite={WEB_HOST_COPY.overwrite}
+            openOverwriteAsk={overwriteAskSignal}
             onContinue={continueGame}
             onNewGame={startNewGame}
           />

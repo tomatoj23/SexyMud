@@ -50,11 +50,21 @@ export interface HostCopy {
    */
   readonly saveRoomGone: string;
   /**
-   * The visible line when continuing failed (a damaged or unreachable save)
-   * — the loud-failure path's surface; the verdict itself stays the load
-   * path's (spec/04).
+   * The 「继续」 failure face, SPLIT BY TROUBLE CLASS (#52 复核 N-2, #53):
+   * the two failures point at opposite doors (#32 D4) — damaged bytes mean
+   * repair or overwrite, an unreachable store means check browser settings
+   * — so they may never share a line. Each class's EXIT rides with its
+   * word: the corrupt face opens the overwrite ask (the words in
+   * `overwrite` below), the unavailable face says how to retry.
    */
-  readonly continueFailed: string;
+  readonly continueFailed: {
+    /** 存档损坏——修档的门（重开覆盖旧档）。 */
+    readonly corrupt: string;
+    /** 存档损坏那扇门的把手（词随门走，换宿主换词）。 */
+    readonly corruptExitLabel: string;
+    /** 存储不可达——查设置的门（检查后重试）。 */
+    readonly unavailable: string;
+  };
   /**
    * The overwrite confirmation's words (#52): a new game over an existing
    * save asks ONCE — never a silent overwrite, never lost progress.
@@ -94,7 +104,11 @@ export const WEB_HOST_COPY: HostCopy = {
   saveFailed: "（本地存档暂不可用，这一步之后的进度未能保存。）",
   openFailed: "开局失败——世界配置有误，无法进入江湖。",
   saveRoomGone: "上次所在之处已不在江湖之中，你回到了起点。",
-  continueFailed: "续档失败——存档读不出来。",
+  continueFailed: {
+    corrupt: "续档失败——存档损坏，读不出可用进度。可重开新游戏覆盖旧档。",
+    corruptExitLabel: "重开新游戏",
+    unavailable: "续档失败——本地存储不可用，请检查浏览器设置（如隐私模式、站点存储被禁）后再试。",
+  },
   overwrite: {
     prompt: "江湖中已有旧档——重开新游戏将覆盖旧进度，无法找回。",
     confirmLabel: "覆盖旧档，重开",

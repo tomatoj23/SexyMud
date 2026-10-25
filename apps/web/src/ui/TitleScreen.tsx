@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * The title screen (#51; #48 D11): the door into the world — one name box
@@ -58,11 +58,25 @@ export interface TitleScreenProps {
    * words no ask keeps #51's direct behavior.
    */
   readonly overwrite?: OverwriteCopy;
+  /**
+   * Opens the overwrite ask from OUTSIDE (#52 复核 N-2, #53): a rising
+   * counter — the corrupt-save exit's 「重开新游戏」 hands the player into
+   * the SAME ask 「新游戏」 fires, not a second ask of its own: one flow,
+   * one set of words, the typed name kept where it was typed.
+   */
+  readonly openOverwriteAsk?: number;
 }
 
 export function TitleScreen(props: TitleScreenProps) {
   const [name, setName] = useState("");
   const [confirming, setConfirming] = useState(false);
+  // The outside door into the ask (#53/N-2): each rise re-opens it — the
+  // counter, not a boolean, so a cancelled ask opens again on the next try.
+  useEffect(() => {
+    if ((props.openOverwriteAsk ?? 0) > 0 && props.overwrite !== undefined) {
+      setConfirming(true);
+    }
+  }, [props.openOverwriteAsk, props.overwrite]);
   const chosenName = () => name.trim() || props.defaultName;
   const start = () => {
     // An existing save is progress on the line: overwriting it asks ONCE —

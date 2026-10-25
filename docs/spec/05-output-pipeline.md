@@ -137,9 +137,11 @@ interface TerminalView {
 
 **web 基准端已落**（#51：`apps/web/src/ui/terminalView.ts`——纯 TS 状态机承载共享逻辑〔追加式输出＋缓冲 500 行丢最早＋稳定行 id〕，React 呈现在 `GameTerminal.tsx`）。四方法是**跨端共享面**；各端可再挂自己的 glue（web 端：命令框提交通道 `submitCommand`＋React 订阅 `subscribe`/`getSnapshot`），glue 不进跨端契约。
 
+**输入组件已落**（#53：`apps/web/src/ui/CommandInput.tsx` 取代 #51 临时命令框——同一输入面演进；命令历史〔三件套的历史回溯腿〕住纯 TS `commandHistory.ts` 供跨端共享；IME 合成守卫〔G3〕双条件：composingRef＋`isComposing`，compositionend 后一宏任务宽限兜 WebKit「确认键 keydown 迟于 compositionend」——合成中 Enter 不提交半成品、方向键让路候选窗）。
+
 - **跨端只共享接口与逻辑层，不共享组件**
 - Web（React）是唯一基准端；小程序用原生 WXML + `scroll-view` 实现；APK 用 Capacitor 包 Web 壳
-- 移动端三件套是**一等职责**：常用命令快捷条 + 命令补全 + 历史回溯（⚠️ 可玩闭环首刀切片不含移动三件套——**系切片非翻案**，本条仍是目标态）
+- 移动端三件套是**一等职责**：常用命令快捷条 + 命令补全 + 历史回溯（⚠️ 可玩闭环首刀切片不含移动三件套——**系切片非翻案**，本条仍是目标态；**历史回溯已随 #53 落第一片**〔会话态、不落盘〕，快捷条与补全仍待）
 
 依据：ADR-0018
 
@@ -157,6 +159,9 @@ interface TerminalView {
 - [x] 分块**重放未闭合样式 span**（#50：物理行完整平铺＋同 span 刀口两侧闭/开）
 - [x] 输出**非模态**，不劫持输入（#51：输出流滚动＋命令框常驻，分页不拦输入）
 - [x] 输出缓冲有上限，增量 append（#51：缓冲上限 500 行、超出丢最早，`apps/web/src/ui/terminalView.ts`＋panel-rig 钉丢行与追加不动旧行）
+- [x] IME 合成中 Enter 不提交半成品、合成完成后正常提交（#53：G3 守卫双条件＋WebKit 一宏任务宽限，jsdom composition 事件钉三分支——真机手验留痕随 #53 关票要件）
+- [x] 命令历史会话态、不落盘（#53：`commandHistory.ts` 纯 TS＋上翻下翻＋live 垫稿回垫，重开即空／全流程零 localStorage 写钉）
+- [x] 玩家输入原样显示、不解释任何 markup——输入组件面（#53：受控框＋两路回显〔说／未知命令〕逐字落 DOM、载荷不生成任何元素）
 - [ ] 引擎 markup 用**玩家无法产生的码位**（输入加固全量随机制面；#51 首刀已按 token 渲染＋玩家输入原样显示〔`GameTerminal.tsx` 无 markup 解释〕，码位级加固仍待机制面。**机制面票落地须含换行 strip**——#51 复核已复现：玩家输入内嵌换行穿透到输出行，`white-space:pre` 下可伪造额外行〔§8.1 strip 族〕）
 - [ ] 可点击命令只来自引擎/内容侧（同上）
-- [ ] 移动端三件套（快捷条 / 补全 / 历史）已实现（可玩闭环首刀切片不含——目标态）
+- [ ] 移动端三件套（快捷条 / 补全仍待——历史回溯已随 #53 落；目标态余两件）
