@@ -62,4 +62,16 @@ describe("TitleScreen — the door into the world (#51 AC1)", () => {
 
     expect(received).toEqual(["李四"]);
   });
+
+  it("a real keydown Enter starts the game too — no reliance on implicit submission", async () => {
+    const received: string[] = [];
+    const rig = mount(received);
+
+    await rig.typeInto("王五");
+    await rig.pressKeyEnter();
+
+    // Some embedded webviews never run the implicit submission (the in-app
+    // browser's verified finding) — the explicit keydown path carries them.
+    expect(received).toEqual(["王五"]);
+  });
 });

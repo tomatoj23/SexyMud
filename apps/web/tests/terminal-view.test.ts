@@ -113,7 +113,7 @@ describe("the command box — typing reaches the game, output answers (#51 AC3/A
   it("sends through the button and through Enter, both through the one channel", async () => {
     const { rig, session } = mountGame();
     mounted.push(rig);
-    await rig.drive(() => session.startNewGame(""));
+    await session.startNewGame("");
 
     await rig.typeInto("说 按钮发送");
     await rig.click("发送");
@@ -123,6 +123,21 @@ describe("the command box — typing reaches the game, output answers (#51 AC3/A
     await rig.typeInto("说 回车发送");
     await rig.pressEnter();
     expect(rig.outputLines()).toContain("你说：回车发送");
+  });
+
+  it("a real keydown Enter submits too — no reliance on implicit form submission", async () => {
+    const { rig, session } = mountGame();
+    mounted.push(rig);
+    await session.startNewGame("");
+
+    await rig.typeInto("说 键入回车");
+    await rig.pressKeyEnter();
+
+    // Some embedded webviews never run the implicit submission (verified in
+    // the in-app browser: a trusted, unprevented Enter fires no submit) —
+    // the explicit keydown path is what carries those hosts.
+    expect(rig.outputLines()).toContain("你说：键入回车");
+    expect(rig.inputValue()).toBe("");
   });
 
   it("walks north from the box and the status line follows", async () => {

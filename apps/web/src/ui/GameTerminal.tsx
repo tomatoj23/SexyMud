@@ -102,6 +102,18 @@ export function GameTerminal(props: { readonly view: TerminalView }) {
           aria-label="命令输入"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter submits EXPLICITLY: the browser's implicit form
+            // submission is a courtesy some embedded webviews do not run
+            // (verified in the in-app browser: a trusted, unprevented
+            // Enter still fires no submit event). preventDefault keeps the
+            // courtesy path from double-firing where it does work. IME
+            // composition guard lands with the input component (#53).
+            if (event.key === "Enter") {
+              event.preventDefault();
+              send();
+            }
+          }}
           style={inputStyle}
           autoFocus
         />

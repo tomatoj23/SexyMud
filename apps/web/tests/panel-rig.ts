@@ -151,6 +151,8 @@ export interface TypingRig {
   typeInto(text: string): void;
   /** Submits the form the way Enter does (jsdom fires no submit on keydown). */
   pressEnter(): Promise<void>;
+  /** Fires a REAL keydown Enter at the input — the explicit-submit pin. */
+  pressKeyEnter(): Promise<void>;
   unmount(): void;
 }
 
@@ -220,6 +222,14 @@ function typingRigOf(container: HTMLElement, input: () => HTMLInputElement): Omi
       if (form === null) throw new Error("game rig: the input sits in no form");
       await act(async () => {
         form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await turn();
+      });
+    },
+    async pressKeyEnter() {
+      await act(async () => {
+        input().dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        );
         await turn();
       });
     },

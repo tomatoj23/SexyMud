@@ -54,6 +54,16 @@ export function TitleScreen(props: TitleScreenProps) {
           placeholder={props.defaultName}
           value={name}
           onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter starts the game EXPLICITLY — some embedded webviews
+            // never run the browser's implicit form submission (see
+            // GameTerminal's command box, the same finding). preventDefault
+            // keeps hosts that do run it from double-firing.
+            if (event.key === "Enter") {
+              event.preventDefault();
+              start();
+            }
+          }}
           style={inputStyle}
           autoFocus
         />
