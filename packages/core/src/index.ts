@@ -37,6 +37,7 @@ export {
   customCode,
   customEvent,
   departedEvent,
+  isEngineEvent,
   sayEvent,
   stampEvent,
 } from "./events.js";
@@ -164,6 +165,18 @@ export { broadcastMessage } from "./world/message.js";
 export type { BroadcastRequest, MessagePorts } from "./world/message.js";
 export { say, saySpec } from "./world/say.js";
 export type { SayRequest, SayResult, SayVetoStage } from "./world/say.js";
+// The text surface (spec/05, issue #50): line shapes, display width, the
+// kinsoku-aware folder, the viewport chunker and the five-type renderer —
+// shipped with the engine so every host renders through one implementation.
+export { lineOf, pushSpan } from "./text/line.js";
+export type { OutputLine, OutputSpan, StyleName } from "./text/line.js";
+export { charWidth, displayWidth, splitUnits } from "./text/width.js";
+export type { WidthUnit } from "./text/width.js";
+export { foldLine } from "./text/wrap.js";
+export { chunkOutput } from "./text/chunk.js";
+export type { Viewport } from "./text/chunk.js";
+export { renderEvent } from "./text/render.js";
+export type { ObserverState, RenderContent, RenderCopy } from "./text/render.js";
 export type { EntityState, WorldState } from "./state/tree.js";
 export { restoreWorld, serializeWorld } from "./state/snapshot.js";
 export type {

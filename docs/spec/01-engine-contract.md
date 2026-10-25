@@ -152,6 +152,9 @@ packages/core/          引擎（可独立发布的库，零题材词）
                         ＋ 推进 settle.ts（两层推进，M4-T3 #22）
                         ＋ 到期桶 due.ts／冷却 cooldown.ts／纯 stage 求值 stage.ts（#23）
                         —— tick 高水位另在 src/clock.ts（M4-T1）
+    text/               文本面出厂（#50，spec/05）：显示宽度 width.ts／避头尾折行 wrap.ts／
+                        切块 chunk.ts（span 重放）／五型渲染纯函数 render.ts＋行形状 line.ts——
+                        取字面/名字/enterText 全部随渲染器入参注入（Q6/Q7），引擎零词
     effects/            效果执行
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑

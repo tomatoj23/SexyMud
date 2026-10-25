@@ -6,6 +6,7 @@ import type {
   CustomCode,
   CustomEventDraft,
   DepartedEvent,
+  EngineEvent,
   EventSkeleton,
   GameEvent,
   SayEvent,
@@ -106,4 +107,23 @@ export function customCode(text: string): CustomCode {
  */
 export function stampEvent(draft: EventDraft, skeleton: EventSkeleton): GameEvent {
   return { ...draft, ...skeleton } as GameEvent;
+}
+
+/**
+ * Whether an event is one of the engine's five arms — the consumer-side
+ * discriminator the union's design promises (types.ts: narrowing happens
+ * between the five engine types; the extension arm's `type` is an open
+ * string, so a `switch` on it alone cannot eliminate it). The honest limit
+ * is the emit port's documented cost: a host-smuggled custom event claiming
+ * an engine type rides that arm here, and its missing fields fail loudly
+ * downstream.
+ */
+export function isEngineEvent(event: GameEvent): event is EngineEvent {
+  return (
+    event.type === "commandRefused" ||
+    event.type === "say" ||
+    event.type === "appearance" ||
+    event.type === "departed" ||
+    event.type === "arrived"
+  );
 }

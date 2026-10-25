@@ -8,5 +8,5 @@
   "elementTag": ["metal", "wood", "water", "fire", "earth", "wind", "thunder"],
   "quality": ["low", "mid", "high", "ultimate"],
   "slot": ["weapon", "head", "armor", "wrist", "waist", "legs", "boots"],
-  "style": ["dim", "strong", "emphasis", "danger", "good", "roomName", "npcName", "itemName", "commandHint"]
+  "style": ["plain", "dim", "strong", "emphasis", "danger", "good", "roomName", "npcName", "itemName", "commandHint"]
 }

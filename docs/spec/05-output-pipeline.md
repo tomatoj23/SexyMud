@@ -1,6 +1,6 @@
 # 05 · 输出管线
 
-> **状态**：全部**待实现**。
+> **状态**：**文本面已随引擎出厂**（#50：`packages/core/src/text/`——五型渲染纯函数、显示宽度、避头尾折行、切块与 span 重放）；**呈现层（TerminalView）待做**（#51 web 终端）。
 > **依据**：ADR-0006、ADR-0018、ADR-0021 §3、ADR-0023 §2/§4/§5/§7、ADR-0024 §4/§5、ADR-0025 §五/§八。
 
 ## 1. 管线总览
@@ -8,25 +8,26 @@
 ```
 GameEvent（纯语义 JSON）
    ↓  按接收者逐一遍历
-渲染纯函数 (event, observerState) => OutputLine[]
+渲染纯函数 renderEvent(event, observer, content) => OutputLine[]   ← 引擎出厂（src/text/render.ts，#50）
    ↓
-分块（CJK 显示宽度 + 重放未闭合样式 span）
+折行＋切块 foldLine / chunkOutput(lines, { width, height })         ← 引擎出厂（src/text/wrap.ts、chunk.ts，#50）
    ↓
-TerminalView.appendOutput()  ← 各端自己实现
+TerminalView.appendOutput()  ← 各端自己实现（呈现与喂参）
 ```
 
-**关键**：引擎只吐 `GameEvent`；**渲染、分块、呈现全在宿主**。
+**关键**（#48 D5 收准，随 #50 落地）：引擎只吐 `GameEvent`；**渲染、折行、切块随引擎出厂**（spec/07 把 CJK 显示宽度、避头尾折行列为引擎侧职责），**宿主只做呈现与喂参**——宽度/视口高度是切块器入参，取字表/名字表/enterText 随渲染器入参注入（Q6/Q7）。原「渲染、分块、呈现全在宿主」措辞随 #50 实现修订。
 
-## 2. 渲染是纯函数
+## 2. 渲染是纯函数（已落：`src/text/render.ts`，#50）
 
 ```ts
-render(event: GameEvent, observerState: ObserverState): OutputLine[]
+renderEvent(event: GameEvent, observer: ObserverState, content: RenderContent): OutputLine[]
 ```
 
-- **事件形状**（spec/01 §5，#47）：`GameEvent` 是封闭联合 `EngineEvent | CustomEvent`——渲染层按 `type` 分派各臂的渲染函数、读该臂的语义字段（引擎臂字段已分型；判别只在引擎五型之间收窄，扩展臂 `type` 是开放串，跨臂读字段走 `in`/字段检查）。扩展臂（合成／宿主事件）的自由 fields 在构造面开放承载、臂类型不列字段——渲染层按自己声明的事件形状收窄/转换后读。事件零已渲染文本（spec/01 §5.1）：拒绝文案一律经语义码＋`errKey` 回内容数据取。
-- **同样事件 + 同样观察者状态 ⇒ 同样输出**（契合 ADR-0017 确定性）
-- **必须按接收者逐一遍历**。若做成「先渲染成字符串再群发」，中文的「你／他／她／它」与按观者的可见性差异**永远补不回来**
-- 文本模板里**只有引用，不写死名字**，渲染时按每个观察者替换成他认识的那个名字（借自 rpsystem 的 sdesc/recog）
+- **事件形状**（spec/01 §5，#47）：`GameEvent` 是封闭联合 `EngineEvent | CustomEvent`——渲染层按 `type` 分派各臂的渲染函数、读该臂的语义字段（引擎臂字段已分型；判别只在引擎五型之间收窄——扩展臂 `type` 是开放串，经 `isEngineEvent` 守卫显式分流）。扩展臂（合成／宿主事件）**显式不渲染**（注释点名，测试钉跳过语义；渲染缝随机制模块票）。事件零已渲染文本（spec/01 §5.1）：拒绝文案一律经语义码＋`errKey` 回内容数据取。
+- **取字面随渲染器入参注入**（Q6/Q7，#48 裁决）：`RenderContent` 携取字表（模板＋第二人称代词）、名字表、房间描述/enterText、拒绝取字（`commandKey→errKey→文案` 与语义码面）——纯函数零 IO、零注册表读；名字缺表回退裸 id、描述/enterText 缺表跳行、拒绝取字两面皆缺大声抛错（接线失配看得见）。
+- **同样事件 + 同样观察者状态 + 同样取字面 ⇒ 同样输出**（契合 ADR-0017 确定性）
+- **必须按接收者逐一遍历**。若做成「先渲染成字符串再群发」，中文的人称代词与按观者的可见性差异**永远补不回来**
+- 模板里**只有 `{引用}`，不写死名字**，渲染时按每个观察者替换成他认识的那个名字（借自 rpsystem 的 sdesc/recog）；拼错的占位符原样留在输出里（看得见的接线错）
 
 依据：ADR-0023 §2、ADR-0025 §五.3
 
@@ -44,26 +45,27 @@ render(event: GameEvent, observerState: ObserverState): OutputLine[]
 
 依据：ADR-0021 §3
 
-## 4. OutputLine：结构化 token，不是 ANSI
+## 4. OutputLine：结构化 token，不是 ANSI（已落：`src/text/line.ts`，#50）
 
 ```ts
 interface OutputLine {
-  text: string;
-  spans: { text: string; style: StyleName }[];
+  text: string;                          // 无样式回退：整行纯文本
+  spans: { text: string; style: StyleName }[];   // 完整平铺：每字恰属一个 span
 }
 ```
 
-- `style` 是**语义样式名**（`dim` / `strong` / `emphasis` / `danger` / `good` / `roomName` / `npcName` / …）
-- 样式枚举作为**维度表**落在 `content/config/dimensions.json`，schema 不写死
+- `style` 是**语义样式名**——五型渲染今日实际发出的是闭集 `plain`／`npcName`／`commandHint`／`roomName`／`itemName`／`danger`（`plain` 是引擎的无样式词）；`dim`／`strong`／`emphasis`／`good` 已在维度表挂名、待后续渲染面启用
+- 样式枚举作为**维度表**落在 `content/config/dimensions.json` 的 `style` 维度（#50 起 `plain` 入表），schema 不写死
 - **不是 ANSI、不是 HTML** —— 小程序无 DOM 且不支持 ANSI 转义
+- spans **完整平铺**（拼接＝text）是折行/切块能在任意处下刀、两侧各自成线的前提（§6）
 
 两条原则：
-- **样式不得承载唯一信息**，且必须有**无样式回退**
+- **样式不得承载唯一信息**，且必须有**无样式回退**（`text` 字段即回退）
 - 加一种高亮 = 加一个维度表项 + 各端映射一次，引擎零改动
 
 依据：ADR-0018 §3
 
-## 5. CJK 显示宽度
+## 5. CJK 显示宽度（已落：`src/text/width.ts`，#50）
 
 ### 5.1 必须自研，且要覆盖的不止全角
 
@@ -71,23 +73,25 @@ Evennia 全仓只有 24 行 `display_len()`（W/F 记 2，其余记 1）：
 - **不处理**组合符与变体选择符（应记 **0**）、emoji ZWJ 序列、控制字符
 - **几乎没有被调用** —— `evmore`／`ansi`／`text2html`／`evmenu` 全都没用它
 
-### 5.2 ⚠️ 必须注入切块器本身
+落地口径（#50 初稿表，B8 同律可实现期调）：全角＝2（含全角标点、破折号—与省略号…按中文排版记 2）；组合符 Mn/Me、变体选择符、emoji 修饰符（肤色）、控制字符、格式字符＝0；Mc 记 1；拉丁邻接歧义符号记 1；emoji 图形块记 2；**旗对**（regional indicators 两两成对）整对记 2；**ZWJ 链**（含「窄底＋VS16」续接）整链记一个底座宽。原子切分（`splitUnits`）供折行/切块共用。
+
+### 5.2 必须注入测量本身（已落：折行/切块全走宽度函数）
 
 **Evennia 正是漏了这一步**（它的 `evmore` 纯按行数切，`justify=True` 时用裸 `len(line)`）。
 
-所以不只是"写个函数"，而是**折行、截断、对齐、分块全部要走它**。
+所以不只是"写个函数"，而是**折行、截断、对齐、分块全部要走它**——`src/text/` 的折行器与切块器对每一处测量都经 `width.ts`，测试钉「按字符串长度折行即红」（全角例）。
 
 依据：ADR-0023 §4、ADR-0024 §4
 
-## 6. 分块要重放未闭合的样式 span
+## 6. 分块要重放未闭合的样式 span（已落：`src/text/wrap.ts`＋`chunk.ts`，#50）
 
 借自 `ANSIString` 的**机制**（不是它的 ANSI 语法）：
 
-1. 维护 token 数组 + 平行的「**可见字符索引**」
-2. 切块时把可见偏移反查回 `(tokenIndex, intraOffset)`
-3. 在每个分块首尾**重开所有未闭合的 span / 补闭合**
+1. 维护 token 数组 + 平行的「**可见宽度**」（落地形：`splitUnits` 原子单元，单元携带 span 样式）
+2. 切块时把可见偏移反查回 token（落地形：折行器在单元粒度上决定刀口，刀口查询即反查）
+3. 在每个分块首尾**重开所有未闭合的 span / 补闭合**（落地形：物理行 spans 完整平铺——跨越刀口的 span 在前行末闭合、次行首重开，相邻同样式段合并回一个 span；切块边界只落在整物理行之间，永不切穿 span）
 
-适用于小程序端的输出缓冲上限裁剪。
+适用于小程序端的输出缓冲上限裁剪。**避头尾折行**（B8）同在折行器内建：行首禁则（收尾标点族＋破折号后半）、行尾禁则（起始标点族＋破折号前半）、`——`／`……` 成组不拆——**折行时处理、不是折完再修**；禁则表初稿见 #50 AC，B8 授权可实现期调（全角问号已作同族补全入表）。
 
 依据：ADR-0024 §5
 
@@ -139,18 +143,18 @@ interface TerminalView {
 
 ## 10. 自检清单
 
-- [ ] `GameEvent` **不含已渲染文本**
-- [ ] 渲染是纯函数 `(event, observerState)`
-- [ ] **按接收者逐一渲染**（不是先渲染后群发）
-- [ ] 采用 **Actor stance**，中文人称代词正确
-- [ ] 输出是**结构化 token**，不是 ANSI / HTML 字符串
-- [ ] 样式名是**语义名**，枚举在 `config/dimensions.json`
-- [ ] 显示宽度函数覆盖全角／组合符／emoji／控制字符
-- [ ] **宽度函数被切块器调用**（不是只写不用）
-- [ ] 折行器**内建避头尾**（行首禁则／行尾禁则），不是折完再后处理（B8）
-- [ ] 分块**重放未闭合样式 span**
-- [ ] 输出**非模态**，不劫持输入
-- [ ] 输出缓冲有上限，增量 append
-- [ ] 引擎 markup 用**玩家无法产生的码位**
-- [ ] 可点击命令只来自引擎/内容侧
-- [ ] 移动端三件套（快捷条 / 补全 / 历史）已实现
+- [x] `GameEvent` **不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案）
+- [x] 渲染是纯函数 `(event, observerState)`（#50：`src/text/render.ts`，取字面随第三参注入——Q6）
+- [x] **按接收者逐一渲染**（不是先渲染后群发）（#50：`ObserverState` 单观者签名）
+- [x] 采用 **Actor stance**，中文人称代词正确（#50：当事人读第二人称代词、旁观者读名字表）
+- [x] 输出是**结构化 token**，不是 ANSI / HTML 字符串（#50：`src/text/line.ts`）
+- [x] 样式名是**语义名**，枚举在 `config/dimensions.json`（#50：`style` 维度，`plain` 入表）
+- [x] 显示宽度函数覆盖全角／组合符／emoji／控制字符（#50：`src/text/width.ts`——另覆盖变体选择符记 0、肤色修饰符记 0、旗对与 ZWJ 链折叠）
+- [x] **宽度函数被切块器调用**（不是只写不用）（#50：折行/切块测量全走 `width.ts`，全角例钉「按长度折行即红」）
+- [x] 折行器**内建避头尾**（行首禁则／行尾禁则），不是折完再后处理（B8）（#50：`src/text/wrap.ts`，禁则逐条参数化测试）
+- [x] 分块**重放未闭合样式 span**（#50：物理行完整平铺＋同 span 刀口两侧闭/开）
+- [ ] 输出**非模态**，不劫持输入（#51 终端界面）
+- [ ] 输出缓冲有上限，增量 append（#51：缓冲上限 500 行）
+- [ ] 引擎 markup 用**玩家无法产生的码位**（输入加固全量随机制面；#51 首刀按 token 渲染＋玩家输入原样显示）
+- [ ] 可点击命令只来自引擎/内容侧（同上）
+- [ ] 移动端三件套（快捷条 / 补全 / 历史）已实现（可玩闭环首刀切片不含——目标态）
