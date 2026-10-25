@@ -204,6 +204,27 @@ describe("game time: f(ring, tick) → segment (spec/04 §3.1)", () => {
     expect([199, 200, 300].map((tick) => time.segmentOf("year", tick).id)).toEqual(["q", "p", "q"]);
   });
 
+  it("carries the segment's display label through untouched — the pack's word, not the engine's (owner ruling 2026-10-25, #51 D2)", () => {
+    // The label rides with the segment exactly as loaded; the engine reads
+    // neither it nor anything into it, and its absence is simply absence
+    // (the renderer falls back to the raw id).
+    const labelled: Calendar = {
+      rings: [
+        {
+          id: "day",
+          segments: [
+            { id: "zi", label: "子时", ticks: 1200 },
+            { id: "chou", ticks: 1200 },
+          ],
+        },
+      ],
+    };
+    const time = createGameTime(labelled);
+    expect(time.segmentOf("day", 0).label).toBe("子时");
+    expect(time.segmentOf("day", 0).id).toBe("zi");
+    expect("label" in time.segmentOf("day", 1200)).toBe(false);
+  });
+
   it("rejects a ring with no segments — there is no period to divide by", () => {
     expect(() => ringPeriod({ id: "day", segments: [] })).toThrow(/period of 0/);
   });

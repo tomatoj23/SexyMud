@@ -27,6 +27,14 @@
  */
 export interface CalendarSegment {
   readonly id: string;
+  /**
+   * The segment's DISPLAY name — the pack's own word, declared with the
+   * segment (owner ruling 2026-10-25, issue #51's D2: the hour word rides
+   * WITH the content, read verbatim by the renderer). Optional: absent
+   * falls back to the raw id. The engine passes it through and reads
+   * nothing — the id remains the only key it knows.
+   */
+  readonly label?: string;
   /** Length in ticks. Positive: a zero-length segment would make the period 0. */
   readonly ticks: number;
 }

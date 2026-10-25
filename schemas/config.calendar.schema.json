@@ -41,7 +41,12 @@
       "properties": {
         "id": {
           "$ref": "#/definitions/lowerId",
-          "description": "段名，环内唯一（由注册表校验）。它是**键**不是文案：显示名是宿主／渲染层的事，引擎只认 id。"
+          "description": "段名，环内唯一（由注册表校验）。它是**键**——引擎只认 id；显示字走 `label`（2026-10-25 owner 裁：时辰显示名随段声明、进内容包——「内容取字」按字面落，D2）。"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "段的显示名（如「子时」）——包的词汇、随段声明（缺省回退裸 id）。引擎只透传不解读。"
         },
         "ticks": {
           "type": "integer",

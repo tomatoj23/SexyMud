@@ -149,14 +149,14 @@ export function createGameSession(options: GameSessionOptions): GameSession {
     const roomName = pack.registry.room(roomId).name;
     // The hour is a pure function of the tick over the pack's calendar
     // (#48 D13); a pack without this host's hour ring shows no hour at all
-    // rather than a guessed one. The segment ID is a KEY, not copy (the
-    // calendar schema says so: "显示名是宿主／渲染层的事") — the word the
-    // player reads comes from the host's hour table, the same injected-copy
-    // arrangement as Q6.
+    // rather than a guessed one. The WORD rides with the segment
+    // (`label`, owner ruling 2026-10-25 / #51 D2 — the pack's vocabulary,
+    // the same law as a room's `name`); absent label falls back to the raw
+    // id, the honest key.
     let hourLabel: string | undefined;
     if (hourRingKnown) {
-      const segmentId = gameTime.segmentOf(copy.hourRingId, runtime.clock.nowTick()).id;
-      hourLabel = copy.hourLabels[segmentId] ?? segmentId;
+      const segment = gameTime.segmentOf(copy.hourRingId, runtime.clock.nowTick());
+      hourLabel = segment.label ?? segment.id;
     }
     return { roomName, hourLabel };
   };

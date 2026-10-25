@@ -4,27 +4,87 @@
     {
       "id": "day",
       "segments": [
-        { "id": "zi", "ticks": 1200 },
-        { "id": "chou", "ticks": 1200 },
-        { "id": "yin", "ticks": 1200 },
-        { "id": "mao", "ticks": 1200 },
-        { "id": "chen", "ticks": 1200 },
-        { "id": "si", "ticks": 1200 },
-        { "id": "wu", "ticks": 1200 },
-        { "id": "wei", "ticks": 1200 },
-        { "id": "shen", "ticks": 1200 },
-        { "id": "you", "ticks": 1200 },
-        { "id": "xu", "ticks": 1200 },
-        { "id": "hai", "ticks": 1200 }
+        {
+          "id": "zi",
+          "label": "子时",
+          "ticks": 1200
+        },
+        {
+          "id": "chou",
+          "label": "丑时",
+          "ticks": 1200
+        },
+        {
+          "id": "yin",
+          "label": "寅时",
+          "ticks": 1200
+        },
+        {
+          "id": "mao",
+          "label": "卯时",
+          "ticks": 1200
+        },
+        {
+          "id": "chen",
+          "label": "辰时",
+          "ticks": 1200
+        },
+        {
+          "id": "si",
+          "label": "巳时",
+          "ticks": 1200
+        },
+        {
+          "id": "wu",
+          "label": "午时",
+          "ticks": 1200
+        },
+        {
+          "id": "wei",
+          "label": "未时",
+          "ticks": 1200
+        },
+        {
+          "id": "shen",
+          "label": "申时",
+          "ticks": 1200
+        },
+        {
+          "id": "you",
+          "label": "酉时",
+          "ticks": 1200
+        },
+        {
+          "id": "xu",
+          "label": "戌时",
+          "ticks": 1200
+        },
+        {
+          "id": "hai",
+          "label": "亥时",
+          "ticks": 1200
+        }
       ]
     },
     {
       "id": "year",
       "segments": [
-        { "id": "chun", "ticks": 1296000 },
-        { "id": "xia", "ticks": 1296000 },
-        { "id": "qiu", "ticks": 1296000 },
-        { "id": "dong", "ticks": 1296000 }
+        {
+          "id": "chun",
+          "ticks": 1296000
+        },
+        {
+          "id": "xia",
+          "ticks": 1296000
+        },
+        {
+          "id": "qiu",
+          "ticks": 1296000
+        },
+        {
+          "id": "dong",
+          "ticks": 1296000
+        }
       ]
     }
   ]

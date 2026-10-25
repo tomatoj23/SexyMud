@@ -7,8 +7,9 @@ import type { OutputLine, SaveStore, Snapshot, Viewport } from "@sexymud/core";
 import { createGameSession } from "../src/game/gameSession.js";
 import type { GameSession } from "../src/game/gameSession.js";
 import { WEB_HOST_COPY } from "../src/game/hostCopy.js";
+import { loadPack } from "../src/game/pack.js";
 import type { LoadedPack } from "../src/game/pack.js";
-import { loadWuxiaPack } from "./wuxia-pack.js";
+import { loadWuxiaPack, readPackFiles } from "./wuxia-pack.js";
 import type { StatusPanel } from "../src/ui/terminalView.js";
 
 /**
@@ -103,6 +104,34 @@ describe("world guidance — a new game lands on the declared start room (#48 D4
     const rig = makeSession({ width: 40, height: 24 }, store);
     await rig.session.startNewGame("少侠");
     expect(store.saved.length).toBe(1);
+  });
+
+  it("words the hour from the PACK's segment label; absent label falls back to the raw id (owner ruling, #51 D2)", async () => {
+    // The shipped pack's own segments carry the word — the pack's
+    // vocabulary, the same law as a room's `name` (the labelled status line
+    // is pinned throughout this file as 「子时」).
+    expect(PACK.registry.calendar?.rings[0]?.segments[0]?.label).toBe("子时");
+
+    // The label-less variant of the SAME pack reads the honest key back.
+    const files = readPackFiles();
+    const calendar = files["config/calendar.json"] as {
+      rings: { segments: { label?: string }[] }[];
+    };
+    for (const ring of calendar.rings) {
+      for (const segment of ring.segments) {
+        delete segment.label;
+      }
+    }
+    const bare = createGameSession({
+      pack: loadPack(files, WEB_HOST_COPY),
+      store: { load: async () => null, save: async () => {} },
+      viewport: { width: 40, height: 24 },
+      copy: WEB_HOST_COPY,
+      onOutput: () => {},
+      onStatus: () => {},
+    });
+    await bare.startNewGame("");
+    expect(bare.status().hourLabel).toBe("zi");
   });
 });
 

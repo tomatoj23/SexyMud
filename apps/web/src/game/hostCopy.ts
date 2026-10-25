@@ -12,28 +12,12 @@ import type { RenderCopy } from "@sexymud/core";
  *   event to render, and spec/01 §4 words the caller's own refusal), the
  *   save-failure line, and the player-name fallback.
  *
- * The hour labels are the calendar's segment IDS turned into Chinese words:
- * ids are keys the engine reads (the calendar schema says so — a display
- * name is the host's business), and which ring feeds the status line is
- * this host's choice (#48 D13: 状态行 = room name + game hour, derived by
- * the calendar pure function, worded from content keys).
+ * The hour WORD is not here anymore (owner ruling 2026-10-25, #51's D2):
+ * 「子时」 is the pack's own vocabulary and rides WITH the calendar segment
+ * (`segments[].label`, absent → the raw id) — the status line reads it
+ * through the calendar pure function, the same law as a room's `name`. What
+ * stays on this host is only WHICH ring feeds the status line.
  */
-
-/** The status-line hour word: segment id → 「子时」-style label. */
-const HOUR_LABELS: Readonly<Record<string, string>> = {
-  zi: "子时",
-  chou: "丑时",
-  yin: "寅时",
-  mao: "卯时",
-  chen: "辰时",
-  si: "巳时",
-  wu: "午时",
-  wei: "未时",
-  shen: "申时",
-  you: "酉时",
-  xu: "戌时",
-  hai: "亥时",
-};
 
 /** Everything the web host words itself; swap the host, swap this table. */
 export interface HostCopy {
@@ -47,8 +31,6 @@ export interface HostCopy {
   readonly reasonCopy: Readonly<Record<string, string>>;
   /** Which calendar ring the status line reads the hour from. */
   readonly hourRingId: string;
-  /** Segment id → the Chinese hour word; an unknown id falls back to itself. */
-  readonly hourLabels: Readonly<Record<string, string>>;
   /** The blank-name fallback on the title screen (#48 D4). */
   readonly defaultPlayerName: string;
   /**
@@ -84,7 +66,6 @@ export const WEB_HOST_COPY: HostCopy = {
     sayVetoed: "话到嘴边，又咽了回去。",
   },
   hourRingId: "day",
-  hourLabels: HOUR_LABELS,
   defaultPlayerName: "少侠",
   unknownCommand(raw) {
     return `「${raw}」是什么招式？`;
