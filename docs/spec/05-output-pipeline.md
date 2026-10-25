@@ -24,8 +24,8 @@ renderEvent(event: GameEvent, observer: ObserverState, content: RenderContent): 
 ```
 
 - **事件形状**（spec/01 §5，#47）：`GameEvent` 是封闭联合 `EngineEvent | CustomEvent`——渲染层按 `type` 分派各臂的渲染函数、读该臂的语义字段（引擎臂字段已分型；判别只在引擎五型之间收窄——扩展臂 `type` 是开放串，经 `isEngineEvent` 守卫显式分流）。扩展臂（合成／宿主事件）**显式不渲染**（注释点名，测试钉跳过语义；渲染缝随机制模块票）。事件零已渲染文本（spec/01 §5.1）：拒绝文案一律经语义码＋`errKey` 回内容数据取。
-- **取字面随渲染器入参注入**（Q6/Q7，#48 裁决）：`RenderContent` 携取字表（模板＋第二人称代词）、名字表、房间描述/enterText、拒绝取字（`commandKey→errKey→文案` 与语义码面）——纯函数零 IO、零注册表读；名字缺表回退裸 id、描述/enterText 缺表跳行、拒绝取字两面皆缺大声抛错（接线失配看得见）。
-- **同样事件 + 同样观察者状态 + 同样取字面 ⇒ 同样输出**（契合 ADR-0017 确定性）
+- **取字表随渲染器入参注入**（Q6/Q7，#48 裁决）：`RenderContent` 携取字表（模板＋第二人称代词）、名字表、房间描述/enterText、拒绝取字（`commandKey→errKey→文案` 与语义码面）——纯函数零 IO、零注册表读；名字缺表回退裸 id、描述/enterText 缺表跳行、拒绝取字两面皆缺大声抛错（接线失配看得见）。
+- **同样事件 + 同样观察者状态 + 同样取字表 ⇒ 同样输出**（契合 ADR-0017 确定性）
 - **必须按接收者逐一遍历**。若做成「先渲染成字符串再群发」，中文的人称代词与按观者的可见性差异**永远补不回来**
 - 模板里**只有 `{引用}`，不写死名字**，渲染时按每个观察者替换成他认识的那个名字（借自 rpsystem 的 sdesc/recog）；拼错的占位符原样留在输出里（看得见的接线错）
 
@@ -144,7 +144,7 @@ interface TerminalView {
 ## 10. 自检清单
 
 - [x] `GameEvent` **不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案）
-- [x] 渲染是纯函数 `(event, observerState)`（#50：`src/text/render.ts`，取字面随第三参注入——Q6）
+- [x] 渲染是纯函数 `(event, observerState)`（#50：`src/text/render.ts`，取字表随第三参注入——Q6）
 - [x] **按接收者逐一渲染**（不是先渲染后群发）（#50：`ObserverState` 单观者签名）
 - [x] 采用 **Actor stance**，中文人称代词正确（#50：当事人读第二人称代词、旁观者读名字表）
 - [x] 输出是**结构化 token**，不是 ANSI / HTML 字符串（#50：`src/text/line.ts`）

@@ -25,6 +25,12 @@
  * cut — progress beats kinsoku, or the folder would loop forever. A unit
  * wider than the whole limit (a four-column dash pair at width two) gets a
  * line of its own for the same reason.
+ *
+ * An embedded newline in a line's text is NOT this module's business: it
+ * measures as a zero-width control character and rides inside its unit
+ * unbroken. Input hardening strips newlines BEFORE the engine (spec/05 §8,
+ * the #51 input ticket's minimal face) — the renderer never emits one, and
+ * player-pasted text is the host's gate to guard.
  */
 
 import { lineOf, pushSpan } from "./line.js";

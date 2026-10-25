@@ -29,7 +29,9 @@
  * flag (2 columns the pair), and a ZWJ chain is one glyph of the FIRST
  * base's width. Presentation selectors add no columns: a narrow base plus
  * VS16 stays 1 alone (a conservative divergence from Unicode-9 width) and
- * is absorbed into a ZWJ chain only as a continuation.
+ * is absorbed into a ZWJ chain only as a continuation. A lone surrogate
+ * half measures 1 (it renders as one replacement glyph); well-formed text
+ * never carries one, the UTF-8 round-trip tests see to that.
  */
 
 /** Mn/Me/Cf/Cc/Zl/Zp — property classes, via Unicode property escapes. */

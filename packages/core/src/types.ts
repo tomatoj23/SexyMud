@@ -306,9 +306,10 @@ export type CustomEvent = CustomEventDraft & EventSkeleton;
  * documented cost — `stampEvent` in events.ts is the single place a draft is
  * claimed to be its arm.
  *
- * Pure semantics — NEVER rendered text. Rendering happens outside the engine
- * boundary, per receiver, so that a Chinese reader sees the second-person
- * pronoun where an observer sees a name (ADR-0006, docs/spec/05-output-pipeline.md).
+ * Pure semantics — NEVER rendered text. Rendering is deferred to the text
+ * surface (src/text, shipped WITH the engine since #50), per receiver, so
+ * that a Chinese reader sees the second-person pronoun where an observer
+ * sees a name (ADR-0006, docs/spec/05-output-pipeline.md).
  */
 export type GameEvent = EngineEvent | CustomEvent;
 

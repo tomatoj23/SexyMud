@@ -90,7 +90,7 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 
 - **出口 = 命令 + 边**：引擎类型 `ExitEntry extends CommandEntry`（`packages/core/src/world/entry.ts`）——出口携带全套命令字段（verbs／argForm（恒 `none`）／cmdset／priority／mergetype／preconditions／`err_*`），另加 `direction`（边的方向标签，同房内唯一）与 `targetRoomId`。出口经**同一条装配路径**进入分发：`commandSetSources(exits)` 分组、`traversalSpec(exit)`（`packages/core/src/world/traverse.ts`，**引擎出厂适配器**，ADR-0028）装配：出口 traverse 门禁（管线 access 段）→ 目标房 enter 门禁（`checkAccess`，拒绝事件带 `commandKey`／`accessType`／`errKey`／`roomId`）→ `moveTo("traverse")`（零权限检查）。全链路测试：`packages/core/tests/traversal-chain.test.ts`。
 - **「永远可用」是数据**：出口自声明 cmdset（本包约定 `exits`）与优先级（**+101**，高于一切常规源）——机制即 §3.1 的合并顺序（最后合并、无人能遮蔽），引擎零魔法数。
-- **门禁与文案**：出口 `preconditions`（`condition.schema.json#/definitions/accessRules`）词汇表 **traverse**；拒绝时 `commandRefused` 事件带 `commandKey`（= 出口 id）+ `errKey`（`err_traverse`／`err_default`），渲染层经 `registry.exit(id)` 回头取文案——事件绝不含已渲染文本（§5.4）。
+- **门禁与文案**：出口 `preconditions`（`condition.schema.json#/definitions/accessRules`）词汇表 **traverse**；拒绝时 `commandRefused` 事件带 `commandKey`（= 出口 id）+ `errKey`（`err_traverse`／`err_default`），渲染层经注入取字表回头取文案（宿主自 `registry.exit(id)` 构建——#50 Q6：渲染器零注册表读）——事件绝不含已渲染文本（§5.4）。
 - **注册表完整性**（`packages/core/src/content/registry.ts`）：出口 id 全局唯一（重复抛错）、同房 direction 不得重复、`targetRoomId` 必须解析到已加载房间——悬空的边在加载期即败。
 - **首批内容**：`content/rooms/` 柳青镇 4 房间（镇口→街市→客栈大堂→后院），大堂北出口带 `has_flag inn-lodger` 门禁 + `err_traverse` 文案，后院房间带 `default: false` 的 enter 门禁（缺省拒绝 + 住客例外，spec/03 §2 的「规则」要素实例）；全链路测试 `packages/core/tests/world-content.test.ts`（「北」/「n」/「north」/「往北走」均分发到出口命令；无旗标被拒、文案来自 JSON；低优先级 Remove 滤不掉方向词）。
 
@@ -145,7 +145,7 @@ Evennia 的锁系统**根本没有** `err_*`（`access()` 只返回 bool；只�
 
 - **节点单键**：每个节点恰有一个键——组合器（`all`/`any`/`not`）或谓词名；裸布尔是退化叶子（某 accessType 直白放行/拒绝）。`not` 语义 = **无一为真**（单子节点即普通否定）。
 - **求值器与注册表**（`packages/core/src/conditions.ts`）：`evaluateCondition(expr, subject, registry)` 纯函数递归求值；谓词求值**只走注册表**（`createPredicateRegistry`，重名抛错），内置六谓词读 `ConditionSubject` 主题中立侧面（`attr`/`hasTag(维度, 键)`/`hasFlag`/`hasState`/`locationId`/`hasSkill`——引擎定义问题，内容/宿主回答答案）。宿主以 `deps.subjectOf` 从世界+actor 构造 subject，以 `deps.predicates` 注入扩展注册表。`has_tag` 谓词自 **M3-T5（#17）** 起取 `[维度, 键]` 二元组（照 `attr_gte` 的二元组先例），facet `hasTag` 同步改双参——此前它读单字符串，是前维度时代残留；引擎默认的 `subjectOf`（world/runtime）从状态树 `tags` 槽 ∪ 注册表 `tagsOf(id)` 回答它。
-- **管线接入**：`CommandSpec.access = { rules, accessType }` 在 `at_pre_cmd` **之前**求值（可用性先于情境否决）。拒绝产出 `rejected` + `commandRefused` 事件，事件只带语义（`commandKey`/`accessType`/`errKey`），渲染层按 `errKey` 读条目的 `err_*` 字段取文案——事件绝不含已渲染文本（spec/01 §5.1）。
+- **管线接入**：`CommandSpec.access = { rules, accessType }` 在 `at_pre_cmd` **之前**求值（可用性先于情境否决）。拒绝产出 `rejected` + `commandRefused` 事件，事件只带语义（`commandKey`/`accessType`/`errKey`），渲染层按 `errKey` 读条目的 `err_*` 字段取文案（经注入取字表，宿主自条目数据构建——#50 Q6）——事件绝不含已渲染文本（spec/01 §5.1）。
 - **schema**（`schemas/condition.schema.json`，draft-07 `$ref` 自引用）：根 = 单表达式（武功先修用）；`#/definitions/accessRules` = 门禁映射（commands/exits 用）。它是**被引用库**，不映射任何 content/ 集合，其合法性由 `packages/core/tests/conditions-schema.test.ts` 编译验证（含跨文件 `$ref` 消费者测试）。
 
 依据：ADR-0022 §2、ADR-0024 §8、ADR-0025 记录

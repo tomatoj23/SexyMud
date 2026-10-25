@@ -70,6 +70,13 @@ describe("charWidth", () => {
     expect(charWidth(0x9f)).toBe(0); // C1
   });
 
+  it("counts a lone surrogate half as one column (it renders as one replacement glyph)", () => {
+    expect(charWidth(0xd800)).toBe(1);
+    expect(charWidth(0xdfff)).toBe(1);
+    // and it does not break the unit split's reassembly
+    expect(splitUnits("a\ud800b").map((unit) => unit.text).join("")).toBe("a\ud800b");
+  });
+
   it("counts zero-width format characters as zero", () => {
     expect(charWidth(0x200b)).toBe(0); // zero width space
     expect(charWidth(0x200c)).toBe(0); // ZWNJ

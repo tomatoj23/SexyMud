@@ -61,7 +61,7 @@ const CONTENT: RenderContent = {
     "cmd-rest": { err_use: "你伤势未愈，此刻无法安歇。" },
     "exit-inn-north": { err_traverse: "店小二拦住你：客官，上楼歇息请出示住客木牌。" },
   },
-  reasonCopy: { unknownVerb: "这是什么招式？", gateClosed: "此路今夜封闭。" },
+  reasonCopy: { unknownVerb: "这是什么招式？", gateClosed: "此路今夜封闭。", accessDenied: "你走不到那里。" },
 };
 
 const observer = (id: string): ObserverState => ({ observerId: id });
@@ -255,7 +255,8 @@ describe("renderEvent — commandRefused reads its copy through the injected tab
         errKey: "err_use",
       }),
     );
-    // reasonCopy has no "accessDenied" entry anyway — the entry copy answers
+    // reasonCopy carries "accessDenied" too ("你走不到那里。") — the entry's
+    // specific err_* copy must win, pinning the PRIORITY direction itself
     expect(texts(renderEvent(refused, observer("player-1"), CONTENT))).toEqual([
       "你伤势未愈，此刻无法安歇。",
     ]);
