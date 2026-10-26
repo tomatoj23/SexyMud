@@ -48,9 +48,10 @@ export interface TerminalView {
   /** Registers the ONE command channel (the input box's submit). */
   onCommand(cb: (raw: string) => void): void;
   /**
-   * The suggestion port, deliberately empty this slice (#48 D8): the
-   * signature is the mobile trio's landing spot (#53), so callers wire it
-   * today and the implementation arrives with the input component.
+   * The suggestion port, deliberately empty: the signature is the mobile
+   * trio's landing spot. The HISTORY leg arrived with the input component
+   * (#53, commandHistory.ts); suggestions/completion are still no caller's
+   * and no implementation's — they arrive with their own slice.
    */
   setSuggestions(list: readonly string[]): void;
   /**
@@ -96,7 +97,8 @@ export function createTerminalView(limit = 500): TerminalView {
       commandChannel = cb;
     },
     setSuggestions(_list) {
-      // The mobile trio's port — empty on purpose this slice (#53).
+      // Still the empty port: the trio's history leg landed (#53); the
+      // suggestions leg waits for its own slice — no caller wires this yet.
     },
     submitCommand(raw) {
       const trimmed = raw.trim();
