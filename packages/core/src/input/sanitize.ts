@@ -20,16 +20,25 @@
  * widening the strip to named characters would be the blacklist again.
  */
 
-/** The Cc category's closed ranges (Unicode 15.0, General_Category=Cc). */
+/** The Cc category's closed ranges (Unicode 16.0, General_Category=Cc). */
 const CC_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x0000, 0x001f],
   [0x007f, 0x009f],
 ];
 
-/** The Cf category's closed ranges (Unicode 15.0, General_Category=Cf). */
+/**
+ * The Cf category's closed ranges (Unicode 16.0, General_Category=Cf).
+ * Kept as a transcribed table (plain data, no runtime regex dependency)
+ * against the engine's own Unicode tables — the test suite pins the two
+ * against each other with \p{General_Category}, so a transcription drift
+ * fails loudly instead of silently narrowing the strip (audit F1 of #54:
+ * the first cut missed sixteen Cf code points — the Arabic prep marks,
+ * the deprecated bidi controls, BOM, the interlinear annotations — and
+ * wrongly carried U+034F, which is Mn).
+ */
 const CF_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x00ad, 0x00ad],
-  [0x034f, 0x034f],
+  [0x0600, 0x0605],
   [0x061c, 0x061c],
   [0x06dd, 0x06dd],
   [0x070f, 0x070f],
@@ -40,6 +49,7 @@ const CF_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x202a, 0x202e],
   [0x2060, 0x2064],
   [0x2066, 0x2069],
+  [0x206a, 0x206f],
   [0x110bd, 0x110bd],
   [0x110cd, 0x110cd],
   [0x13430, 0x1343f],
@@ -47,6 +57,8 @@ const CF_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x1d173, 0x1d17a],
   [0xe0001, 0xe0001],
   [0xe0020, 0xe007f],
+  [0xfeff, 0xfeff],
+  [0xfff9, 0xfffb],
 ];
 
 const isStripped = (cp: number): boolean =>

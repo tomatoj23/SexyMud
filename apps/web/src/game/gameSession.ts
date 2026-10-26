@@ -168,7 +168,14 @@ export function createGameSession(options: GameSessionOptions): GameSession {
    * as a render-side-only fact (#52).
    */
   const applyPlayerName = (raw: string | undefined): void => {
-    playerName = (raw ?? "").trim() || copy.defaultPlayerName;
+    // The §8.1 gate serves EVERY player-written line that enters the
+    // engine, the name included (#54 复核 F2): the name rides into the
+    // render's name table AND the saved entity state, so control/format
+    // code points in it would outlive the session in the save. Same order
+    // as the command leg: trim (full-width spaces are Zs, not Cc) then the
+    // gate, then the host default for what empties out.
+    const cleaned = sanitizePlayerInput((raw ?? "").trim(), MAX_INPUT_LENGTH);
+    playerName = cleaned || copy.defaultPlayerName;
     render = { ...pack.render, names: { ...pack.render.names, player: playerName } };
   };
 

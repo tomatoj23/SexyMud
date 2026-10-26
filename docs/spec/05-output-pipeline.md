@@ -120,7 +120,7 @@ Evennia 的做法：`raw()` 把 `{` → `{{`、`|` → `||`；`strip_unsafe_toke
 
 这样「玩家文本不可能被误认为引擎指令」是**构造出来的**，而不是靠正则兜底。
 
-**已落，`\x00` 方案**（#54：`packages/core/src/text/markup.ts` 的 `markupKey(key)` 是 markup 字母表的唯一工厂——渲染模板占位符从 `{key}` 迁到 NUL 包裹字形，裸 `{key}` 退役为普通文本。与 §8.1 互锁成构造闭环：NUL ∈ Cc、进引擎前必剥，markup token 自己过输入门就只剩裸键文本。钉在 `markup-isolation.test.ts`——markup token 过门＋**全码位空间扫描**（存活集不含 NUL、恰剥 Cc 65＋Cf 155）。PUA 弃用：PUA 非控制类别、strip 不剥、玩家粘贴可达——要「不相交」就得点名排它，正是 §8.1 明否的黑名单形状）。
+**已落，`\x00` 方案**（#54：`packages/core/src/text/markup.ts` 的 `markupKey(key)` 是 markup 字母表的唯一工厂——渲染模板占位符从 `{key}` 迁到 NUL 包裹字形，裸 `{key}` 退役为普通文本。与 §8.1 互锁成构造闭环：NUL ∈ Cc、进引擎前必剥，markup token 自己过输入门就只剩裸键文本。钉在 `markup-isolation.test.ts`——markup token 过门＋**全码位空间扫描**（存活集不含 NUL、恰剥 Cc 65＋Cf 170〔Unicode 16.0；测试以运行时 `\p{General_Category}` 枚举为独立 oracle 对拍誊抄表，防表漂静默收窄——#54 复核 F1 首版表漏 16 个 Cf、错收 Mn 的 U+034F，正是此钉补立〕）。PUA 弃用：PUA 非控制类别、strip 不剥、玩家粘贴可达——要「不相交」就得点名排它，正是 §8.1 明否的黑名单形状）。
 
 ### 8.3 可点击命令
 

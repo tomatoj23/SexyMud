@@ -404,3 +404,30 @@ describe("the name rides the payload — a display field, host-defaulted (#52 AC
     expect(wire).not.toHaveProperty("history");
   });
 });
+
+describe("the input gate also serves the player name (#54 复核 F2, spec/05 §8.1)", () => {
+  it("a name carrying control/format code points enters the engine clean", async () => {
+    const store = new MemoryStore();
+    const rig = makeSession({ width: 40, height: 24 }, store);
+    await rig.session.startNewGame("张\n三\u202e丰\uFEFF");
+
+    // The name rides TWO writes — the render's name table and the saved
+    // entity state — so the gate must clean it before either: the newline
+    // forgery vector and the bidi/invisible families die at the door.
+    expect(rig.session.playerName()).toBe("张三丰");
+    await rig.session.submit("看");
+    expect(JSON.stringify(store.saved.at(-1))).not.toContain("\\n");
+  });
+
+  it("a name that empties out at the gate falls back to the host default", async () => {
+    const rig = makeSession();
+    await rig.session.startNewGame("\n\u202e");
+    expect(rig.session.playerName()).toBe("少侠");
+  });
+
+  it("a name past the cap is truncated at the same 200 code points", async () => {
+    const rig = makeSession();
+    await rig.session.startNewGame("甲".repeat(205));
+    expect(rig.session.playerName()).toBe("甲".repeat(200));
+  });
+});

@@ -60,9 +60,10 @@ describe("markup isolation (§8.2 ★, constructive)", () => {
   it("the whole code point space: nothing the gate keeps is a markup code point", () => {
     // Every legal code point (the surrogate range is not code points) in
     // one line, through the gate with the cap wide open: NUL must not
-    // survive — that IS the disjointness — and exactly the Cc (65) plus Cf
-    // (155) code points of Unicode 15.0 fall, a closure check that the
-    // category tables did not quietly drift.
+    // survive — that IS the disjointness. The exact strip COUNT is pinned
+    // against the runtime's own category tables in input-sanitize.test.ts
+    // (the \p oracle); here only the 65 Cc code points' worth is assumed,
+    // NUL among them, as the markup alphabet's home.
     const every: string[] = [];
     for (let cp = 0; cp <= 0x10ffff; cp++) {
       if (cp >= 0xd800 && cp <= 0xdfff) continue;
@@ -70,7 +71,11 @@ describe("markup isolation (§8.2 ★, constructive)", () => {
     }
     const kept = sanitizePlayerInput(every.join(""), 0x110000);
     expect(kept.includes("\x00")).toBe(false);
-    expect([...kept].length).toBe(every.length - 65 - 155);
+    // Background closure: exactly Cc 65 + Cf 170 fall (Unicode 16.0). A
+    // runtime Unicode bump that grows either category turns this red — the
+    // cue to re-transcribe the tables (the \p oracle in input-sanitize
+    // pins them against the runtime).
+    expect([...kept].length).toBe(every.length - 65 - 170);
   });
 
   it("a bare {key} in a template is plain text since #54 — the old alphabet retired", () => {
