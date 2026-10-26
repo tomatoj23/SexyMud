@@ -60,6 +60,16 @@ const targets = [
   join(root, "docs", "chinese-mud-concerns.md"),
 ].sort();
 
+// A broken sweep must never read as all-green: the six named files plus any
+// spec/*.md make seven at the very least, so anything smaller means the walk
+// or the list itself broke. (The named files are joined, not walked — a
+// missing one throws at read time; this catches the OTHER half, a silently
+// empty directory sweep.)
+if (targets.length < 7) {
+  console.error(`docs: only ${targets.length} file(s) in the scan — a broken sweep is not a pass`);
+  process.exit(1);
+}
+
 /**
  * Report-only mode: violations print as warnings and the run exits 0. Used
  * when ADDING files to the scan above — see the header. Never set by
@@ -185,10 +195,9 @@ const dimensionCount = Object.keys(
 const concernsCount = readFileSync(join(root, "docs", "chinese-mud-concerns.md"), "utf8")
   .split(/\r?\n/)
   .filter((line) => /^\| {0,2}\*{0,2}[A-G]\d+/.test(line)).length;
-const testFileCount = [
-  ...walkFiles(join(root, "packages"), ".test.ts"),
-  ...walkFiles(join(root, "apps"), ".test.ts"),
-].length;
+const coreTestFileCount = walkFiles(join(root, "packages"), ".test.ts").length;
+const webTestFileCount = walkFiles(join(root, "apps"), ".test.ts").length;
+const testFileCount = coreTestFileCount + webTestFileCount;
 
 const REALITIES = [
   {
@@ -242,6 +251,23 @@ const REALITIES = [
     unit: "个测试文件",
     actual: testFileCount,
     patterns: [/(\d+)\s*个测试文件/g],
+  },
+  {
+    // The PER-PACKAGE half of the same count line (HANDBOOK writes it as
+    // "`packages/core/tests` 42/839 + `apps/web/tests` 20/…"): the file half
+    // is statically checkable and once drifted stale while the total was
+    // updated (#53's review catch). The CASE half is a test RUN's output —
+    // this script does not run tests, so it stays unchecked here.
+    name: "core 测试文件分项数",
+    unit: "个（packages/core 分项的文件半边）",
+    actual: coreTestFileCount,
+    patterns: [/packages\/core\/tests`[^\d\n]{0,6}(\d+)\//g],
+  },
+  {
+    name: "web 测试文件分项数",
+    unit: "个（apps/web 分项的文件半边）",
+    actual: webTestFileCount,
+    patterns: [/apps\/web\/tests`[^\d\n]{0,6}(\d+)\//g],
   },
 ];
 

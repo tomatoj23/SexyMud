@@ -37,6 +37,16 @@ function walk(p) {
 }
 for (const s of SCAN) walk(join(ROOT, s));
 
+// An empty sweep is a structural break (the anchor or a scan root moved),
+// never a pass: zero files reading as 「缺件 0」 was the original false green
+// this gate's anchor fix (#54) closed — this keeps it closed by assertion,
+// not by the anchor being right. Ignores REPORT_ONLY: a broken scan is not
+// a reportable finding, it is no scan at all.
+if (files.length === 0) {
+  console.error("check-refs: 扫描到 0 个 md — 扫描集为空是结构异常（锚定/扫描根被改坏），不是全绿");
+  process.exit(1);
+}
+
 const reportOnly = process.env.REPORT_ONLY === "1";
 let bad = 0;
 let cites = 0;
