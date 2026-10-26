@@ -112,11 +112,15 @@ Evennia 全仓只有 24 行 `display_len()`（W/F 记 2，其余记 1）：
 
 Evennia 的做法：`raw()` 把 `{` → `{{`、`|` → `||`；`strip_unsafe_tokens()` 剥掉会造成视觉攻击的标记（换行、标签）；长度上限在**进引擎之前**截断。
 
+**机制面已落**（#54：`packages/core/src/input/sanitize.ts` 的 `sanitizePlayerInput`——按 **Unicode 类别 Cc＋Cf 全类**逐码位**重建**剥除〔换行与 RLO/bidi 类都在这两个封闭类别里，不是点名危险字符的黑名单〕＋按码位截断〔上限值宿主定，web 宿主 `MAX_INPUT_LENGTH = 200`〕；web 宿主接线在 `gameSession.submit` 的 `resolve` 之前，「进引擎之前」的最后一站。Evennia 的「转义」半边在本引擎不需要：markup 是结构化 token＋码位隔离〔§8.2〕，玩家文本里无 markup 可逃，不必转义）。
+
 ### 8.2 ★ 更进一步：构造性保证
 
 **引擎 markup 使用玩家无法产生的字符集**（`\x00` 前缀或 Unicode 私有码位）。
 
 这样「玩家文本不可能被误认为引擎指令」是**构造出来的**，而不是靠正则兜底。
+
+**已落，`\x00` 方案**（#54：`packages/core/src/text/markup.ts` 的 `markupKey(key)` 是 markup 字母表的唯一工厂——渲染模板占位符从 `{key}` 迁到 NUL 包裹字形，裸 `{key}` 退役为普通文本。与 §8.1 互锁成构造闭环：NUL ∈ Cc、进引擎前必剥，markup token 自己过输入门就只剩裸键文本。钉在 `markup-isolation.test.ts`——markup token 过门＋**全码位空间扫描**（存活集不含 NUL、恰剥 Cc 65＋Cf 155）。PUA 弃用：PUA 非控制类别、strip 不剥、玩家粘贴可达——要「不相交」就得点名排它，正是 §8.1 明否的黑名单形状）。
 
 ### 8.3 可点击命令
 
@@ -161,7 +165,7 @@ interface TerminalView {
 - [x] 输出缓冲有上限，增量 append（#51：缓冲上限 500 行、超出丢最早，`apps/web/src/ui/terminalView.ts`＋panel-rig 钉丢行与追加不动旧行）
 - [x] IME 合成中 Enter 不提交半成品、合成完成后正常提交（#53：G3 守卫双条件＋WebKit 一宏任务宽限，jsdom 钉四分支〔合成中／宽限期内／冲洗后／isComposing 自报〕——真机手验已留痕：2026-10-26 桌面/iOS/Android 全过）
 - [x] 命令历史会话态、不落盘（#53：`commandHistory.ts` 纯 TS＋上翻下翻＋live 垫稿回垫，重开即空／全流程零 localStorage 写钉）
-- [x] 玩家输入原样显示、不解释任何 markup——输入组件面（#53：受控框＋两路回显〔说／未知命令〕逐字落 DOM、载荷不生成任何元素）
-- [ ] 引擎 markup 用**玩家无法产生的码位**（输入加固全量随机制面；#51 首刀已按 token 渲染＋玩家输入原样显示〔`GameTerminal.tsx` 无 markup 解释〕，码位级加固仍待机制面。**机制面票落地须含换行 strip**——#51 复核已复现：玩家输入内嵌换行穿透到输出行，`white-space:pre` 下可伪造额外行〔§8.1 strip 族〕）
-- [ ] 可点击命令只来自引擎/内容侧（同上）
+- [x] 玩家输入原样显示、不解释任何 markup——输入组件面（#53：受控框＋两路回显〔说／未知命令〕逐字落 DOM、载荷不生成任何元素。「逐字」的对象自 #54 起是**过 §8.1 门之后的文本**——回显与进引擎同律：不解释 markup 不变，控制字符/超长尾巴同被门剥）
+- [x] 引擎 markup 用**玩家无法产生的码位**（#54 机制面：`\x00` 包裹——`text/markup.ts` 的 `markupKey` 唯一工厂＋`input/sanitize.ts` 互锁〔NUL ∈ Cc 进引擎前必剥〕，`markup-isolation.test.ts` 钉 markup token 过门＋全码位空间不相交；模板占位符已从 `{key}` 迁走、裸 `{key}` 退役为普通文本——#51 复核复现的换行穿透随 §8.1 strip 翻绿〔jsdom 钉内嵌换行不再伪造输出行〕）
+- [ ] 可点击命令只来自引擎/内容侧（本引擎尚无可点击命令面——`ui/` 无可点元素、`commandHint` 仅着色；本行随**可点击命令功能票**落地验收，挂靠已随 #54 改指）
 - [ ] 移动端三件套（快捷条 / 补全仍待——历史回溯已随 #53 落；目标态余两件）

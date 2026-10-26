@@ -26,6 +26,7 @@
 import { lineOf, pushSpan } from "./line.js";
 import type { OutputLine, OutputSpan } from "./line.js";
 import { isEngineEvent } from "../events.js";
+import { matchMarkupTokens } from "./markup.js";
 import type {
   AppearanceEvent,
   ArrivedEvent,
@@ -39,21 +40,21 @@ import type { GameEvent } from "../types.js";
 export interface RenderCopy {
   /** The second-person pronoun an actor's own events read as. */
   readonly you: string;
-  /** A say line. Placeholders: {speaker} {text}. */
+  /** A say line. Placeholders (markupKey): speaker, text. */
   readonly sayLine: string;
-  /** A departure line. Placeholders: {mover} {from} {to} {exit}. */
+  /** A departure line. Placeholders (markupKey): mover, from, to, exit. */
   readonly departedLine: string;
-  /** An arrival line. Placeholders: {mover} {from} {to} {exit}. */
+  /** An arrival line. Placeholders (markupKey): mover, from, to, exit. */
   readonly arrivedLine: string;
-  /** The look title line. Placeholders: {name}. */
+  /** The look title line. Placeholders (markupKey): name. */
   readonly appearanceTitle: string;
-  /** The look exits line. Placeholders: {exits}. */
+  /** The look exits line. Placeholders (markupKey): exits. */
   readonly appearanceExits: string;
-  /** One placed-entity row. Placeholders: {name} {count}. */
+  /** One placed-entity row. Placeholders (markupKey): name, count. */
   readonly presenceRow: string;
-  /** The placed-entities line. Placeholders: {items}. */
+  /** The placed-entities line. Placeholders (markupKey): items. */
   readonly appearanceItems: string;
-  /** The occupants line. Placeholders: {people}. */
+  /** The occupants line. Placeholders (markupKey): people. */
   readonly appearancePeople: string;
   /** The joiner between enumeration members. */
   readonly listJoin: string;
@@ -124,14 +125,18 @@ function stanceName(content: RenderContent, observer: ObserverState, actorId: st
   return actorId === observer.observerId ? content.copy.you : nameOf(content, actorId);
 }
 
-/** Splits a template into spans: literals plain, {key} tokens the part's spans. */
+/** Splits a template into spans: literals plain, markup tokens the part's spans. */
 function templateSpans(
   template: string,
   parts: Readonly<Record<string, readonly OutputSpan[]>>,
 ): OutputSpan[] {
   const spans: OutputSpan[] = [];
   let at = 0;
-  for (const match of template.matchAll(/\{([a-zA-Z]+)\}/g)) {
+  // Only markupKey's NUL-wrapped shape is a placeholder (#54, spec/05 §8.2):
+  // the player-unreachable alphabet IS the isolation — a bare {key} in a
+  // template has been plain text since #54. The walk comes from markup.ts,
+  // so the alphabet changes move the factory and the recogniser together.
+  for (const match of matchMarkupTokens(template)) {
     const index = match.index as number;
     if (index > at) {
       pushSpan(spans, { text: template.slice(at, index), style: "plain" });

@@ -1,4 +1,4 @@
-import type { RenderCopy } from "@sexymud/core";
+import { markupKey, type RenderCopy } from "@sexymud/core";
 
 /**
  * The web host's own words (#51; #48's Q5 ruling: one-line prompts, default
@@ -79,14 +79,17 @@ export interface HostCopy {
 export const WEB_HOST_COPY: HostCopy = {
   render: {
     you: "你",
-    sayLine: "{speaker}说：{text}",
-    departedLine: "{mover}离开了{from}。",
-    arrivedLine: "{mover}来到了{to}。",
-    appearanceTitle: "〔{name}〕",
-    appearanceExits: "出路：{exits}",
-    presenceRow: "{name}×{count}",
-    appearanceItems: "这里有：{items}",
-    appearancePeople: "在场：{people}",
+    // Placeholder tokens go through markupKey (#54, spec/05 §8.2): the
+    // NUL-wrapped alphabet a player cannot type — a bare {key} stopped
+    // being a placeholder when the mechanism face landed.
+    sayLine: `${markupKey("speaker")}说：${markupKey("text")}`,
+    departedLine: `${markupKey("mover")}离开了${markupKey("from")}。`,
+    arrivedLine: `${markupKey("mover")}来到了${markupKey("to")}。`,
+    appearanceTitle: `〔${markupKey("name")}〕`,
+    appearanceExits: `出路：${markupKey("exits")}`,
+    presenceRow: `${markupKey("name")}×${markupKey("count")}`,
+    appearanceItems: `这里有：${markupKey("items")}`,
+    appearancePeople: `在场：${markupKey("people")}`,
     listJoin: "、",
   },
   reasonCopy: {

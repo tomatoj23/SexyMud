@@ -13,6 +13,7 @@ import {
   lookSpec,
   renderEvent,
   resolve,
+  sanitizePlayerInput,
   saySpec,
   serializeWorld,
   traversalSpec,
@@ -73,6 +74,14 @@ import type { LoadedPack } from "./pack.js";
  * #52 AC4): written at startNewGame, read back at continueGame, defaulted
  * HERE when an old save predates the field.
  */
+
+/**
+ * The host's input-length cap (spec/05 §8.1: the cap's VALUE is the host's,
+ * the strip's categories are the engine's). One command line's worth, held
+ * generous — a say line wants room to breathe, a command never needs this
+ * much.
+ */
+export const MAX_INPUT_LENGTH = 200;
 
 /** One row of the host's binding table: a command id and its factory adapter. */
 export interface FactoryAdapter {
@@ -400,17 +409,23 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         throw new Error("game session: no game has started — call startNewGame first");
       }
       const trimmed = raw.trim();
-      if (trimmed === "") return;
+      // The §8.1 gate (#54): the line is REBUILT before the engine may see
+      // it — control/format code points dropped (an embedded newline rode
+      // into an output line and forged an extra visible one, the #51
+      // finding), then capped at the host's limit. A line that empties out
+      // here joins the empty-input path: it settles nothing, saves nothing.
+      const clean = sanitizePlayerInput(trimmed, MAX_INPUT_LENGTH);
+      if (clean === "") return;
       const actorId = "player";
       const { sources, bindings } = dispatchTable(runtime.locationOf(actorId));
-      const outcome = resolve(trimmed, verbTableFrom(sources), bindings);
+      const outcome = resolve(clean, verbTableFrom(sources), bindings);
       if (!outcome.ok) {
         // resolve's classification is the engine's; the WORDS are the host's
         // (spec/01 §4) — and an invalid input settles nothing, so no save.
-        emit([lineOf([{ text: copy.unknownCommand(trimmed), style: "plain" }])]);
+        emit([lineOf([{ text: copy.unknownCommand(clean), style: "plain" }])]);
         return;
       }
-      await settle(harness.call(outcome.spec, { raw: trimmed, actorId }));
+      await settle(harness.call(outcome.spec, { raw: clean, actorId }));
     },
     playerName() {
       return playerName;

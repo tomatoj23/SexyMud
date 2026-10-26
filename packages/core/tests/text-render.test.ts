@@ -13,6 +13,7 @@ import type { EventSkeleton, GameEvent } from "../src/types.js";
 import type { OutputLine, OutputSpan } from "../src/text/line.js";
 import { renderEvent } from "../src/text/render.js";
 import type { ObserverState, RenderContent, RenderCopy } from "../src/text/render.js";
+import { markupKey } from "../src/text/markup.js";
 
 /**
  * The rendering half of the text surface (issue #50, spec/05 §2–§4): the
@@ -34,14 +35,14 @@ const SKELETON: EventSkeleton = { seq: 7, tick: 120, actorId: "player-1" };
 /** The test pack's voice — everything the engine does not own. */
 const COPY: RenderCopy = {
   you: "你",
-  sayLine: "{speaker}说：{text}",
-  departedLine: "{mover}经{exit}离开了{from}",
-  arrivedLine: "{mover}经{exit}来到了{to}",
-  appearanceTitle: "〔{name}〕",
-  appearanceExits: "出路：{exits}",
-  presenceRow: "{name}×{count}",
-  appearanceItems: "这里有：{items}",
-  appearancePeople: "在场：{people}",
+  sayLine: `${markupKey("speaker")}说：${markupKey("text")}`,
+  departedLine: `${markupKey("mover")}经${markupKey("exit")}离开了${markupKey("from")}`,
+  arrivedLine: `${markupKey("mover")}经${markupKey("exit")}来到了${markupKey("to")}`,
+  appearanceTitle: `〔${markupKey("name")}〕`,
+  appearanceExits: `出路：${markupKey("exits")}`,
+  presenceRow: `${markupKey("name")}×${markupKey("count")}`,
+  appearanceItems: `这里有：${markupKey("items")}`,
+  appearancePeople: `在场：${markupKey("people")}`,
   listJoin: "、",
 };
 
@@ -290,13 +291,13 @@ describe("renderEvent — purity", () => {
   it("leaves a typo'd placeholder visible in the output instead of eating it", () => {
     const typoCopy: RenderContent = {
       ...CONTENT,
-      copy: { ...COPY, sayLine: "{spaker}说：{text}" },
+      copy: { ...COPY, sayLine: `${markupKey("spaker")}说：${markupKey("text")}` },
     };
     const said = stamped(
       sayEvent({ speakerId: "player-1", text: "喂", locationId: "room-lq-001" }),
     );
     expect(texts(renderEvent(said, observer("player-2"), typoCopy))).toEqual([
-      "{spaker}说：喂",
+      `${markupKey("spaker")}说：喂`,
     ]);
   });
 

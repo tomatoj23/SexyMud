@@ -28,11 +28,10 @@
  *
  * An embedded newline in a line's text is NOT this module's business: it
  * measures as a zero-width control character and rides inside its unit
- * unbroken. Input hardening strips newlines BEFORE the engine (spec/05 §8 —
- * the input component's minimal face is #53's, the full §8 strip belongs to
- * the mechanism-module tickets; #48 D16 keeps the minimal face to
- * token-rendered output and verbatim display) — the renderer never emits
- * one, and player-pasted text is the host's gate to guard.
+ * unbroken. Input hardening strips newlines BEFORE the engine (spec/05 §8):
+ * the full §8 gate landed with #54 — sanitizePlayerInput rebuilds a
+ * player's line (Cc/Cf dropped, host-capped) at the host's submit, ahead
+ * of the engine — and the renderer never emits one.
  */
 
 import { lineOf, pushSpan } from "./line.js";

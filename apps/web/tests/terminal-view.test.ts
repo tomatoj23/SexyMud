@@ -152,3 +152,52 @@ describe("the command box — typing reaches the game, output answers (#51 AC3/A
     expect(rig.outputLines()).toContain("你来到了柳青镇街市。");
   });
 });
+
+describe("the input gate — strip and cap before the engine (#54, spec/05 §8.1)", () => {
+  it("an embedded newline cannot forge an output line — the #51 finding, green", async () => {
+    const { rig, session } = mountGame();
+    mounted.push(rig);
+    await rig.drive(() => session.startNewGame(""));
+
+    await rig.typeInto("说 甲\n乙");
+    await rig.pressEnter();
+
+    // The forgery was: the newline rode into the say line's text and
+    // `white-space: pre` rendered it as an extra visible line. The gate
+    // rebuilds the line before the engine sees it, so the event's text
+    // carries no newline — and no DOM line ever does.
+    expect(rig.outputLines()).toContain("你说：甲乙");
+    for (const line of rig.outputLines()) {
+      expect(line.includes("\n")).toBe(false);
+    }
+  });
+
+  it("a line past the host's cap (200) is truncated at the gate, code points whole", async () => {
+    const { rig, session } = mountGame();
+    mounted.push(rig);
+    await rig.drive(() => session.startNewGame(""));
+
+    await rig.typeInto(`说 ${"甲".repeat(205)}`);
+    await rig.pressEnter();
+
+    // The gate keeps 200 code points — 「说 」 plus 198 of the 205 — so the
+    // engine and the say line see exactly that (joined: the long line folds
+    // across several DOM rows at the 40-column viewport).
+    const said = rig.outputLines().join("");
+    expect(said).toContain(`你说：${"甲".repeat(198)}`);
+    expect(said.match(/甲/g)?.length ?? 0).toBe(198);
+  });
+
+  it("a line of nothing but control characters settles nothing — no echo, no save", async () => {
+    const { rig, session } = mountGame();
+    mounted.push(rig);
+    await rig.drive(() => session.startNewGame(""));
+    const before = rig.outputLines().length;
+
+    await rig.typeInto("\n\u202e\x00");
+    await rig.pressEnter();
+
+    expect(rig.outputLines().length).toBe(before);
+    expect(rig.inputValue()).toBe("");
+  });
+});

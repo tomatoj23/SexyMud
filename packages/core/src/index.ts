@@ -177,6 +177,11 @@ export { chunkOutput } from "./text/chunk.js";
 export type { Viewport } from "./text/chunk.js";
 export { renderEvent } from "./text/render.js";
 export type { ObserverState, RenderContent, RenderCopy } from "./text/render.js";
+export { markupKey } from "./text/markup.js";
+// The input-hardening gate (spec/05 §8.1, issue #54): the host rebuilds a
+// player's raw line through this before it may enter the engine — the cap's
+// value is the host's, the strip's categories are the engine's law.
+export { sanitizePlayerInput } from "./input/sanitize.js";
 export type { EntityState, WorldState } from "./state/tree.js";
 export { restoreWorld, serializeWorld } from "./state/snapshot.js";
 export type {
