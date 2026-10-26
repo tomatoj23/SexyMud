@@ -159,7 +159,7 @@ interface TerminalView {
 - [x] 分块**重放未闭合样式 span**（#50：物理行完整平铺＋同 span 刀口两侧闭/开）
 - [x] 输出**非模态**，不劫持输入（#51：输出流滚动＋命令框常驻，分页不拦输入）
 - [x] 输出缓冲有上限，增量 append（#51：缓冲上限 500 行、超出丢最早，`apps/web/src/ui/terminalView.ts`＋panel-rig 钉丢行与追加不动旧行）
-- [x] IME 合成中 Enter 不提交半成品、合成完成后正常提交（#53：G3 守卫双条件＋WebKit 一宏任务宽限，jsdom composition 事件钉三分支——真机手验留痕随 #53 关票要件）
+- [x] IME 合成中 Enter 不提交半成品、合成完成后正常提交（#53：G3 守卫双条件＋WebKit 一宏任务宽限，jsdom 钉四分支〔合成中／宽限期内／冲洗后／isComposing 自报〕——真机手验已留痕：2026-10-26 桌面/iOS/Android 全过）
 - [x] 命令历史会话态、不落盘（#53：`commandHistory.ts` 纯 TS＋上翻下翻＋live 垫稿回垫，重开即空／全流程零 localStorage 写钉）
 - [x] 玩家输入原样显示、不解释任何 markup——输入组件面（#53：受控框＋两路回显〔说／未知命令〕逐字落 DOM、载荷不生成任何元素）
 - [ ] 引擎 markup 用**玩家无法产生的码位**（输入加固全量随机制面；#51 首刀已按 token 渲染＋玩家输入原样显示〔`GameTerminal.tsx` 无 markup 解释〕，码位级加固仍待机制面。**机制面票落地须含换行 strip**——#51 复核已复现：玩家输入内嵌换行穿透到输出行，`white-space:pre` 下可伪造额外行〔§8.1 strip 族〕）
