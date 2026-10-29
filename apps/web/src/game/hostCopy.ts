@@ -74,6 +74,17 @@ export interface HostCopy {
     readonly confirmLabel: string;
     readonly cancelLabel: string;
   };
+  /**
+   * The in-game 「回标题」 door's words (#55): ending the current game is a
+   * CONFIRMED gesture, and the ask names both halves of the truth — the
+   * game ends, the local save keeps standing (「继续」 reopens it).
+   */
+  readonly backToTitle: {
+    readonly exitLabel: string;
+    readonly ask: string;
+    readonly confirmLabel: string;
+    readonly cancelLabel: string;
+  };
 }
 
 export const WEB_HOST_COPY: HostCopy = {
@@ -116,5 +127,11 @@ export const WEB_HOST_COPY: HostCopy = {
     prompt: "江湖中已有旧档——重开新游戏将覆盖旧进度，无法找回。",
     confirmLabel: "覆盖旧档，重开",
     cancelLabel: "先不",
+  },
+  backToTitle: {
+    exitLabel: "回标题",
+    ask: "结束本局、回到标题？进度已存在本地档里，从标题的「继续」随时回来。",
+    confirmLabel: "结束本局",
+    cancelLabel: "接着玩",
   },
 };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * The title screen (#51; #48 D11): the door into the world — one name box
@@ -70,10 +70,17 @@ export interface TitleScreenProps {
 export function TitleScreen(props: TitleScreenProps) {
   const [name, setName] = useState("");
   const [confirming, setConfirming] = useState(false);
-  // The outside door into the ask (#53/N-2): each rise re-opens it — the
-  // counter, not a boolean, so a cancelled ask opens again on the next try.
+  // The outside door into the ask (#53/N-2): only a RISE above the last
+  // count THIS instance saw re-opens it — the counter, not a boolean, so a
+  // cancelled ask opens again on the next try. Edge-triggered on purpose
+  // (#55, closing #53 复核 N-A): a remount baselines at the count it finds,
+  // so a stale counter from a previous visit (an exit the player already
+  // cancelled before 「回标题」) never reads as a fresh ask.
+  const lastAskSignal = useRef(props.openOverwriteAsk ?? 0);
   useEffect(() => {
-    if ((props.openOverwriteAsk ?? 0) > 0 && props.overwrite !== undefined) {
+    const count = props.openOverwriteAsk ?? 0;
+    if (count > lastAskSignal.current && props.overwrite !== undefined) {
+      lastAskSignal.current = count;
       setConfirming(true);
     }
   }, [props.openOverwriteAsk, props.overwrite]);

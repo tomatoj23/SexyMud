@@ -143,6 +143,8 @@ interface TerminalView {
 
 **输入组件已落**（#53：`apps/web/src/ui/CommandInput.tsx` 取代 #51 临时命令框——同一输入面演进；命令历史〔三件套的历史回溯腿〕住纯 TS `commandHistory.ts` 供跨端共享；IME 合成守卫〔G3〕双条件：composingRef＋`isComposing`，compositionend 后一宏任务宽限兜 WebKit「确认键 keydown 迟于 compositionend」——合成中 Enter 不提交半成品、方向键让路候选窗）。
 
+**宿主壳回标题门已落**（#55：`GameTerminal` 状态行「回标题」按钮＋in-UI 确认条〔非模态——输出流与命令框照常活着，§7〕，词面载明本地档保留；确认即宿主摘挂回标题屏——引擎与内容零改动、会话无 teardown 面，bytes-exist 探针随回标题重探、「继续」重亮。TitleScreen 的外部覆盖信号（`openOverwriteAsk`）改**边沿触发**——仅超过本实例基线的增量生效，#53 复核 N-A「陈旧计数误弹确认框」随首个可达路径收口）。
+
 - **跨端只共享接口与逻辑层，不共享组件**
 - Web（React）是唯一基准端；小程序用原生 WXML + `scroll-view` 实现；APK 用 Capacitor 包 Web 壳
 - 移动端三件套是**一等职责**：常用命令快捷条 + 命令补全 + 历史回溯（⚠️ 可玩闭环首刀切片不含移动三件套——**系切片非翻案**，本条仍是目标态；**历史回溯已随 #53 落第一片**〔会话态、不落盘〕，快捷条与补全仍待）

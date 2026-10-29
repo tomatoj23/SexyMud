@@ -58,14 +58,17 @@ export default function App() {
 
   useEffect(() => {
     // The 「继续」 door's light is BYTES EXIST (#52) — not "a good save
-    // exists": damage is judged on the click, by the load path that owns
-    // the verdict, so a damaged save still lights the door and still fails
-    // loudly where failing loudly lives.
+    // exists": damage is judged on the click, by the load path that owns the
+    // verdict, so a damaged save still lights the door and still fails
+    // loudly where failing loudly lives. Re-probed on every return to the
+    // title (#55): the session that just ended has written new bytes, and
+    // the door re-lights by the same rule that lit it at boot.
+    if (game !== null) return;
     gameSlot
       .readRaw()
       .then((raw) => setHasSave(raw.kind === "text"))
       .catch(() => setHasSave(false));
-  }, [gameSlot]);
+  }, [gameSlot, game]);
 
   /** One session wired to one terminal — both doors open the game the same way. */
   const openSession = () =>
@@ -111,10 +114,29 @@ export default function App() {
       });
   };
 
+  /**
+   * The confirmed 「回标题」 gesture (#55): the host shell unmounts the game
+   * — the session object goes unreachable, its last autosave already on the
+   * slot (#48 D10 saves after every settled command), so no final save is
+   * owed here. The returning title starts CLEAN: a failure line from a
+   * previous title visit was answered by the game that superseded it, and
+   * carrying it back would read as fresh trouble (the stale-face class N-A
+   * named).
+   */
+  const returnToTitle = () => {
+    setOpenFailed(false);
+    setContinueFailedKind(null);
+    setGame(null);
+  };
+
   return (
     <main style={pageStyle}>
       {game ? (
-        <GameTerminal view={game.view} />
+        <GameTerminal
+          view={game.view}
+          backToTitle={WEB_HOST_COPY.backToTitle}
+          onReturnToTitle={returnToTitle}
+        />
       ) : (
         <>
           {openFailed ? (

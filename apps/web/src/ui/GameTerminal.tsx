@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { OutputSpan, StyleName } from "@sexymud/core";
 import { CommandInput } from "./CommandInput.js";
 import type { TerminalView } from "./terminalView.js";
@@ -45,11 +45,48 @@ const shellStyle = {
   fontFamily: "system-ui, sans-serif",
 } as const;
 
+/** The status row's shell: the room line left, the 「回标题」 door right (#55). */
+const statusRowStyle = {
+  display: "flex",
+  alignItems: "center",
+  borderBottom: "1px solid #d1d5db",
+} as const;
+
 const statusStyle = {
   padding: "6px 12px",
-  borderBottom: "1px solid #d1d5db",
   color: "#374151",
 } as const;
+
+const exitButtonStyle = {
+  marginLeft: "auto",
+  marginRight: 12,
+  fontSize: 14,
+  padding: "4px 12px",
+} as const;
+
+/** The 「回标题」 ask strip — the same in-UI shape the title screen's asks use. */
+const exitAskStyle = {
+  padding: "8px 12px",
+  borderBottom: "1px solid #d1d5db",
+  color: "#b91c1c",
+} as const;
+
+const exitAskButtonStyle = {
+  marginLeft: 12,
+  fontSize: 14,
+  padding: "4px 12px",
+  color: "#374151",
+} as const;
+
+/** The back-to-title door's words — host copy, injected (Q5). */
+export interface BackToTitleCopy {
+  /** The door's own label, on the status row. */
+  readonly exitLabel: string;
+  /** The ask's one line — it names both halves: the game ends, the save stays. */
+  readonly ask: string;
+  readonly confirmLabel: string;
+  readonly cancelLabel: string;
+}
 
 const streamStyle = {
   padding: "12px",
@@ -62,16 +99,62 @@ const streamStyle = {
   whiteSpace: "pre",
 } as const;
 
-export function GameTerminal(props: { readonly view: TerminalView }) {
+export interface GameTerminalProps {
+  readonly view: TerminalView;
+  /**
+   * The 「回标题」 door's words (#55); the door renders only when both this
+   * and the gesture below are present — the same law as the title screen's
+   * 「继续」.
+   */
+  readonly backToTitle?: BackToTitleCopy;
+  /**
+   * Fired once the player CONFIRMS the exit — the host shell unmounts the
+   * game and the title returns; the save keeps standing wherever the
+   * session's autosave left it.
+   */
+  readonly onReturnToTitle?: () => void;
+}
+
+export function GameTerminal(props: GameTerminalProps) {
   const view = props.view;
   const snapshot = useSyncExternalStore(view.subscribe, view.getSnapshot);
+  // The exit is a CONFIRMED gesture (#55): the ask says the save stays, and
+  // nothing is hijacked while it stands — the stream and the command box
+  // play on (spec/05 §7, non-modal).
+  const [askingReturn, setAskingReturn] = useState(false);
+  const returnDoor =
+    props.backToTitle !== undefined && props.onReturnToTitle !== undefined
+      ? { copy: props.backToTitle, confirm: props.onReturnToTitle }
+      : undefined;
 
   const status = snapshot.status;
   return (
     <div style={shellStyle}>
-      <div style={statusStyle} data-status>
-        {status ? `${status.roomName}${status.hourLabel ? ` · ${status.hourLabel}` : ""}` : ""}
+      <div style={statusRowStyle}>
+        <div style={statusStyle} data-status>
+          {status ? `${status.roomName}${status.hourLabel ? ` · ${status.hourLabel}` : ""}` : ""}
+        </div>
+        {returnDoor && !askingReturn ? (
+          <button type="button" style={exitButtonStyle} onClick={() => setAskingReturn(true)}>
+            {returnDoor.copy.exitLabel}
+          </button>
+        ) : null}
       </div>
+      {askingReturn && returnDoor ? (
+        <div style={exitAskStyle}>
+          {returnDoor.copy.ask}
+          <button type="button" style={exitAskButtonStyle} onClick={returnDoor.confirm}>
+            {returnDoor.copy.confirmLabel}
+          </button>
+          <button
+            type="button"
+            style={exitAskButtonStyle}
+            onClick={() => setAskingReturn(false)}
+          >
+            {returnDoor.copy.cancelLabel}
+          </button>
+        </div>
+      ) : null}
       <div style={streamStyle} role="log" aria-live="polite" aria-label="输出流">
         {snapshot.rows.map((row) => (
           <div key={row.id}>
