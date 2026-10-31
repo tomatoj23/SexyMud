@@ -342,6 +342,16 @@ export function createGameSession(options: GameSessionOptions): GameSession {
     }
   };
 
+  /**
+   * One dispatch's visible failure line (#56 audit): the engine's wiring
+   * failures are loud ON PURPOSE (a pack without its combat tables, an
+   * unseeded save), and "loud" must not reach the player as a frozen
+   * terminal — the command channel catches, says one line, and the next
+   * input still works. The save-failure line's own family.
+   */
+  const dispatchFailedLine = (): OutputLine =>
+    lineOf([{ text: copy.submitFailed, style: "danger" }]);
+
   return {
     async startNewGame(rawName) {
       if (runtime !== undefined) throw new Error("game session: a game has already started");
@@ -453,6 +463,21 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       // nameless save LEARNS the name it is played under.
       applyPlayerName(assembled.runtime.state.entities["player"]!.name);
       assembled.runtime.state.entities["player"]!.name = playerName;
+      // A pre-#56 save predates the attrs slot entirely (its absence reads
+      // as the empty map, the slot's own law) — seed the character model
+      // over the EMPTY map only: a save that carried attrs keeps every
+      // value it carried (a mid-fight hp is data, not a default), and a
+      // fight would otherwise die on the first strike's missing operands
+      // with nothing on screen (the engine's loud failure is for wiring,
+      // not for a player who merely owns an old save).
+      const resumedState = assembled.runtime.state.entities["player"]!;
+      const characterTable = pack.registry.character;
+      if (
+        characterTable !== undefined &&
+        Object.keys(resumedState.attrs).length === 0
+      ) {
+        seedCharacterAttrs(resumedState, characterTable);
+      }
       wireHarness(assembled);
 
       if (fellBack) {
@@ -484,14 +509,20 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       }
       // The command carries the WALL clock's tick when a translator is
       // wired (#56): the world's "now" follows real time, so a poison
-      // armed at one command catches up at the next.
+      // armed at one command catches up at the next. A wiring failure
+      // inside the dispatch surfaces as ONE visible line, never an
+      // unhandled rejection freezing the terminal.
       const tick = options.hostClock?.nowTick();
-      await settle(
-        harness.call(
-          outcome.spec,
-          tick === undefined ? { raw: clean, actorId } : { raw: clean, actorId, tick },
-        ),
-      );
+      try {
+        await settle(
+          harness.call(
+            outcome.spec,
+            tick === undefined ? { raw: clean, actorId } : { raw: clean, actorId, tick },
+          ),
+        );
+      } catch {
+        emit([dispatchFailedLine()]);
+      }
     },
     playerName() {
       return playerName;

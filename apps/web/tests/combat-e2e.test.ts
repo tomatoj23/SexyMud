@@ -131,4 +131,54 @@ describe("AC1 — the hand-played combat chain over the shipped pack (#56)", () 
     expect(rig.lines.join("")).toContain("孙彪还了一手，你受创");
     expect(rig.lines.join("")).toContain("孙彪受创");
   });
+
+  it("resumes a pre-#56 save into a fight — the empty attrs slot is seeded, not fatal (#56 audit)", async () => {
+    // A save that predates the attrs slot carries no attrs at all (its
+    // absence reads as the empty map, the slot's own law). Resuming it and
+    // striking must WORK: the session seeds the character model over the
+    // empty map (a save that carried attrs keeps every value), and a
+    // dispatch that throws reaches the player as one line — never an
+    // unhandled rejection freezing the terminal.
+    const rig = makeRig();
+    await rig.session.startNewGame("旧档侠");
+    // Walk the first session into the yard (flags carrying the lodger mark,
+    // position the yard) so the resumed save can strike immediately.
+    await rig.play("北");
+    await rig.play("西");
+    await rig.play("住店");
+    await rig.play("北");
+    expect(rig.session.status().roomName).toBe("迎宾客栈后院");
+    const legacy = rig.store.saved.at(-1)!;
+    // Strip the pre-#56 face: no attrs, no combat.
+    const legacyEntities = (legacy.data as {
+      entities: Record<string, Record<string, unknown>>;
+    }).entities;
+    delete legacyEntities["player"]!.attrs;
+    delete legacyEntities["player"]!.combat;
+    const legacyStore: SaveStore = {
+      load: async () => legacy,
+      save: async () => {},
+    };
+    const lines: string[] = [];
+    let wallMs = 2_000_000;
+    const resumed = createGameSession({
+      pack: PACK,
+      store: legacyStore,
+      viewport: { width: 40, height: 24 },
+      copy: WEB_HOST_COPY,
+      hostClock: createHostClock({ tickSeconds: 1, now: () => wallMs }),
+      onOutput: (chunks) => {
+        for (const chunk of chunks) for (const line of chunk) lines.push(line.text);
+      },
+      onStatus: () => {},
+    });
+    await resumed.continueGame();
+    wallMs += 3000;
+    await resumed.submit("打 孙彪");
+    const text = lines.join("");
+    expect(text).toContain("孙彪受创");
+    expect(text).toContain("孙彪还了一手");
+    // No wiring line surfaced: the seed made the fight legal.
+    expect(text).not.toContain(WEB_HOST_COPY.submitFailed);
+  });
 });

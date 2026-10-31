@@ -47,6 +47,12 @@ export interface HostCopy {
    * a table keyed by flag.
    */
   readonly flagGrantedLine: string;
+  /**
+   * The visible line when a dispatch itself threw (#56 audit): the engine's
+   * loud wiring failures reach the player as one line, never a frozen
+   * terminal (the save-failure line's own family).
+   */
+  readonly submitFailed: string;
   /** The visible line when the autosave store failed (visible, not silent). */
   readonly saveFailed: string;
   /** The visible line when opening a new game itself failed (a wiring or pack break). */
@@ -135,6 +141,7 @@ export const WEB_HOST_COPY: HostCopy = {
     return `「${raw}」是什么招式？`;
   },
   flagGrantedLine: "掌柜的收下银子，递给你一块住客木牌：客官往后院请便。",
+  submitFailed: "（这一下没能出手——世界配置有误，稍后再试。）",
   saveFailed: "（本地存档暂不可用，这一步之后的进度未能保存。）",
   openFailed: "开局失败——世界配置有误，无法进入江湖。",
   saveRoomGone: "上次所在之处已不在江湖之中，你回到了起点。",

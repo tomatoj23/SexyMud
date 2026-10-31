@@ -50,9 +50,9 @@ export interface EntityState {
    * declaration (content/config/character.json) — the engine stores, seeds
    * and answers them and knows no key (ADR-0009 §10: key lookup and set
    * intersection only). Seeded `{}` by `addEntity`; a NEW GAME seeds the
-   * declared table over it (seedCharacterAttrs, combat/character use); an
-   * old save's absence means empty (the `tags` precedent, in-version
-   * landing — no v3).
+   * declared table over it (`seedCharacterAttrs`, the combat module's
+   * helper); an old save's absence means empty (the `tags` precedent,
+   * in-version landing — no v3).
    */
   attrs: Record<string, number>;
   /**
