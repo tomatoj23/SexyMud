@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "config.character.schema.json",
+  "title": "角色模型声明（content/config/character.json）",
+  "description": "STRUCTURE（spec/06 §6 第二行，#56 T4）：玩家数值属性的**键清单＋初值**＋主资源键对＋死亡阈值＋一击操作数通道。引擎零认识任何具体键（ADR-0009 §10：键取值与集合求交）——键语义全部住本表。三处同步：本文件／`packages/core/src/content/config.ts` 的 `CharacterTable`／`docs/agents/content.md`。",
+  "type": "object",
+  "required": ["id", "attrs", "primaryResource", "deathAtOrBelow", "strike"],
+  "properties": {
+    "id": { "type": "string", "const": "character" },
+    "attrs": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "属性键 → 新档初值（有限数）。这份键清单就是玩家 attrs 槽的形状——加属性＝加键（值可后调，键名即结构）。",
+      "additionalProperties": { "type": "number" }
+    },
+    "primaryResource": {
+      "type": "object",
+      "required": ["current", "max"],
+      "description": "主资源键对：哪两个 attrs 键是生命条与它的上限（引擎死亡判定与「回满」读这对键；damageRatio/defenderHpRatio 的分母＝maxHp 键值）。",
+      "properties": {
+        "current": { "type": "string", "minLength": 1, "description": "当前值键（attrs 键名）" },
+        "max": { "type": "string", "minLength": 1, "description": "上限键（attrs 键名）" }
+      },
+      "additionalProperties": false
+    },
+    "deathAtOrBelow": {
+      "type": "number",
+      "description": "死亡阈值：主资源当前值 ≤ 此值即死亡（D7 玩家侧；NPC 侧恒 HP≤0）。"
+    },
+    "strike": {
+      "type": "object",
+      "required": ["attackAttr", "defenseAttr", "element", "source"],
+      "description": "一击操作数通道（T4 字段面必含；T10 六轮修正：attackAttr 是玩家→NPC 主方向的无条件操作数；defenseAttr 为 C2 双向公式声明占位——C1 的 NPC 反击是裸伤、不读玩家防御）。element/source 是攻击事件字段携带的词汇（值取自 dimensions 的 element/source 维度）。",
+      "properties": {
+        "attackAttr": { "type": "string", "minLength": 1, "description": "攻击操作数键（attrs 键名）" },
+        "defenseAttr": { "type": "string", "minLength": 1, "description": "防御操作数键（attrs 键名；C1 声明占位、C2 消费）" },
+        "element": { "type": "string", "minLength": 1, "description": "攻击属性词（dimensions element 维度取值）" },
+        "source": { "type": "string", "minLength": 1, "description": "作用方式词（dimensions source 维度取值）" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

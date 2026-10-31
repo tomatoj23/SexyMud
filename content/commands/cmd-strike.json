@@ -1,0 +1,12 @@
+{
+  "id": "cmd-strike",
+  "verbs": ["打", "杀", "击", "attack", "kill", "hit"],
+  "argForm": "target",
+  "cmdset": "character",
+  "priority": 0,
+  "effects": ["eff-strike-fist", "eff-poison-fist"],
+  "err_notVisible": "这里没有叫这个名字的人。",
+  "err_notCombatant": "此人不是能与你动手的对手。",
+  "err_targetDead": "他已经倒下了，不必再补一手。",
+  "err_targetLocked": "你正与另一人缠斗，腾不出手来。"
+}

@@ -151,12 +151,16 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
       // put a `??` in front of every hasTag read for no reason, a
       // `lastSeenTick` of 0 would hand a brand-new entity a whole world of
       // offline catch-up it never earned, and an absent `cooldowns` would put
-      // a `??` in front of every readiness read (spec/04 §1.5).
+      // a `??` in front of every readiness read (spec/04 §1.5). `attrs`
+      // seeds empty the same way: a NEW GAME seeds the character-model
+      // declaration over it (#56), and `combat` stays absent — no fight is a
+      // reading of its own (the "unfilled" row).
       const entityState: EntityState = {
         id: entity.id,
         locationId,
         flags: [],
         tags: {},
+        attrs: {},
         lastSeenTick: clock.nowTick(),
         cooldowns: {},
       };
@@ -210,9 +214,11 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
         throw unknownEntity(id);
       }
       return {
-        // Facets whose state slots have not landed yet answer "none" — they
-        // turn on with their systems (attrs/states/skills later).
-        attr: () => undefined,
+        // The attrs slot has landed (#56): a numeric attribute answers its
+        // value; states/skills still answer "none" — they turn on with their
+        // systems. Which keys exist is the pack's character model; the
+        // engine answers, it never knows a key.
+        attr: (name) => entityState.attrs[name],
         // OWN ∪ CONTENT-ENTRY (ADR-0029 §2): what the entity was tagged as
         // at runtime, plus what its content entry says it IS. A player has no
         // content entry and `tagsOf` answers an empty map for it, so the

@@ -1,9 +1,22 @@
 import type { CommandEntry } from "../command/entry.js";
 import { forEachHasTag } from "../conditions.js";
 import type { AccessRules } from "../conditions.js";
+import type { EffectEntry } from "../effects/entry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../world/entry.js";
-import { assertCalendar, assertSettingsTable, assertWorldTable } from "./config.js";
-import type { Calendar, SettingsTable, WorldTable } from "./config.js";
+import {
+  assertCalendar,
+  assertCharacterTable,
+  assertCombatTiersTable,
+  assertSettingsTable,
+  assertWorldTable,
+} from "./config.js";
+import type {
+  Calendar,
+  CharacterTable,
+  CombatTiersTable,
+  SettingsTable,
+  WorldTable,
+} from "./config.js";
 import type { EntryCommon, TagMap } from "./entry.js";
 import { compareIds } from "./order.js";
 import { flattenCollection } from "./prototype.js";
@@ -71,13 +84,28 @@ import type { FlattenableEntry } from "./prototype.js";
  */
 
 /**
+ * A monster's combat numbers, as the registry carries them (#56 deepens the
+ * record to what the combat kernel reads; the schema's own shape is richer —
+ * this is the engine's read face of it). The engine reads these as DATA:
+ * which numbers mean what is the schema's contract, not engine vocabulary.
+ */
+export interface MonsterStats {
+  readonly maxHp: number;
+  readonly attack?: number;
+  readonly externalDefense?: number;
+  readonly internalDefense?: number;
+  readonly dodge?: number;
+}
+
+/**
  * The id-bearing shape the registry needs of monster entries. The monster
  * collection itself has not landed as a first-class collection yet (its
  * schema predates the MUD pivot and awaits re-evaluation), but npcs may
  * already reference monsters — so hosts that load monster files hand them
  * over as-is: structurally they carry an id, which is all referential
- * integrity needs. A future full MonsterEntry type deepens this shape
- * compatibly.
+ * integrity needs. #56 deepened the shape with the combat half (stats and
+ * the delivery words) the strike kernel reads; a future full MonsterEntry
+ * type deepens it further, compatibly.
  *
  * It extends EntryCommon because a monster is an entry collection like any
  * other: its tags must reach the inverted index (M3-T2) even before the rest
@@ -85,6 +113,12 @@ import type { FlattenableEntry } from "./prototype.js";
  */
 export interface MonsterRecord extends EntryCommon {
   readonly id: string;
+  /** The combat numbers an npc referencing this monster fights with. */
+  readonly stats?: MonsterStats;
+  /** The monster attack's delivery word (external/internal); absent reads the combat default. */
+  readonly source?: string;
+  /** The monster attack's element word; absent reads the combat default. */
+  readonly element?: string;
 }
 
 /**
@@ -125,6 +159,20 @@ export interface ContentRegistryOptions {
    * wants to place a new game (the calendar's arrangement).
    */
   readonly world?: WorldTable;
+  /**
+   * The pack's character-model declaration (`config/character.json`, #56
+   * T4). Present → checked for shape; absent → nothing to check here — the
+   * combat kernel fails loudly the first time it wants the strike operands,
+   * the same arrangement as the calendar's.
+   */
+  readonly character?: CharacterTable;
+  /**
+   * The pack's combat band table (`config/combat-tiers.json`, #56).
+   * Present → shape-checked here, and its band NAMES are closed against the
+   * dimensions table when one was handed over (the #27 rule); absent → the
+   * combat kernel's loud failure the first time a band is asked for.
+   */
+  readonly combatTiers?: CombatTiersTable;
 }
 
 /** The read side of loaded content: lookups over validated collections. */
@@ -154,6 +202,12 @@ export interface ContentRegistry {
   /** Every npc entry, id-ascending. */
   readonly npcs: readonly NpcEntry[];
   npc(id: string): NpcEntry;
+  /**
+   * Every effect entry, id-ascending (#56). Empty when the pack ships none —
+   * a command referencing an effect then fails the load's reference check.
+   */
+  readonly effects: readonly EffectEntry[];
+  effect(id: string): EffectEntry;
   /** Every monster record, id-ascending. Empty when no monsters were loaded. */
   readonly monsters: readonly MonsterRecord[];
   monster(id: string): MonsterRecord;
@@ -215,6 +269,16 @@ export interface ContentRegistry {
    * so swapping the content directory swaps the start room with it.
    */
   readonly world: WorldTable | undefined;
+  /**
+   * The pack's character-model declaration, `undefined` when the host had
+   * none — the same one-copy arrangement as `calendar` (#56).
+   */
+  readonly character: CharacterTable | undefined;
+  /**
+   * The pack's combat band table, `undefined` when the host had none — the
+   * same one-copy arrangement as `calendar` (#56).
+   */
+  readonly combatTiers: CombatTiersTable | undefined;
 }
 
 /**
@@ -494,6 +558,12 @@ const MONSTERS: CollectionDecl = Object.freeze({
   placeable: true,
   expose: "monsters",
 });
+const EFFECTS: CollectionDecl = Object.freeze({
+  what: "effect",
+  flatten: true,
+  placeable: false,
+  expose: "effects",
+});
 const EXITS: CollectionDecl = Object.freeze({
   what: "exit",
   flatten: false,
@@ -502,7 +572,7 @@ const EXITS: CollectionDecl = Object.freeze({
 });
 
 /**
- * The declaration table (issue #39): five rows — the four host-input
+ * The declaration table (issue #39): six rows — the five host-input
  * collections in input order and the derived exits row — in LOAD ORDER, which
  * is load-bearing: the first taker of a shared id is whoever comes first here
  * (see addUnique). Not frozen into a narrower type and not consulted for
@@ -516,6 +586,7 @@ export const COLLECTIONS: readonly CollectionDecl[] = Object.freeze([
   ROOMS,
   NPCS,
   MONSTERS,
+  EFFECTS,
   EXITS,
 ]);
 
@@ -640,6 +711,8 @@ const RESERVED_MEMBERS: ReadonlySet<string> = new Set([
   "calendar",
   "settings",
   "world",
+  "character",
+  "combatTiers",
 ]);
 
 function createAssembly(): CollectionTable {
@@ -797,6 +870,8 @@ export function buildContentRegistry(
   assertSettingsTable(options.settings);
   assertCalendar(options.calendar);
   assertWorldTable(options.world);
+  assertCharacterTable(options.character);
+  assertCombatTiersTable(options.combatTiers);
 
   // The build derives the exits row itself (its source is the flattened
   // rooms), so the table it is handed must carry the engine's rows — a
@@ -935,6 +1010,22 @@ export function buildContentRegistry(
     }
   }
 
+  // A command's effects are references into the effect collection (#56) —
+  // the npc→monsterId precedent: a dangling one fails the startup, never a
+  // player's strike. Checked over the FLATTENED command map, so an inherited
+  // effect list is checked like a declared one.
+  const effectsById = assembly.idMap<EffectEntry>(EFFECTS);
+  const commandsById = assembly.idMap<CommandEntry>(COMMANDS);
+  for (const command of commandsById.values()) {
+    for (const effectId of command.effects ?? []) {
+      if (!effectsById.has(effectId)) {
+        throw new Error(
+          `content registry: command "${command.id}" references unknown effect "${effectId}"`,
+        );
+      }
+    }
+  }
+
   // Tag indexing and the vocabulary closures come LAST: they must see the
   // finished, validated entity set, exits included, and they must come AFTER
   // prototype flattening — a tag (or a gate) can be INHERITED, and an
@@ -947,6 +1038,30 @@ export function buildContentRegistry(
   // The condition half closes after the tags half, so a stray tag is reported
   // before a stray gate (the tags message is the more common authoring slip).
   closeGateTags(entities, options.dimensions);
+  // The combat band table's names close under the same rule (#56, the #27
+  // arrangement): a band the dimensions table does not know would evaluate
+  // to nothing at strike time SILENTLY — the event would carry a name no
+  // renderer recognizes. Only when a dimensions table was handed over.
+  if (options.combatTiers !== undefined && options.dimensions !== undefined) {
+    for (const [dimension, bands] of Object.entries(options.combatTiers)) {
+      if (dimension === "id" || bands === undefined) {
+        continue;
+      }
+      const allowed = options.dimensions[dimension];
+      for (const { band } of bands) {
+        if (allowed === undefined) {
+          throw new Error(
+            `content registry: combat tiers reference unknown dimension "${dimension}"`,
+          );
+        }
+        if (!allowed.includes(band)) {
+          throw new Error(
+            `content registry: combat tiers band "${band}" is outside dimension "${dimension}"`,
+          );
+        }
+      }
+    }
+  }
 
   // D3 — the closing deep freeze (issue #39): the last thing the build does,
   // so nothing above ever meets a frozen entry it might have rewritten and
@@ -974,6 +1089,8 @@ export function buildContentRegistry(
     calendar: options.calendar,
     settings: options.settings,
     world: options.world,
+    character: options.character,
+    combatTiers: options.combatTiers,
   };
 }
 
@@ -990,6 +1107,7 @@ export function createContentRegistry(
     rooms?: readonly RoomEntry[];
     npcs?: readonly NpcEntry[];
     monsters?: readonly MonsterRecord[];
+    effects?: readonly EffectEntry[];
   },
   options: ContentRegistryOptions = {},
 ): ContentRegistry {

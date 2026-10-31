@@ -246,18 +246,95 @@ export type ArrivedEvent = MoveAnnouncement & {
 };
 
 /**
+ * A `strike` event: one attack landing (or being dodged) — the combat
+ * kernel's one-row ledger (#56, spec/01 §5.2). Every field the PRESENTATION
+ * needs rides on day one (damage band, remaining-life band, dodge/crit
+ * flags, element, source, rank placeholder): a field added later would break
+ * save and simulator compatibility — the union's stated red line.
+ *
+ * `damageRatio` / `defenderHpRatio` are BAND NAMES (string), not ratios: the
+ * numbers live nowhere on the event, and which bands exist is pack
+ * vocabulary (dimensions.json's damageBand/lifeBand, engine-reservations
+ * discipline — the engine knows no band literal). `rank` is the optional
+ * martial-rank placeholder: optional NOW so a later value is not a shape
+ * change.
+ */
+export type StrikeEvent = EventSkeleton & {
+  type: "strike";
+  attackerId: string;
+  defenderId: string;
+  /** Damage dealt after mitigation; 0 when dodged. */
+  damage: number;
+  /** The damage band's name (pack vocabulary — dimensions damageBand). */
+  damageRatio: string;
+  /** The defender's remaining-life band's name (dimensions lifeBand). */
+  defenderHpRatio: string;
+  isDodge: boolean;
+  /** C1 has no crits: always false, present for the day the roll exists. */
+  isCrit: boolean;
+  /** The attack's element name (pack vocabulary; "no element" is a pack value). */
+  element: string;
+  /** The attack's delivery method name (external/internal — pack vocabulary). */
+  source: string;
+  /** Martial-rank placeholder — never set in C1 (no martial arts yet). */
+  rank?: string;
+};
+
+/**
+ * A `dotTick` event: one damage-over-time pulse landing — the observable
+ * half of observation-time compensation settlement (#56, spec/04 §4.2). The
+ * `tick` stamp is the pulse's DUE tick (`startTick + k × interval`), never
+ * the catch-up moment — the settlement-stamping rule (spec/01 §5.0).
+ */
+export type DotTickEvent = EventSkeleton & {
+  type: "dotTick";
+  /** The effect entry the poison instance rides (the look-up-back key). */
+  effectId: string;
+  /** Who the poison is on (the defender of every pulse). */
+  targetId: string;
+  /** Damage dealt by this pulse. */
+  damage: number;
+  /** The pulse damage's band name (dimensions damageBand). */
+  damageRatio: string;
+  /** The target's remaining-life band's name after this pulse (lifeBand). */
+  defenderHpRatio: string;
+  /** Pulses applied so far including this one. */
+  pulsesApplied: number;
+  /** The instance's pulse ceiling (the entry's maxPulses). */
+  pulsesTotal: number;
+};
+
+/**
+ * A `death` event: someone reached their death threshold. `kind` says which
+ * side of the strike pair died (an npc is static presence — no tree row; a
+ * player is a tree entity); `cause` names the killer arm.
+ */
+export type DeathEvent = EventSkeleton & {
+  type: "death";
+  /** Who died. */
+  deceasedId: string;
+  kind: "npc" | "player";
+  cause: "strike" | "dot";
+};
+
+/**
  * The engine's event vocabulary — CLOSED, discriminated by `type`
- * (spec/01 §5). Five arms are the engine's real names, the whole set: a
- * synthetic type (`worldSettled`, `pong`) is not an engine event and does
- * not pretend to be one. A new engine event means a new arm here, in the
- * union, and a new factory in events.ts.
+ * (spec/01 §5). Eight arms are the engine's real names, the whole set: the
+ * five from the command/world layer (commandRefused, say, appearance,
+ * departed, arrived) plus the combat kernel's three (#56: strike, dotTick,
+ * death). A synthetic type (`worldSettled`, `pong`) is not an engine event
+ * and does not pretend to be one. A new engine event means a new arm here,
+ * in the union, and a new factory in events.ts.
  */
 export type EngineEvent =
   | CommandRefusedEvent
   | SayEvent
   | AppearanceEvent
   | DepartedEvent
-  | ArrivedEvent;
+  | ArrivedEvent
+  | StrikeEvent
+  | DotTickEvent
+  | DeathEvent;
 
 declare const customEventBrand: unique symbol;
 
@@ -294,7 +371,7 @@ export type CustomEvent = CustomEventDraft & EventSkeleton;
 
 /**
  * A single engine occurrence — the CLOSED union (spec/01 §5): either one of
- * the engine's five, or the branded extension arm. There is no index
+ * the engine's eight, or the branded extension arm. There is no index
  * signature to fall back on, so no event shape escapes the two construction
  * paths (events.ts).
  *

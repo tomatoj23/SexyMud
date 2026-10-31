@@ -2,6 +2,7 @@ import type {
   CommandEntry,
   ContentRegistryOptions,
   ContentRegistry,
+  EffectEntry,
   NpcEntry,
   RenderContent,
   RoomEntry,
@@ -49,6 +50,8 @@ const CONFIG_FILES = {
   "settings.json": "settings",
   "dimensions.json": "dimensions",
   "world.json": "world",
+  "character.json": "character",
+  "combat-tiers.json": "combatTiers",
 } as const;
 
 /** Entry-collection directory names → the registry option they feed. */
@@ -57,6 +60,7 @@ const COLLECTION_DIRS = {
   rooms: "rooms",
   npcs: "npcs",
   monster: "monsters",
+  effects: "effects",
 } as const;
 
 /** `…/content/<rel>` → `<rel>`, tolerating a path that is already relative. */
@@ -84,6 +88,7 @@ export function loadPack(
   const rooms: RoomEntry[] = [];
   const npcs: NpcEntry[] = [];
   const monsters: { id: string }[] = [];
+  const effects: EffectEntry[] = [];
   const config: Record<string, unknown> = {};
   for (const [path, parsed] of Object.entries(files)) {
     const [dir, fileName] = relativeToContentRoot(path).split("/");
@@ -107,16 +112,19 @@ export function loadPack(
     if (option === "commands") commands.push(parsed as CommandEntry);
     else if (option === "rooms") rooms.push(parsed as RoomEntry);
     else if (option === "npcs") npcs.push(parsed as NpcEntry);
+    else if (option === "effects") effects.push(parsed as EffectEntry);
     else monsters.push(parsed as { id: string });
   }
 
   const registry = createContentRegistry(
-    { commands, rooms, npcs, monsters },
+    { commands, rooms, npcs, monsters, effects },
     {
       calendar: config.calendar as ContentRegistryOptions["calendar"],
       settings: config.settings as ContentRegistryOptions["settings"],
       dimensions: config.dimensions as ContentRegistryOptions["dimensions"],
       world: config.world as ContentRegistryOptions["world"],
+      character: config.character as ContentRegistryOptions["character"],
+      combatTiers: config.combatTiers as ContentRegistryOptions["combatTiers"],
     },
   );
 

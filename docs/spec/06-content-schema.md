@@ -1,6 +1,6 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**21 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）是**新落的集合 schema**，其余 **16 个**需随本规格重估（**限定语**：= 21 − 3 新落集合 − 2 被引用库；这 16 个里含 `config` 五类与 **11 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（5 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕／`world`〔#49 新增〕）、`commands/`（4 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）。
+> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**23 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）、**`effects.schema.json`（#56 激活：tick 化改名＋`maxPulses` 补声明，首批两条目）**是**新落的集合 schema**，其余 **10 个**需随本规格重估（**限定语**：= 23 − 4 新落集合 − 2 被引用库 − `config` 七类；这 10 个是放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（7 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕／`world`〔#49 新增〕／`character`＋`combat-tiers`〔#56 新增〕）、`commands/`（6 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）、`effects/`（2 条〔#56〕）。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合
@@ -16,7 +16,7 @@
 | `event/` | `combat-text/` | |
 | `config/` | 结构性配置（每集合一文件） | |
 
-`rooms/`、`npcs/` 两个集合的 schema **已落**（M1-T6：`schemas/rooms.schema.json`（含出口子实体——出口即命令，门禁词汇表 `enter`／`traverse`）+ `schemas/npcs.schema.json`（`monsterId` 引用不复制）+ 引擎类型 `packages/core/src/world/entry.ts` + 首批柳青镇内容）；`commands/` schema **已落**（M1-T5，`schemas/commands.schema.json`，首批条目 4 条）。
+`rooms/`、`npcs/` 两个集合的 schema **已落**（M1-T6：`schemas/rooms.schema.json`（含出口子实体——出口即命令，门禁词汇表 `enter`／`traverse`）+ `schemas/npcs.schema.json`（`monsterId` 引用不复制）+ 引擎类型 `packages/core/src/world/entry.ts` + 首批柳青镇内容）；`commands/` schema **已落**（M1-T5，`schemas/commands.schema.json`，首批条目 4 条；#56 起条目可带 `effects` 效果引用，现 6 条）；**`effects/` 集合已激活（#56：`schemas/effects.schema.json` tick 化改名〔`durationMs→durationTicks`／`tickMs→tickIntervalTicks`／`cooldownMs→cooldownTicks`——毫秒遗留与 tick 时间模型冲突，零条目窗口期改名零成本〕＋`maxPulses` 补声明＋首批两条件〔instant-damage／damage-over-time〕；引擎类型 `packages/core/src/effects/entry.ts`；`COLLECTIONS` 加行＋`effect(id)` getter＋命令 `effects` 引用的加载期完整性校验〔照 npc→monsterId 先例〕）**。
 
 > 引擎侧的装配由注册表的**集合声明表**按行驱动（#39：`packages/core/src/content/registry.ts` 的 `COLLECTIONS`，装配义务与深冻结口径见 spec/03 §6.1）——声明表**不豁免** §4 的三处同步义务，新集合照旧要走 `schemas`／core 类型／`content.md` 三处。
 

@@ -121,4 +121,27 @@ describe("engine purity (ADR-0004)", () => {
     expect(offenders.platform).toContain("new Date");
     expect(scanNonGrammarCjk(fixtureText)).toContain("闭");
   });
+
+  it("the effect contract imports no mechanism module (#56 AC8 — the six-contract first check)", () => {
+    // The contract side (src/effects/) must stay mechanism-blind: its
+    // implementations live with their consumers (combat/ registers into the
+    // primitive registry), never the other way round. Mechanical so the
+    // spec/01 §8 checklist row is a scan, not a self-report: any import in
+    // src/effects/ that points at a sibling mechanism module fails here.
+    const MECHANISM_DIRS = ["combat"];
+    const offenders: string[] = [];
+    const effectsDir = join(srcDir, "effects");
+    for (const file of listSourceFiles(effectsDir)) {
+      const text = readFileSync(file, "utf8");
+      for (const match of text.matchAll(/from\s+"([^"]+)"/g)) {
+        const specifier = match[1]!;
+        for (const dir of MECHANISM_DIRS) {
+          if (specifier.startsWith(`../${dir}/`)) {
+            offenders.push(`${file}: imports ${specifier}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

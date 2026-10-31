@@ -1,0 +1,16 @@
+{
+  "id": "combat-tiers",
+  "damageBand": [
+    { "band": "light", "min": 0, "max": 0.08 },
+    { "band": "medium", "min": 0.08, "max": 0.2 },
+    { "band": "heavy", "min": 0.2, "max": 0.45 },
+    { "band": "nearDeath", "min": 0.45, "max": 1.0001 }
+  ],
+  "lifeBand": [
+    { "band": "critical", "min": 0, "max": 0.15 },
+    { "band": "low", "min": 0.15, "max": 0.4 },
+    { "band": "half", "min": 0.4, "max": 0.6 },
+    { "band": "high", "min": 0.6, "max": 0.85 },
+    { "band": "full", "min": 0.85, "max": 1.0001 }
+  ]
+}

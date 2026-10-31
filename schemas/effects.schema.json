@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "effects.schema.json",
   "title": "效果定义（content/effects/，每条目一文件）",
-  "description": "效果 = primitive 组合条目（content.md）。武功 / 怪物 / 层主通过 effects:[...] 引用同一批效果定义。primitive 类型需 id 化，但类型可扩充——schema 不写死枚举，引擎按 id 找实现（ADR-0004 扩展留白）。",
+  "description": "效果 = primitive 组合条目（content.md）。武功 / 怪物 / 命令通过 effects:[...] 引用同一批效果定义。primitive 类型 id 化、可扩充——schema 不写死枚举，引擎按 id 找实现（ADR-0004 扩展留白）。#56 落地首批两个：instant-damage（触发一击公式结算，条目 amount 闲置留位——T11①(a)）与 damage-over-time（amount＝每跳伤害，挂载时算定入会话槽记账——T11②；终止由 tickIntervalTicks × maxPulses 管辖，durationTicks 归 stat-modifier 族——T11④）。时长字段已随 #56 从毫秒时代改名 tick 化（durationMs→durationTicks 等，与 tick 时间模型对齐，ADR-0031/0032）。三处同步：本文件／`packages/core/src/effects/entry.ts` 的 `EffectEntry`／`docs/agents/content.md`。",
   "type": "object",
   "required": ["id", "primitives"],
   "properties": {
@@ -33,7 +33,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "primitive 类型 id（引擎按 id 找实现）。当前候选 13 项 = 16 项穷举排除 连击 / 护盾 / 位移；MVP 先用 9 个 + 注册 2 个。类型可扩充，schema 不写死。"
+          "description": "primitive 类型 id（引擎注册表按 id 找实现，#56 首批：instant-damage／damage-over-time）。类型可扩充，schema 不写死。"
         },
         "targetSelector": {
           "type": "string",
@@ -48,23 +48,39 @@
           "type": "string",
           "description": "stat-modifier 类 primitive 的目标属性 id"
         },
-        "amount": { "type": "number", "description": "数值（可负）" },
+        "amount": {
+          "type": "number",
+          "description": "数值（可负）。角色分工按 primitive 类型（#56 T11）：instant-damage＝触发一击公式结算，本键闲置留位；damage-over-time＝每跳伤害，挂载时算定入会话槽记账（跳时不再读条目数值）。"
+        },
         "unit": {
           "type": "string",
-          "description": "flat（固定值）| percent（百分比）——走修饰符聚合管线的对应层（ADR-0005）"
+          "description": "flat（固定值）| percent（百分比）——走修饰符聚合管线的对应层（ADR-0005 最小核，#56 落空退化形）"
         },
-        "durationMs": { "type": "integer", "minimum": 0, "description": "持续时间（damage-over-time / stat-modifier 等）" },
-        "tickMs": { "type": "integer", "minimum": 1, "description": "持续效果的跳伤/结算间隔" },
+        "durationTicks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "持续 tick 数（stat-modifier 族消费；damage-over-time 的终止由 tickIntervalTicks × maxPulses 管辖、不读本键——T11④）"
+        },
+        "tickIntervalTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "持续效果的跳伤/结算间隔（tick，非毫秒）。第一跳在 startTick + 一个间隔。"
+        },
+        "maxPulses": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "跳数的语义上限（最多跳几次；spec/04 §4.2：语义上限，不是性能护栏）。观察时补偿结算一次可补多跳（跨命令与跨离线照补），跳满即终。"
+        },
         "chance": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "概率触发"
+          "description": "概率触发（缺省＝必然）。掷的是注入 Rng，同种子重放同结果（ADR-0017）。"
         },
-        "cooldownMs": {
+        "cooldownTicks": {
           "type": "integer",
           "minimum": 0,
-          "description": "效果实例自带 CD 状态；CD 是运行时数据，进存档"
+          "description": "效果实例自带 CD 状态（tick）；CD 是运行时数据，进存档"
         },
         "narrative": {
           "type": "string",

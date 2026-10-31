@@ -5,18 +5,22 @@ import type {
   CommandRefusedEvent,
   CustomCode,
   CustomEventDraft,
+  DeathEvent,
   DepartedEvent,
+  DotTickEvent,
   EngineEvent,
   EventSkeleton,
   GameEvent,
   SayEvent,
+  StrikeEvent,
 } from "./types.js";
 
 /**
  * Event construction in ONE place (spec/01 §5): a factory per engine event
- * type — commandRefused / say / appearance / departed / arrived — plus the
- * extension arm `customEvent(type, fields)` for synthetic and host events,
- * plus `stampEvent`, the one place a draft becomes a DELIVERED event.
+ * type — commandRefused / say / appearance / departed / arrived / strike /
+ * dotTick / death — plus the extension arm `customEvent(type, fields)` for
+ * synthetic and host events, plus `stampEvent`, the one place a draft
+ * becomes a DELIVERED event.
  *
  * The factory unifies ONLY `type`, and it stamps it last: the skeleton
  * (seq/actorId/tick) belongs to the stampers — the pipeline stamps its
@@ -61,6 +65,21 @@ export function departedEvent(fields: FieldsOf<DepartedEvent>): EventDraft {
 /** An `arrived` event: one movement announcement, the entering half. */
 export function arrivedEvent(fields: FieldsOf<ArrivedEvent>): EventDraft {
   return { ...fields, type: "arrived" };
+}
+
+/** A `strike` event: one attack landing or being dodged — the combat kernel's ledger row. */
+export function strikeEvent(fields: FieldsOf<StrikeEvent>): EventDraft {
+  return { ...fields, type: "strike" };
+}
+
+/** A `dotTick` event: one damage-over-time pulse landing (compensation settlement's observable half). */
+export function dotTickEvent(fields: FieldsOf<DotTickEvent>): EventDraft {
+  return { ...fields, type: "dotTick" };
+}
+
+/** A `death` event: someone reached their death threshold. */
+export function deathEvent(fields: FieldsOf<DeathEvent>): EventDraft {
+  return { ...fields, type: "death" };
 }
 
 /**
@@ -110,9 +129,9 @@ export function stampEvent(draft: EventDraft, skeleton: EventSkeleton): GameEven
 }
 
 /**
- * Whether an event is one of the engine's five arms — the consumer-side
+ * Whether an event is one of the engine's eight arms — the consumer-side
  * discriminator the union's design promises (types.ts: narrowing happens
- * between the five engine types; the extension arm's `type` is an open
+ * between the engine types; the extension arm's `type` is an open
  * string, so a `switch` on it alone cannot eliminate it). The honest limit
  * is the emit port's documented cost: a host-smuggled custom event claiming
  * an engine type rides that arm here, and its missing fields fail loudly
@@ -124,6 +143,9 @@ export function isEngineEvent(event: GameEvent): event is EngineEvent {
     event.type === "say" ||
     event.type === "appearance" ||
     event.type === "departed" ||
-    event.type === "arrived"
+    event.type === "arrived" ||
+    event.type === "strike" ||
+    event.type === "dotTick" ||
+    event.type === "death"
   );
 }

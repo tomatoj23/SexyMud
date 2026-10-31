@@ -10,6 +10,7 @@ import { verbTableFrom } from "../src/command/resolve.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
+import type { EffectEntry } from "../src/effects/entry.js";
 
 /**
  * The M1-T5 tracer bullet (issue #5): adding a command means adding a JSON
@@ -24,6 +25,14 @@ import { createContentRegistry } from "../src/content/registry.js";
  */
 
 const contentDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../content/commands");
+
+function loadEffectEntries(): EffectEntry[] {
+  const dir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../content/effects");
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .sort()
+    .map((name) => JSON.parse(readFileSync(join(dir, name), "utf8")) as EffectEntry);
+}
 
 function loadCommandEntries(): CommandEntry[] {
   return readdirSync(contentDir)
@@ -51,7 +60,7 @@ function subjectOf(world: TracerWorld, actorId: string): ConditionSubject {
 
 /** A harness over the real merge sources, asking the commands-collection accessType ("use" per content.md). */
 function tracerHarness(world: TracerWorld) {
-  const registry = createContentRegistry({ commands: loadCommandEntries() });
+  const registry = createContentRegistry({ commands: loadCommandEntries(), effects: loadEffectEntries() });
   return {
     registry,
     harness: createCommandHarness<TracerWorld>({
@@ -96,14 +105,19 @@ describe("content/commands/ entries through the real dispatch path", () => {
   });
 
   it("reaches every command from its own verbs via the real merge + verb table", () => {
-    const registry = createContentRegistry({ commands: loadCommandEntries() });
+    const registry = createContentRegistry({
+      commands: loadCommandEntries(),
+      effects: loadEffectEntries(),
+    });
     const table = verbTableFrom(commandSetSources(registry.commands));
 
     expect(registry.commands.map((command) => command.id)).toEqual([
       "cmd-examine",
+      "cmd-lodge",
       "cmd-look",
       "cmd-rest",
       "cmd-say",
+      "cmd-strike",
     ]);
     for (const command of registry.commands) {
       const verb = command.verbs[0];
@@ -118,8 +132,11 @@ describe("content/commands/ entries through the real dispatch path", () => {
 
   it("assembles deterministically regardless of file load order (ADR-0024 §2)", () => {
     const entries = loadCommandEntries();
-    const forward = createContentRegistry({ commands: entries });
-    const reversed = createContentRegistry({ commands: [...entries].reverse() });
+    const forward = createContentRegistry({ commands: entries, effects: loadEffectEntries() });
+    const reversed = createContentRegistry({
+      commands: [...entries].reverse(),
+      effects: loadEffectEntries(),
+    });
     expect(commandSetSources(reversed.commands)).toEqual(commandSetSources(forward.commands));
   });
 });

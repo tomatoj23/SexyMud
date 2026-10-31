@@ -39,16 +39,24 @@
       "$ref": "condition.schema.json#/definitions/accessRules",
       "description": "前置门禁（spec/02 §5）：accessType → 条件表达式，`default` 必填（false = 缺省拒绝最常用）。命令集合的 accessType 词汇表：**use**（询问方由宿主在装配 CommandSpec 时传入，content.md 命令集合节）。省略本字段 = 无门禁。"
     },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^eff-[a-z0-9-]+$"
+      },
+      "description": "效果引用（#56）：指向 content/effects/ 条目——命令的行为经效果管线表达（如「打」＝一击结算＋概率上毒）。注册表加载期校验悬空引用（npc→monsterId 先例：悬空即启动失败，不打到玩家那一拳）。引擎按 primitive type id 分派执行。"
+    },
     "tags": { "$ref": "common.schema.json#/definitions/tags" },
     "flags": { "$ref": "common.schema.json#/definitions/flags" },
     "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },
     "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" }
   },
   "patternProperties": {
-    "^err_[a-z][a-z0-9-]*$": {
+    "^err_[a-z][a-zA-Z0-9-]*$": {
       "type": "string",
       "minLength": 1,
-      "description": "拒绝文案：键名 = err_ + accessType（「use」门拒绝读 err_use；默认门拒绝读 err_default）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。err_* 可整体省略（渲染层回退通用文案），但写了就必须非空。须遵守 content/style-guide.md（第二人称「你」、古典白话）。命令集合现用词汇表只有 err_use 与 err_default——出现其他键通常是 accessType 拼写错误（键名拼错的文案永远无人读取）。"
+      "description": "拒绝文案：键名 = err_ + accessType（「use」门拒绝读 err_use；默认门拒绝读 err_default）；#56 起执行段拒绝同用此面（err_notVisible／err_targetDead 等——键名是拒绝语义，camelCase 允许）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。err_* 可整体省略（渲染层回退通用文案），但写了就必须非空。须遵守 content/style-guide.md（第二人称「你」、古典白话）。命令集合 accessType 词汇表只有 use 与 default——带 accessType 语义的键拼错将永远无人读取。"
     }
   },
   "additionalProperties": false

@@ -149,6 +149,57 @@ const isTagMap: SlotValidator = (value, what) => {
   }
 };
 
+/**
+ * An attrs map's kind check (#56): attr key → FINITE number. A NaN or
+ * Infinity would poison every formula that reads the slot silently — the
+ * same corruption class a non-tick cooldown represents.
+ */
+const isAttrMap: SlotValidator = (value, what) => {
+  const attrs = asRecord(value, what);
+  for (const [key, attr] of Object.entries(attrs)) {
+    if (typeof attr !== "number" || !Number.isFinite(attr)) {
+      throw new Error(`snapshot: ${what}["${key}"] is not a finite number`);
+    }
+  }
+};
+
+/** A finite number, or a loud failure (an HP row the formulas cannot read). */
+const isFiniteNumber: SlotValidator = (value, what) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`snapshot: ${what} is not a finite number`);
+  }
+};
+
+/**
+ * The combat session's kind check (#56): present means a fight claim, and a
+ * malformed one is refused outright — a wrong-shaped session would resume a
+ * fight against a nonsense target. The poison ledger, when present, is
+ * checked in the same breath: its `applied` is a non-negative integer (a
+ * pulse count) and its numbers must be readable.
+ */
+const isCombatSession: SlotValidator = (value, what) => {
+  const session = asRecord(value, what);
+  asId(session.targetNpcId, `${what}.targetNpcId`);
+  isFiniteNumber(session.targetHp, `${what}.targetHp`);
+  if (typeof session.targetDead !== "boolean") {
+    throw new Error(`snapshot: ${what}.targetDead is not a boolean`);
+  }
+  const dot = session.dot;
+  if (dot !== undefined) {
+    const ledger = asRecord(dot, `${what}.dot`);
+    asId(ledger.effectId, `${what}.dot.effectId`);
+    isTick(ledger.startTick, `${what}.dot.startTick`);
+    isFiniteNumber(ledger.perTick, `${what}.dot.perTick`);
+    if (
+      typeof ledger.applied !== "number" ||
+      !Number.isSafeInteger(ledger.applied) ||
+      ledger.applied < 0
+    ) {
+      throw new Error(`snapshot: ${what}.dot.applied is not a non-negative integer`);
+    }
+  }
+};
+
 /** The tick definition of `clock.ts` assertTick: a non-negative safe integer. */
 export const isTickValue = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -209,6 +260,18 @@ export const SLOT_RULES: {
     // is a slot the migration records — their absence is ordinary v1 traffic
     // and the reader's fill is the truth being recorded.
     tags: { absent: { default: {} }, validate: isTagMap },
+    // The attrs slot (#56): the same in-version landing as tags — absent
+    // means empty, present-but-wrong-kind is refused, no migration records
+    // it. Key CANONICAL ORDER is deliberately NOT this row's business (a row
+    // shapes tolerance, not serialization): it lives in serializeWorld's
+    // canonical-order list, the `cooldowns` precedent ("not a row", spec/04
+    // §1.4's canonicalizer-gap note).
+    attrs: { absent: { default: {} }, validate: isAttrMap },
+    // The combat session slot (#56): the second "unfilled" row — absence IS
+    // the reading (no fight), and no default session is invented. Present
+    // means a persisted fight claim and must be well-formed (D11: same
+    // SLOT_RULES discipline as tags, in-version landing, no v3).
+    combat: { absent: "unfilled", validate: isCombatSession },
     // The one record slot the migration DOES record: #24 gave it a default
     // so a post-v2 save carries it, while "absent" still reads as tick 0,
     // never as corruption. The recorded value is the reader's default — the

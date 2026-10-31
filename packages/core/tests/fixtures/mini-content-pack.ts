@@ -3,13 +3,15 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandEntry } from "../../src/command/entry.js";
 import { createContentRegistry } from "../../src/content/registry.js";
+import type { CharacterTable, CombatTiersTable, WorldTable } from "../../src/content/config.js";
+import type { EffectEntry } from "../../src/effects/entry.js";
 import type {
   ContentRegistry,
   DimensionTable,
   MonsterRecord,
 } from "../../src/content/registry.js";
 import type { NpcEntry, RoomEntry } from "../../src/world/entry.js";
-import type { Calendar, SettingsTable, WorldTable } from "../../src/content/config.js";
+import type { Calendar, SettingsTable } from "../../src/content/config.js";
 
 /**
  * The second content pack (issue #12, spec/00 acceptance criterion 2):
@@ -86,6 +88,8 @@ export interface LoadedPack {
   readonly rooms: readonly RoomEntry[];
   readonly npcs: readonly NpcEntry[];
   readonly monsters: readonly MonsterRecord[];
+  /** The pack's effect entries (content/effects/, #56), when it ships any. */
+  readonly effects: readonly EffectEntry[];
   /** The pack's own dimensions table (config/dimensions.json), when it has one. */
   readonly dimensions?: DimensionTable;
   /** The pack's own calendar (config/calendar.json), when it has one. */
@@ -94,6 +98,10 @@ export interface LoadedPack {
   readonly settings?: SettingsTable;
   /** The pack's own start-room declaration (config/world.json, issue #49). */
   readonly world?: WorldTable;
+  /** The pack's character-model declaration (config/character.json, #56), when it has one. */
+  readonly character?: CharacterTable;
+  /** The pack's combat band table (config/combat-tiers.json, #56), when it has one. */
+  readonly combatTiers?: CombatTiersTable;
   /**
    * Every file's raw JSON text, concatenated. A pack's theme lives in its
    * copy as much as in its verbs, so the "no other pack's vocabulary" scan
@@ -107,17 +115,21 @@ export function loadPack(rootDir: string): LoadedPack {
   const roomTexts = readCollection(rootDir, "rooms");
   const npcTexts = readCollection(rootDir, "npcs");
   const monsterTexts = readCollection(rootDir, "monster");
+  const effectTexts = readCollection(rootDir, "effects");
   const configTexts = readCollection(rootDir, "config");
   return {
     commands: commandTexts.map((text) => JSON.parse(text) as CommandEntry),
     rooms: roomTexts.map((text) => JSON.parse(text) as RoomEntry),
     npcs: npcTexts.map((text) => JSON.parse(text) as NpcEntry),
     monsters: monsterTexts.map((text) => JSON.parse(text) as MonsterRecord),
+    effects: effectTexts.map((text) => JSON.parse(text) as EffectEntry),
     dimensions: readDimensions(rootDir),
     calendar: readConfig<Calendar>(rootDir, "calendar"),
     settings: readConfig<SettingsTable>(rootDir, "settings"),
     world: readConfig<WorldTable>(rootDir, "world"),
-    text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...configTexts].join("\n"),
+    character: readConfig<CharacterTable>(rootDir, "character"),
+    combatTiers: readConfig<CombatTiersTable>(rootDir, "combat-tiers"),
+    text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...effectTexts, ...configTexts].join("\n"),
   };
 }
 
@@ -134,6 +146,7 @@ export function packRegistry(rootDir: string): ContentRegistry {
       rooms: pack.rooms,
       npcs: pack.npcs,
       monsters: pack.monsters,
+      effects: pack.effects,
     },
     // The config tables travel WITH the pack (ADR-0029 §5, ADR-0032 §3,
     // issue #49): the same loader that finds rooms/ finds config/, so
@@ -146,6 +159,8 @@ export function packRegistry(rootDir: string): ContentRegistry {
       calendar: pack.calendar,
       settings: pack.settings,
       world: pack.world,
+      character: pack.character,
+      combatTiers: pack.combatTiers,
     },
   );
 }

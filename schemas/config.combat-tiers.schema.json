@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "config.combat-tiers.schema.json",
+  "title": "战斗档位区间表（content/config/combat-tiers.json）",
+  "description": "STRUCTURE（#56）：伤害档/气血档的 **ratio→档名** 数值边界（display-tiers 同族）。**档名不另立真相**——是 dimensions 表 damageBand/lifeBand 维度的既有词汇（D6 批补④），本表只放数值边界；档名闭合在注册表加载期做（传了 dimensions 表才校验，ADR-0029 §5／#27 惯例——schema 不写死包词汇）。分母基准：damageRatio＝伤害÷受击者 maxHp；defenderHpRatio＝剩余 HP÷maxHp。区间左闭右开、按 min 升序（引擎 bandOf 逐档探测）。三处同步：本文件／`packages/core/src/content/config.ts` 的 `CombatTiersTable`／`docs/agents/content.md`。",
+  "type": "object",
+  "required": ["id"],
+  "properties": {
+    "id": { "type": "string", "const": "combat-tiers" }
+  },
+  "patternProperties": {
+    "^(?!id$)[a-z][a-zA-Z0-9]*$": {
+      "type": "array",
+      "minItems": 1,
+      "description": "一个维度（如 damageBand/lifeBand）的档位区间表，按 min 升序。",
+      "items": {
+        "type": "object",
+        "required": ["band", "min", "max"],
+        "properties": {
+          "band": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$",
+            "description": "档名——必须是对应 dimensions 维度的既有取值（加载期校验）"
+          },
+          "min": { "type": "number", "description": "档的闭下界（ratio）" },
+          "max": { "type": "number", "description": "档的开上界（ratio）；末档建议上界 ≥1 兜住满值" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

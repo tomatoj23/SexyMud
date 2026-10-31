@@ -36,10 +36,13 @@ export {
   commandRefusedEvent,
   customCode,
   customEvent,
+  deathEvent,
   departedEvent,
+  dotTickEvent,
   isEngineEvent,
   sayEvent,
   stampEvent,
+  strikeEvent,
 } from "./events.js";
 export { effectiveNowTick, parseCommand, runCommand } from "./command/pipeline.js";
 export { createDispatchDriver, settlementFirst } from "./command/driver.js";
@@ -91,14 +94,48 @@ export type {
   ContentRegistryOptions,
   DimensionTable,
   MonsterRecord,
+  MonsterStats,
 } from "./content/registry.js";
 export type {
   Calendar,
   CalendarRing,
   CalendarSegment,
+  CharacterTable,
+  CombatTierBand,
+  CombatTiersTable,
   SettingsGroup,
   SettingsTable,
 } from "./content/config.js";
+// The effect contract (#56): the entry shape, the modifier minimal core
+// (ADR-0005's empty-degenerate form), and the primitive registry the
+// mechanism modules register their implementations into.
+export type { EffectEntry, EffectPrimitive } from "./effects/entry.js";
+export { aggregateModifiers } from "./effects/modifiers.js";
+export type { FlatModifier, Modifier, PercentModifier } from "./effects/modifiers.js";
+export { createEffectPrimitiveRegistry } from "./effects/registry.js";
+export type {
+  EffectExecutionContext,
+  EffectPrimitiveHandler,
+} from "./effects/registry.js";
+// The combat kernel (#56): the strike orchestration adapter, the shipped
+// primitives, the arithmetic, the character-model seeds, and the poison's
+// observation-time compensation settle handler.
+export { strikeSpec } from "./combat/strike.js";
+export type { StrikeSpecOptions } from "./combat/strike.js";
+export { defaultEffectPrimitives } from "./combat/primitives.js";
+export {
+  bandOf,
+  DEFAULT_STRIKE_ELEMENT,
+  DEFAULT_STRIKE_SOURCE,
+  monsterCombatFace,
+  readDefenseK,
+  retaliationDamage,
+  strikeDamage,
+} from "./combat/damage.js";
+export { createDotSettleHandler, primaryResourceOf, seedCharacterAttrs } from "./combat/session.js";
+export { grantFlagSpec } from "./world/flag.js";
+export { resolveNpcTarget } from "./world/target.js";
+export type { NpcTargetResolution, TargetFailure } from "./world/target.js";
 export { createGameTime, ringPeriod, segmentAt, segmentIndexAt } from "./time/calendar.js";
 export type { GameTime } from "./time/calendar.js";
 export { cooldownReady, cooldownRemaining } from "./time/cooldown.js";
@@ -182,7 +219,7 @@ export { markupKey } from "./text/markup.js";
 // player's raw line through this before it may enter the engine — the cap's
 // value is the host's, the strip's categories are the engine's law.
 export { sanitizePlayerInput } from "./input/sanitize.js";
-export type { EntityState, WorldState } from "./state/tree.js";
+export type { CombatSession, DotLedger, EntityState, WorldState } from "./state/tree.js";
 export { restoreWorld, serializeWorld } from "./state/snapshot.js";
 export type {
   EntityRecord,
@@ -194,7 +231,7 @@ export type {
 } from "./state/snapshot.js";
 export { assembleWorld, collectMeta } from "./state/assembly.js";
 export type { AssembledWorld, AssembleWorldOptions, WorldBundle } from "./state/assembly.js";
-export { createCommandHarness, createTestClock, expectMessageSequence } from "./command/testing.js";
+export { createCommandHarness, createTestClock, expectMessageSequence, testClockOver } from "./command/testing.js";
 export type {
   CallOutcome,
   CommandHarness,
@@ -217,8 +254,10 @@ export type {
   CustomCode,
   CustomEvent,
   CustomEventDraft,
+  DeathEvent,
   DepartedEvent,
   DispatchFailure,
+  DotTickEvent,
   EngineEvent,
   EventMeta,
   EventSkeleton,
@@ -227,6 +266,7 @@ export type {
   ParseReason,
   ReasonCode,
   RefusalReason,
+  StrikeEvent,
   VerbReason,
   Rng,
   SaveStore,

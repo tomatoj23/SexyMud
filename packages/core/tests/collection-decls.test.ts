@@ -272,7 +272,7 @@ describe("新增集合演练（issue #39 AC1：声明一行即接通，六义务
     expect((empty["__proto__"] as readonly unknown[]).length).toBe(0);
   });
 
-  it("结构钉：五路全进表；exits 行的义务只有 id 空间＋entities 喂表（不展平、无 getter 对）", () => {
+  it("结构钉：六路全进表；exits 行的义务只有 id 空间＋entities 喂表（不展平、无 getter 对）", () => {
     expect(
       COLLECTIONS.map((row) => [row.what, row.flatten, row.placeable, row.expose]),
     ).toEqual([
@@ -280,6 +280,7 @@ describe("新增集合演练（issue #39 AC1：声明一行即接通，六义务
       ["room", true, false, "rooms"],
       ["npc", true, true, "npcs"],
       ["monster", true, true, "monsters"],
+      ["effect", true, false, "effects"],
       ["exit", false, false, null],
     ]);
   });

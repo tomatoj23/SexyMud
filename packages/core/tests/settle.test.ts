@@ -47,6 +47,7 @@ function offlineWorld(): WorldState {
         locationId: "room-a",
         flags: [],
         tags: {},
+        attrs: {},
         lastSeenTick: 0,
         cooldowns: {},
       },
@@ -55,6 +56,7 @@ function offlineWorld(): WorldState {
         locationId: "room-a",
         flags: [],
         tags: {},
+        attrs: {},
         lastSeenTick: 100,
         cooldowns: {},
       },
@@ -404,12 +406,14 @@ describe("the host heartbeat (ADR-0034 §5)", () => {
 });
 
 describe("mechanism and seam, no consumer (spec/04 §4.3)", () => {
-  it("opens no numeric slot for catch-up: the tree carries what it carried, plus the tick", () => {
+  it("opens no numeric slot beyond attrs: the tree carries what it carried, plus the tick", () => {
     const { state } = rig();
 
-    // `attrs` would be a promise about a shape nobody has designed — the
-    // same reason §4.1 refuses a named effect table for the due bucket.
+    // `attrs` opened with #56 (the poison's compensation settlement is its
+    // first consumer); §4.1's named-effect-table refusal for the due bucket
+    // still stands — no further slot grows before its system lands.
     expect(Object.keys(state.entities["jia"]!).sort()).toEqual([
+      "attrs",
       "cooldowns",
       "flags",
       "id",
@@ -485,6 +489,7 @@ describe("addEntity seeds lastSeenTick (spec/04 §1.5)", () => {
             locationId: "room-a",
             flags: [],
             tags: {},
+            attrs: {},
             lastSeenTick: 777,
             cooldowns: {},
           },

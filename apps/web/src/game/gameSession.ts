@@ -4,18 +4,24 @@ import {
   collectMeta,
   commandSetSources,
   createCommandHarness,
+  createDotSettleHandler,
   createDueBucket,
   createEntity,
   createGameTime,
   createSeededRng,
+  createSettler,
   createWorldRuntime,
+  grantFlagSpec,
   lineOf,
   lookSpec,
   renderEvent,
   resolve,
   sanitizePlayerInput,
   saySpec,
+  seedCharacterAttrs,
   serializeWorld,
+  strikeSpec,
+  testClockOver,
   traversalSpec,
   verbTableFrom,
 } from "@sexymud/core";
@@ -37,6 +43,7 @@ import type {
 import { createTerminalView } from "../ui/terminalView.js";
 import type { StatusPanel, TerminalView } from "../ui/terminalView.js";
 import type { HostCopy } from "./hostCopy.js";
+import type { HostClock } from "./hostClock.js";
 import type { LoadedPack } from "./pack.js";
 
 /**
@@ -96,10 +103,17 @@ export interface FactoryAdapter {
  * matched key nobody bound as a wiring bug and throws, so the honest shape
  * is a table that offers only what it can run; their input reads as an
  * unknown command until their behaviour tickets land.
+ *
+ * #56 adds the strike (the engine's combat adapter — the tracer bullet's
+ * own kernel behaviour) and the lodge check-in (the engine's generic flag
+ * adapter; the flag WORD is this pack's, and it rides here with the table —
+ * "换包换表", the same law as the copy table).
  */
 export const DEFAULT_FACTORY_ADAPTERS: readonly FactoryAdapter[] = [
   { commandId: "cmd-look", spec: lookSpec },
   { commandId: "cmd-say", spec: saySpec },
+  { commandId: "cmd-strike", spec: (entry) => strikeSpec(entry) },
+  { commandId: "cmd-lodge", spec: (entry) => grantFlagSpec(entry, "inn-lodger") },
 ];
 
 export interface GameSessionOptions {
@@ -111,6 +125,14 @@ export interface GameSessionOptions {
   readonly adapters?: readonly FactoryAdapter[];
   /** The command id the automatic look dispatches (world guidance, #48 D4). */
   readonly autoLookCommandId?: string;
+  /**
+   * The wall→tick translator (#56): each submitted command carries the tick
+   * it reads HERE, so the world's "now" follows the wall clock and a poison
+   * armed at one command catches up on the next. Absent, commands run at the
+   * high-water mark they find (the pre-#56 behaviour — tests that never
+   * advance the wall).
+   */
+  readonly hostClock?: HostClock;
   /** Rendered, folded and chunked output, ready for the terminal window. */
   readonly onOutput: (chunks: readonly (readonly OutputLine[])[]) => void;
   /** The status line's new face, after every settled dispatch. */
@@ -191,10 +213,23 @@ export function createGameSession(options: GameSessionOptions): GameSession {
 
   /** The harness over the live world — one wiring, every opening path. */
   const wireHarness = (live: { runtime: WorldRuntime; rng: Rng; bucket: DueBucket }): void => {
+    // ONE "now": the harness's clock face bridges the runtime's own mark
+    // (#56), so the dispatches, the settler and the status line all read
+    // the same number — and the advance settles the poison with it.
+    const settler = createSettler({
+      state: live.runtime.state,
+      clock: live.runtime.clock,
+      entity: createDotSettleHandler(live.runtime),
+    });
     harness = createCommandHarness<WorldRuntime>({
       world: { live: live.runtime },
       receivers: ["player"],
-      session: { rng: live.rng, due: live.bucket },
+      session: {
+        clock: testClockOver(live.runtime.clock),
+        rng: live.rng,
+        due: live.bucket,
+        settle: (request) => settler.settleTo(request),
+      },
       // Re-merged every dispatch, never cached (#38): the sources follow
       // the actor's CURRENT room, exactly as a real host's do.
       verbs: ({ world, actorId }) => {
@@ -282,6 +317,13 @@ export function createGameSession(options: GameSessionOptions): GameSession {
     const lines: OutputLine[] = [];
     for (const message of outcome.messages) {
       if (message.to !== "player") continue;
+      // A granted flag's event is an extension arm, and the C1 rendering
+      // seam renders the engine's arms only (#56 T1) — the SESSION words
+      // the grant from the host's copy, the enterText family.
+      if (message.event.type === "flagGranted") {
+        lines.push(lineOf([{ text: copy.flagGrantedLine, style: "plain" }]));
+        continue;
+      }
       lines.push(...renderEvent(message.event, { observerId: "player" }, render));
     }
     emit(lines);
@@ -318,6 +360,14 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       // autosave, and 「继续」 reads it back out of the payload — a display
       // field the engine stores and never words a default for.
       runtime.state.entities["player"]!.name = playerName;
+      // The character model rides the attrs slot (#56 AC2): a new game
+      // seeds the declared keys over the fresh empty map. A pack without a
+      // table stays empty-handed — the first strike's operands then fail
+      // loudly, the engine's own wiring answer.
+      const character = pack.registry.character;
+      if (character !== undefined) {
+        seedCharacterAttrs(runtime.state.entities["player"]!, character);
+      }
       wireHarness({ runtime, rng, bucket });
 
       // World guidance, first beat: the start room's enterText straight out
@@ -432,7 +482,16 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         emit([lineOf([{ text: copy.unknownCommand(clean), style: "plain" }])]);
         return;
       }
-      await settle(harness.call(outcome.spec, { raw: clean, actorId }));
+      // The command carries the WALL clock's tick when a translator is
+      // wired (#56): the world's "now" follows real time, so a poison
+      // armed at one command catches up at the next.
+      const tick = options.hostClock?.nowTick();
+      await settle(
+        harness.call(
+          outcome.spec,
+          tick === undefined ? { raw: clean, actorId } : { raw: clean, actorId, tick },
+        ),
+      );
     },
     playerName() {
       return playerName;

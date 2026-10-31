@@ -5,9 +5,12 @@ import {
   commandRefusedEvent,
   customCode,
   customEvent,
+  deathEvent,
   departedEvent,
+  dotTickEvent,
   sayEvent,
   stampEvent,
+  strikeEvent,
 } from "../src/events.js";
 import type { EventSkeleton, GameEvent } from "../src/types.js";
 import type { OutputLine, OutputSpan } from "../src/text/line.js";
@@ -43,6 +46,12 @@ const COPY: RenderCopy = {
   presenceRow: `${markupKey("name")}×${markupKey("count")}`,
   appearanceItems: `这里有：${markupKey("items")}`,
   appearancePeople: `在场：${markupKey("people")}`,
+  strikeHit: `${markupKey("attacker")}击中${markupKey("defender")}，造成${markupKey("damage")}点伤害。`,
+  strikeDodge: `${markupKey("defender")}闪过了${markupKey("attacker")}的攻势。`,
+  strikeTake: `${markupKey("attacker")}还了一手，你受到${markupKey("damage")}点伤害。`,
+  dotTickLine: `${markupKey("target")}毒发，损了${markupKey("damage")}点气血（${markupKey("applied")}/${markupKey("total")}）。`,
+  deathNpcLine: `${markupKey("deceased")}闷哼一声，倒下了。`,
+  deathPlayerLine: `${markupKey("deceased")}眼前一黑，倒了下去……`,
   listJoin: "、",
 };
 
@@ -275,6 +284,93 @@ describe("renderEvent — the extension arm renders nothing, by explicit decisio
   it("returns no lines for a custom event (the seam lands with the mechanism tickets)", () => {
     const settled = stamped(customEvent("worldSettled", { span: 10 }));
     expect(renderEvent(settled, observer("player-1"), CONTENT)).toEqual([]);
+  });
+});
+
+describe("renderEvent — the combat arms (#56, T7's fixed templates)", () => {
+  it("reads a landed player strike through the attacker's template", () => {
+    const strike = stamped(
+      strikeEvent({
+        attackerId: "player-1",
+        defenderId: "npc-guard",
+        damage: 19,
+        damageRatio: "medium",
+        defenderHpRatio: "full",
+        isDodge: false,
+        isCrit: false,
+        element: "none",
+        source: "external",
+      }),
+    );
+    expect(texts(renderEvent(strike, observer("player-1"), CONTENT))).toEqual([
+      "你击中黑衣人，造成19点伤害。",
+    ]);
+    // The same event through ANOTHER observer's eyes: the attacker reads as
+    // a name, never the pronoun (spec/05 §3's stance law, strike-shaped).
+    expect(texts(renderEvent(strike, observer("player-2"), CONTENT))).toEqual([
+      "张三击中黑衣人，造成19点伤害。",
+    ]);
+  });
+
+  it("reads a dodge through the dodge template, and a retaliation through the take template", () => {
+    const dodged = stamped(
+      strikeEvent({
+        attackerId: "player-1",
+        defenderId: "npc-guard",
+        damage: 0,
+        damageRatio: "light",
+        defenderHpRatio: "full",
+        isDodge: true,
+        isCrit: false,
+        element: "none",
+        source: "external",
+      }),
+    );
+    expect(texts(renderEvent(dodged, observer("player-1"), CONTENT))).toEqual([
+      "黑衣人闪过了你的攻势。",
+    ]);
+    const taken = stamped(
+      strikeEvent({
+        attackerId: "npc-guard",
+        defenderId: "player-1",
+        damage: 15,
+        damageRatio: "light",
+        defenderHpRatio: "high",
+        isDodge: false,
+        isCrit: false,
+        element: "none",
+        source: "external",
+      }),
+    );
+    expect(texts(renderEvent(taken, observer("player-1"), CONTENT))).toEqual([
+      "黑衣人还了一手，你受到15点伤害。",
+    ]);
+  });
+
+  it("reads a poison pulse with its running count, and both death lines", () => {
+    const pulse = stamped(
+      dotTickEvent({
+        effectId: "eff-poison-fist",
+        targetId: "npc-guard",
+        damage: 10,
+        damageRatio: "light",
+        defenderHpRatio: "low",
+        pulsesApplied: 2,
+        pulsesTotal: 5,
+      }),
+    );
+    expect(texts(renderEvent(pulse, observer("player-1"), CONTENT))).toEqual([
+      "黑衣人毒发，损了10点气血（2/5）。",
+    ]);
+    const npcDeath = stamped(deathEvent({ deceasedId: "npc-guard", kind: "npc", cause: "strike" }));
+    expect(texts(renderEvent(npcDeath, observer("player-1"), CONTENT))).toEqual([
+      "黑衣人闷哼一声，倒下了。",
+    ]);
+    // The player's OWN death: the deceased reads as the pronoun.
+    const playerDeath = stamped(deathEvent({ deceasedId: "player-1", kind: "player", cause: "strike" }));
+    expect(texts(renderEvent(playerDeath, observer("player-1"), CONTENT))).toEqual([
+      "你眼前一黑，倒了下去……",
+    ]);
   });
 });
 

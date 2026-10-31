@@ -1,0 +1,7 @@
+{
+  "id": "cmd-lodge",
+  "verbs": ["住店", "投宿", "lodge"],
+  "argForm": "none",
+  "cmdset": "character",
+  "priority": 0
+}

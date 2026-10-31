@@ -39,6 +39,14 @@ export interface HostCopy {
    * engine string.
    */
   unknownCommand(raw: string): string;
+  /**
+   * The flag-granted line (#56 T1): a granted flag's event is an extension
+   * arm, and the C1 rendering seam renders the engine's eight arms only —
+   * so the SESSION words the grant here, the enterText family. This host
+   * binds one grant command today (the lodge check-in); a second one grows
+   * a table keyed by flag.
+   */
+  readonly flagGrantedLine: string;
   /** The visible line when the autosave store failed (visible, not silent). */
   readonly saveFailed: string;
   /** The visible line when opening a new game itself failed (a wiring or pack break). */
@@ -101,6 +109,17 @@ export const WEB_HOST_COPY: HostCopy = {
     presenceRow: `${markupKey("name")}×${markupKey("count")}`,
     appearanceItems: `这里有：${markupKey("items")}`,
     appearancePeople: `在场：${markupKey("people")}`,
+    // The combat kernel's fixed templates (#56 T7: C1's minimal face lives
+    // HERE, with the host; a later combat-text slice owns moving the words
+    // into content). Wording follows content/style-guide.md — damage reads
+    // as harm taken, never a bare "N points of damage" line. Placeholders
+    // (markupKey): see render.ts's RenderCopy docs.
+    strikeHit: `${markupKey("attacker")}一拳打向${markupKey("defender")}，${markupKey("defender")}受创${markupKey("damage")}点。`,
+    strikeDodge: `${markupKey("defender")}身形一侧，闪过了${markupKey("attacker")}的攻势。`,
+    strikeTake: `${markupKey("attacker")}还了一手，你受创${markupKey("damage")}点。`,
+    dotTickLine: `${markupKey("target")}毒性发作，损了${markupKey("damage")}点气血（第${markupKey("applied")}/${markupKey("total")}跳）。`,
+    deathNpcLine: `${markupKey("deceased")}闷哼一声，直挺挺倒了下去。`,
+    deathPlayerLine: `${markupKey("deceased")}眼前一黑，倒了下去……`,
     listJoin: "、",
   },
   reasonCopy: {
@@ -115,6 +134,7 @@ export const WEB_HOST_COPY: HostCopy = {
   unknownCommand(raw) {
     return `「${raw}」是什么招式？`;
   },
+  flagGrantedLine: "掌柜的收下银子，递给你一块住客木牌：客官往后院请便。",
   saveFailed: "（本地存档暂不可用，这一步之后的进度未能保存。）",
   openFailed: "开局失败——世界配置有误，无法进入江湖。",
   saveRoomGone: "上次所在之处已不在江湖之中，你回到了起点。",

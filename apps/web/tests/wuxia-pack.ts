@@ -17,7 +17,7 @@ const contentRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "../../
 /** The shipped pack's parsed files, keyed `<dir>/<file>.json`. */
 export function readPackFiles(): Record<string, unknown> {
   const files: Record<string, unknown> = {};
-  for (const dir of ["config", "commands", "rooms", "npcs", "monster"]) {
+  for (const dir of ["config", "commands", "rooms", "npcs", "monster", "effects"]) {
     const dirPath = join(contentRoot, dir);
     if (!existsSync(dirPath)) continue;
     for (const fileName of readdirSync(dirPath).filter((name) => name.endsWith(".json")).sort()) {

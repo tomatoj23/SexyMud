@@ -1,10 +1,10 @@
 /**
- * The rendering half of the text surface (spec/05 §2–§4, issue #50): the
- * engine's five event types as PURE functions of (event, observer, injected
- * content) — same event, same observer, same content, same lines (ADR-0017).
- * Rendering happens per receiver, never render-then-broadcast: Chinese
- * stance (the second-person pronoun for the actor, a name for everyone
- * else, spec/05 §3) cannot
+ * The rendering half of the text surface (spec/05 §2–§4, issue #50; the
+ * combat arms #56): the engine's eight event types as PURE functions of
+ * (event, observer, injected content) — same event, same observer, same
+ * content, same lines (ADR-0017). Rendering happens per receiver, never
+ * render-then-broadcast: Chinese stance (the second-person pronoun for the
+ * actor, a name for everyone else, spec/05 §3) cannot
  * be recovered from an already-rendered string.
  *
  * The engine owns the MECHANISM — stance resolution, template substitution,
@@ -31,8 +31,11 @@ import type {
   AppearanceEvent,
   ArrivedEvent,
   CommandRefusedEvent,
+  DeathEvent,
   DepartedEvent,
+  DotTickEvent,
   SayEvent,
+  StrikeEvent,
 } from "../types.js";
 import type { GameEvent } from "../types.js";
 
@@ -56,6 +59,23 @@ export interface RenderCopy {
   readonly appearanceItems: string;
   /** The occupants line. Placeholders (markupKey): people. */
   readonly appearancePeople: string;
+  /**
+   * The combat kernel's fixed templates (#56, T7: C1's minimal face lives
+   * with the HOST — the keys are the engine's mechanism vocabulary, the
+   * words are the host's; a later combat-text slice owns moving the words
+   * into content). Placeholders (markupKey): attacker, defender, damage.
+   */
+  readonly strikeHit: string;
+  /** A dodged strike (the defender slipped it). Placeholders: attacker, defender. */
+  readonly strikeDodge: string;
+  /** The retaliation landing on the player. Placeholders: attacker, damage. */
+  readonly strikeTake: string;
+  /** One poison pulse. Placeholders: target, damage, applied, total. */
+  readonly dotTickLine: string;
+  /** An npc death. Placeholders: deceased. */
+  readonly deathNpcLine: string;
+  /** The player's own death. Placeholders: deceased. */
+  readonly deathPlayerLine: string;
   /** The joiner between enumeration members. */
   readonly listJoin: string;
 }
@@ -85,10 +105,11 @@ export interface ObserverState {
 }
 
 /**
- * Renders one event for one observer. The five engine types each render
- * their lines; the extension arm renders NOTHING by explicit decision
- * (#48 D6): the seam for custom events lands with the mechanism-module
- * tickets that own their shapes — an explicit branch, not a fallthrough.
+ * Renders one event for one observer. The eight engine types each render
+ * their lines — the five command/world types since #50, the combat kernel's
+ * three since #56 (spec/05 §2's rendering seam closed with the mechanism
+ * module that owns the shapes); the extension arm renders NOTHING by
+ * explicit decision (#48 D6) — an explicit branch, not a fallthrough.
  */
 export function renderEvent(
   event: GameEvent,
@@ -96,9 +117,9 @@ export function renderEvent(
   content: RenderContent,
 ): OutputLine[] {
   if (!isEngineEvent(event)) {
-    // customEvent: rendered by nobody today, ON PURPOSE (#48 D6) — the
-    // rendering seam for custom events lands with the mechanism-module
-    // tickets that own their shapes. An explicit branch, not a fallthrough.
+    // customEvent: rendered by nobody, ON PURPOSE (#48 D6) — a host event
+    // is worded by its own consumer at the session layer (the flagGranted
+    // precedent, #56 T1), never by this engine-side renderer.
     return [];
   }
   switch (event.type) {
@@ -112,6 +133,12 @@ export function renderEvent(
       return arrivedLines(event, observer, content);
     case "commandRefused":
       return [refusalLine(event, content)];
+    case "strike":
+      return [strikeLine(event, observer, content)];
+    case "dotTick":
+      return [dotTickLine(event, observer, content)];
+    case "death":
+      return [deathLine(event, observer, content)];
   }
 }
 
@@ -303,4 +330,74 @@ function refusalLine(
     );
   }
   return lineOf([{ text, style: "danger" }]);
+}
+
+/**
+ * One strike, from the observer's stance (#56, T7's fixed templates): the
+ * observer being hit reads strikeTake ("…you take N"), everyone else — the
+ * attacker themselves AND any third party — reads strikeHit with names
+ * substituted (the two-sided law of the movement lines; a bystander is a
+ * name-reading party to BOTH sides, the same as moveLine's mover).
+ */
+function strikeLine(
+  event: StrikeEvent,
+  observer: ObserverState,
+  content: RenderContent,
+): OutputLine {
+  const attacker = stanceName(content, observer, event.attackerId);
+  const defender = stanceName(content, observer, event.defenderId);
+  const damage = [{ text: String(event.damage), style: "plain" }] as const;
+  if (event.isDodge) {
+    return lineOf(
+      templateSpans(content.copy.strikeDodge, {
+        attacker: [{ text: attacker, style: "npcName" }],
+        defender: [{ text: defender, style: "npcName" }],
+      }),
+    );
+  }
+  if (event.defenderId === observer.observerId) {
+    return lineOf(
+      templateSpans(content.copy.strikeTake, {
+        attacker: [{ text: attacker, style: "npcName" }],
+        damage,
+      }),
+    );
+  }
+  return lineOf(
+    templateSpans(content.copy.strikeHit, {
+      attacker: [{ text: attacker, style: "npcName" }],
+      defender: [{ text: defender, style: "npcName" }],
+      damage,
+    }),
+  );
+}
+
+/** One poison pulse: who, how much, how far into the instance. */
+function dotTickLine(
+  event: DotTickEvent,
+  observer: ObserverState,
+  content: RenderContent,
+): OutputLine {
+  return lineOf(
+    templateSpans(content.copy.dotTickLine, {
+      target: [{ text: stanceName(content, observer, event.targetId), style: "npcName" }],
+      damage: [{ text: String(event.damage), style: "plain" }],
+      applied: [{ text: String(event.pulsesApplied), style: "plain" }],
+      total: [{ text: String(event.pulsesTotal), style: "plain" }],
+    }),
+  );
+}
+
+/** One death: the two sides read their own templates, the deceased by stance. */
+function deathLine(
+  event: DeathEvent,
+  observer: ObserverState,
+  content: RenderContent,
+): OutputLine {
+  const template = event.kind === "player" ? content.copy.deathPlayerLine : content.copy.deathNpcLine;
+  return lineOf(
+    templateSpans(template, {
+      deceased: [{ text: stanceName(content, observer, event.deceasedId), style: "npcName" }],
+    }),
+  );
 }

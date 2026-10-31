@@ -54,6 +54,7 @@ export function snapshotFixture(options: { nowTick?: number; flags?: string[] } 
     locationId: "room-a",
     flags: options.flags ?? ["seen"],
     tags: { realm: ["jianghu"] },
+    attrs: {},
     lastSeenTick: 20,
     cooldowns: { "skill-x": 70 },
   };

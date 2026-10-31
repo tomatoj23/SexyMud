@@ -34,6 +34,7 @@ function world(): WorldState {
         locationId: "room-a",
         flags: [],
         tags: {},
+        attrs: {},
         lastSeenTick: 0,
         cooldowns: {},
       },

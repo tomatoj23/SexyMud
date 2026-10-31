@@ -1,0 +1,17 @@
+{
+  "id": "character",
+  "attrs": {
+    "maxHp": 200,
+    "hp": 200,
+    "attack": 30,
+    "externalDefense": 3
+  },
+  "primaryResource": { "current": "hp", "max": "maxHp" },
+  "deathAtOrBelow": 0,
+  "strike": {
+    "attackAttr": "attack",
+    "defenseAttr": "externalDefense",
+    "element": "none",
+    "source": "external"
+  }
+}

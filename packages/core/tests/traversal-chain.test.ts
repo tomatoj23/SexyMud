@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandResult } from "../src/types.js";
 import { commandSetSources } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
+import type { EffectEntry } from "../src/effects/entry.js";
 import type { Message } from "../src/command/pipeline.js";
 import { resolve, verbTableFrom } from "../src/command/resolve.js";
 import type { CommandBinding } from "../src/command/resolve.js";
@@ -46,6 +47,7 @@ function loadRegistry(): ContentRegistry {
     rooms: loadCollection<RoomEntry>("rooms"),
     npcs: loadCollection<NpcEntry>("npcs"),
     monsters: loadCollection<{ id: string }>("monster"),
+    effects: loadCollection<EffectEntry>("effects"),
   });
 }
 

@@ -1,6 +1,6 @@
 # 01 · 引擎对外契约
 
-> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约 + 快照 v1 M2-T5 + **快照 v2 与首条真实迁移 M4-T5 #24**）**已落**；`time/` **已落**（M4-T2：`time/calendar.ts` 的游戏内时间求值 + `time/tuning.ts` 的 `settings.time` 读数；M4-T3 #22：`time/settle.ts` 两层推进；M4-T4 #23：`time/due.ts` 到期桶／`time/cooldown.ts` 冷却／`time/stage.ts` 纯 stage 求值。⚠️ tick 高水位不在这里，它在 `src/clock.ts`，M4-T1）；`effects/` 待实现。
+> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约 + 快照 v1 M2-T5 + **快照 v2 与首条真实迁移 M4-T5 #24**）**已落**；`time/` **已落**（M4-T2：`time/calendar.ts` 的游戏内时间求值 + `time/tuning.ts` 的 `settings.time` 读数；M4-T3 #22：`time/settle.ts` 两层推进；M4-T4 #23：`time/due.ts` 到期桶／`time/cooldown.ts` 冷却／`time/stage.ts` 纯 stage 求值。⚠️ tick 高水位不在这里，它在 `src/clock.ts`，M4-T1）；**`effects/` 与 `combat/` 已落（#56 一击结算内核：效果契约＋primitive 注册表＋修饰符最小核空退化形＋strike 出厂适配器＋毒 DoT 补偿结算＋事件三臂；渲染缝收口见 spec/05）**。
 > **依据**：ADR-0002、ADR-0017、ADR-0025 §一、ADR-0006、ADR-0018。
 
 ## 1. 注入端口（Ports）
@@ -90,14 +90,15 @@ type GameEvent = EngineEvent | CustomEvent;   // 封闭联合，顶层无 index 
 
 interface EventSkeleton { seq: number; tick: number /* 见下「§5.0 tick」 */; actorId: string }
 
-// 引擎五型 = 封闭判别联合（按 type 分型声明语义字段必/可选，如 pre-veto 的
+// 引擎八型 = 封闭判别联合（按 type 分型声明语义字段必/可选，如 pre-veto 的
 // commandRefused 只有 type+reason、commandKey 可选）：commandRefused／say／
-// appearance／departed／arrived。worldSettled 系测试合成型，不入联合。
+// appearance／departed／arrived＋战斗三臂 strike／dotTick／death（#56）。
+// worldSettled 系测试合成型，不入联合。
 interface SayEvent extends EventSkeleton {
   type: "say";
   speakerId: string; text: string; locationId: string;
 }
-// …其余四型同律
+// …其余七型同律
 
 // 扩展臂：合成／宿主事件，**品牌化**、只出自 `customEvent(type, fields?)`——
 // 手写字面量掉不进任何臂、编译报错；自由 fields 开放承载在**构造面**
@@ -105,7 +106,7 @@ interface SayEvent extends EventSkeleton {
 // index signature（带了会豁免整个联合的字段检查——实测侧门，见 ADR-0040）。
 ```
 
-**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现五型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3）。draft→已投递事件的收口构造只有一处：`stampEvent(draft, skeleton)`（pipeline 与 settler 两个盖章点都走它；src 侧扫描钉禁 `as GameEvent` 出现在 `events.ts` 之外）。**诚实范围**：联合封的是全部**类型化边界**（注解、期望、factory 参数）；发射口 `EventDraft` 按设计保持开放（发射面收编批、非编译强制），手拼 draft 仍可从发射口走——引擎 src 由扫描钉守，宿主自由构造是记账的代价。
+**构造一处**：引擎事件一律经 `src/events.ts` 的 factory 构造——按 `type` 一族（现八型：`commandRefused`／`say`／`appearance`／`departed`／`arrived`／`strike`／`dotTick`／`death`〔#56 战斗三臂〕；函数名＝type 名＋`Event` 后缀，如 `commandRefusedEvent`），合成／宿主事件走扩展臂工厂 `customEvent(type, fields?)`。factory **只统一 `type`**；`seq`／`actorId`／`tick` 骨架由分发／结算侧盖章、factory 不出骨架——命令事件由 pipeline 盖三件（§2.2、§5.0），结算事件由 settler 盖 `seq`／`actorId`，到期事件的 `tick` 由到期桶盖 `dueTick`（ADR-0034 §3；#56 的毒跳同理——`dotTick` 盖本跳 due tick `startTick + k×interval`）。draft→已投递事件的收口构造只有一处：`stampEvent(draft, skeleton)`（pipeline 与 settler 两个盖章点都走它；src 侧扫描钉禁 `as GameEvent` 出现在 `events.ts` 之外）。**诚实范围**：联合封的是全部**类型化边界**（注解、期望、factory 参数）；发射口 `EventDraft` 按设计保持开放（发射面收编批、非编译强制），手拼 draft 仍可从发射口走——引擎 src 由扫描钉守，宿主自由构造是记账的代价。
 
 **语义码取值面**（`types.ts` 单一住所，#47）：`reason`／`accessType` 是**码**不是文案——引擎自产码进字面量（拒绝面 `accessDenied`／`vetoed`／`notVisible`／`sayVetoed`／`moveVetoed`，解析面 `emptyInput`／`unknownVerb`／`verbMismatch`／`unexpectedArg`／`missingTarget`／`badOrdinal`／`missingNoun`；accessType 面 `use`／`traverse`／`enter`／`look`），自定义码经 `customCode(text)` 取**品牌**进面（`"gateClosed"`／`"learn"` 是自定义码，裸字符串进不了码位）；`DispatchFailure.reason`／`CommandRejection.reason`／`ParseOutcome.reason`／`ctx.veto(reason)`／`commandRefused.reason` 同一面。文案照旧走内容 `err_*` 数据（errKey 机制不动）。
 
@@ -153,9 +154,14 @@ packages/core/          引擎（可独立发布的库，零题材词）
                         ＋ 到期桶 due.ts／冷却 cooldown.ts／纯 stage 求值 stage.ts（#23）
                         —— tick 高水位另在 src/clock.ts（M4-T1）
     text/               文本面出厂（#50，spec/05）：显示宽度 width.ts／避头尾折行 wrap.ts／
-                        切块 chunk.ts（span 重放）／五型渲染纯函数 render.ts＋行形状 line.ts——
+                        切块 chunk.ts（span 重放）／八型渲染纯函数 render.ts＋行形状 line.ts——
                         取字表/名字/enterText 全部随渲染器入参注入（Q6/Q7），引擎零词
-    effects/            效果执行
+    effects/            效果契约与注册（#56）：条目形状 entry.ts／修饰符最小核 modifiers.ts
+                        （ADR-0005 两层空退化形）／primitive 注册表 registry.ts——
+                        零机制 import；实现住消费侧（combat/primitives.ts 注册进本表）
+    combat/             一击结算内核（#56）：strike.ts 出厂适配器（编排）／damage.ts（公式
+                        与档位）／session.ts（会话槽＋毒补偿结算 handler＋角色种子）／
+                        primitives.ts（首批 instant-damage／damage-over-time 实现）
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑
 
@@ -196,6 +202,6 @@ schemas/                内容 JSON Schema
 - [x] `subscribe` 回调收到 `(events, meta)`，`meta` 含 seq 范围（类型契约已定义：`GameListener`/`EventMeta`；驱动它的 Authority 实**已落**——#26：`apps/web` 的 `LocalAuthority`，每个被消耗的 seq 一个批次，`meta` = 该次 seq）
 - [x] `packages/core/tests` 可独立运行，不依赖 `apps/`
 - [x] `Clock` 是 **tick 计数**而非毫秒 —— ⚠️ 语义已翻转（ADR-0031）：它是**引擎高水位读数**，不再是宿主注入的时钟；`TestClock.advance()` 相应地改为「改下一条命令的默认 tick」
-- [ ] 效果／条件／事件／状态／命令／时间 **六条契约**已定义为类型与接口——条件（`conditions.ts`）、事件（`GameEvent`）、命令（`CommandSpec` + cmdset）、状态（`state/tree.ts` 种子，M2-T1）已定义；效果与调度原语随各自里程碑
-- [ ] 机制模块之间**不互相 import**，只通过契约交互（尚无机制模块，随第一个机制票验证）
+- [x] 效果／条件／事件／状态／命令／时间 **六条契约**已定义为类型与接口——条件（`conditions.ts`）、事件（`GameEvent`）、命令（`CommandSpec` + cmdset）、状态（`state/tree.ts` 种子，M2-T1）已定义；**效果契约已随 #56 落地**（`effects/`：条目形状＋修饰符最小核＋primitive 注册表；调度原语此前已落 M4）
+- [x] 机制模块之间**不互相 import**，只通过契约交互（#56 首验：`effects/` 零机制 import〔entry/modifiers/registry 三文件 import 面仅内核层〕，`combat/` 单向消费效果契约——primitive 实现（`combat/primitives.ts`）注册进 `effects/registry.ts` 的注册表、约定在契约侧、语义在消费侧；`tests/combat-strike.test.ts` 钉注册表纪律，`engine-purity` 守扫描面）
 - [x] **没有**插件加载器 / 动态模块注册（见 `08-non-goals.md` A7、ADR-0027：扩展靠契约）

@@ -104,6 +104,7 @@ describe("the snapshot v2 shape (spec/04 §1)", () => {
             locationId: "room-b",
             flags: ["lantern-lit"],
             tags: {},
+            attrs: {},
             lastSeenTick: 0,
             cooldowns: {},
           },
@@ -127,6 +128,7 @@ describe("the snapshot v2 shape (spec/04 §1)", () => {
       "locationId",
       "flags",
       "tags",
+      "attrs",
       "lastSeenTick",
       "cooldowns",
     ]);
@@ -194,6 +196,7 @@ describe("the round trip (serialize → migrate → load)", () => {
       locationId: "room-b",
       flags: ["a-flag", "b-flag"],
       tags: {},
+      attrs: {},
       lastSeenTick: 0,
       cooldowns: {},
     });
@@ -337,6 +340,7 @@ describe("the name slot (#52 — a display field, persisted verbatim)", () => {
       "locationId",
       "flags",
       "tags",
+      "attrs",
       "lastSeenTick",
       "cooldowns",
     ]);
@@ -414,12 +418,14 @@ describe("derived fields (spec/04 §1.3)", () => {
       locationId: "room-a",
       flags: ["lantern-lit"],
       tags: {},
+      attrs: {},
       lastSeenTick: 40,
       cooldowns: {},
     };
     expect(stripDerived(state, ["flags", "locationId"])).toEqual({
       id: "player-1",
       tags: {},
+      attrs: {},
       lastSeenTick: 40,
       cooldowns: {},
     });
@@ -428,6 +434,7 @@ describe("derived fields (spec/04 §1.3)", () => {
       locationId: "room-a",
       flags: ["lantern-lit"],
       tags: {},
+      attrs: {},
       lastSeenTick: 40,
       cooldowns: {},
     });
@@ -442,6 +449,7 @@ describe("derived fields (spec/04 §1.3)", () => {
       locationId: "room-a",
       flags: ["lantern-lit"],
       tags: { zone: ["outdoors"] },
+      attrs: {},
       lastSeenTick: 40,
       cooldowns: {},
     };
@@ -585,6 +593,7 @@ describe("absence is not corruption (#40)", () => {
       locationId: "room-a",
       flags: [],
       tags: {},
+      attrs: {},
       lastSeenTick: 0,
       cooldowns: {},
     });
@@ -667,6 +676,7 @@ describe("restore is a replay, not a creation", () => {
           locationId: "room-a",
           flags: [],
           tags: {},
+          attrs: {},
           lastSeenTick: 0,
           cooldowns: {},
         },
@@ -675,6 +685,7 @@ describe("restore is a replay, not a creation", () => {
           locationId: "holder-1",
           flags: [],
           tags: {},
+          attrs: {},
           lastSeenTick: 0,
           cooldowns: {},
         },

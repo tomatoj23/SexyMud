@@ -1,6 +1,6 @@
 # 02 · 命令层
 
-> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`）；§2 命令是内容**已实现**（M1-T5：`schemas/commands.schema.json` + `content/commands/` 首批条目 + `CommandEntry`／`commandSetSources`／`commandSpecFromEntry`（`packages/core/src/command/entry.ts`）+ `ContentRegistry`（`packages/core/src/content/registry.ts`））；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§4 出口即命令**已实现**（M1-T6：`ExitEntry extends CommandEntry`（`packages/core/src/world/entry.ts`）+ `schemas/rooms.schema.json` 出口子实体 + 首批内容经注册表走全链路；**穿行适配器 `traversalSpec` 已落（M2-T1，§4.1）+ 执行段拒绝通道 `CommandRejection`（§2.1）**）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余（§6 玩家层别名、§7 意图、§8 IME）**待实现**；看适配器 `lookSpec` 已落（M2-T2，§2.1），说适配器 `saySpec` 已落（M2-T3，§2.1）。
+> **状态**：§1 解析**已实现**（M1-T2：最长动词匹配 + `argForm` 声明式参数，`packages/core/src/command/parser.ts`；**§1.4 目标解析已落（#56：`world/target.ts`，ADR-0028 §2 预留位兑现）**）；§2 命令是内容**已实现**（M1-T5：`schemas/commands.schema.json` + `content/commands/` 首批条目 + `CommandEntry`／`commandSetSources`／`commandSpecFromEntry`（`packages/core/src/command/entry.ts`）+ `ContentRegistry`（`packages/core/src/content/registry.ts`）；**#56：条目扩 `effects` 效果引用字段（三处同步随批），一击适配器 `strikeSpec`（`combat/strike.ts`）与给标适配器 `grantFlagSpec`（`world/flag.ts`）出厂**）；§3 命令集合并**已实现**（M1-T4：多源合并栈 + 四种 mergetype，`packages/core/src/command/cmdset.ts`）；§4 出口即命令**已实现**（M1-T6：`ExitEntry extends CommandEntry`（`packages/core/src/world/entry.ts`）+ `schemas/rooms.schema.json` 出口子实体 + 首批内容经注册表走全链路；**穿行适配器 `traversalSpec` 已落（M2-T1，§4.1）+ 执行段拒绝通道 `CommandRejection`（§2.1）**）；§5 前置条件**已实现**（M1-T3：递归求值器 + 谓词注册表 + `schemas/condition.schema.json`，`packages/core/src/conditions.ts`）；其余（§6 玩家层别名、§7 意图、§8 IME）**待实现**；看适配器 `lookSpec` 已落（M2-T2，§2.1），说适配器 `saySpec` 已落（M2-T3，§2.1）。
 > **依据**：ADR-0016 §2、ADR-0021 §1/§2/§4、ADR-0024 §1/§3、ADR-0022 §2（经 **ADR-0024 §8** 修正）、ADR-0025 §六。
 > （注：ADR-0024 的 **§7 修正的是 ADR-0022 §3**（原型继承），**§8 修正的是 ADR-0022 §2**（条件表达式）。本文件只涉及后者。）
 
@@ -28,7 +28,11 @@ Evennia 用 `name-N` 后缀（且其 docstring 写 `2-ball`、代码只认后缀
 
 **已落地取值**（M1-T2，引擎类型 `ArgForm`）：`none`（无参数）／`text`（自由文本）／`target`（裸名，默认第 1 个）／`target-ordinal`（接受「第 N 个 X」）／`target-index`（接受「X·N」）。两个消歧形态均兼容裸名（序数默认 1）；序数接受阿拉伯数字（含全角）与中文数词（一～九十九、两＝2），零与百以上拒绝。解析产物是 `TargetRef { noun, ordinal }` ——**只做形态解析**，名词指向哪个实体由命令条目的目标解析规则决定（ADR-0016）。动词与参数串之间的空白（含全角空格）是分隔符语法，不计入参数串；参数串除首尾空白外**不再做任何切分**。
 
-依据：ADR-0024 §1
+### 1.4 目标解析（#56 已落：`world/target.ts`）
+
+`TargetRef → 同房间 NPC 实体`的解析是**引擎能力**（ADR-0028 §2 预留位的兑现——「它服务战斗侧目标选择，随那个需求再做」，首个消费者＝「打」命令）。落地形状：`resolveNpcTarget(registry, roomId, ref)` 直读房间的**静态在场清单**（NPC 不进树，ADR-0028 §1——「谁在场」是内容真值不是状态真值），按 `npc.name` 全等匹配名词、`ordinal` 1 基选位；失败语义分两码：`noMatch`（此处无此人——含序数越界与非 npc 放置行）与 `notCombatant`（人在、但未声明 `monsterId`，无可打之身）。**三项检查（同房间／目标声明 monsterId／目标未死）走执行段拒绝**（`CommandRejection`，目标解析后的 func 内拒绝＋`err_*` 定位文案——照 traversal 的 enter 门先例；谓词模型对树中玩家 subject 求值、无目标位，不为此扩展「目标侧求值上下文」）。
+
+依据：ADR-0016、ADR-0028 §2
 
 ## 2. 命令是内容
 

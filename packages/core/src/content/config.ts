@@ -83,6 +83,68 @@ export interface WorldTable {
   readonly startRoomId: string;
 }
 
+/**
+ * The character-model declaration (`content/config/character.json`, #56
+ * T4): the pack's answer to "what numeric attributes does a player have and
+ * which keys mean what in combat". STRUCTURE, not tuning — the KEY LIST and
+ * the roles live here (spec/06 §6's second row), tuning numbers ride with
+ * the seed values themselves. The engine knows NO key: it reads this table
+ * and answers with whatever the pack declared (ADR-0009 §10).
+ */
+export interface CharacterTable {
+  /** The file's own stamp (the schema pins it to "character"); the engine never reads it. */
+  readonly id?: string;
+  /** attr key → the seed value a new game writes into the player's attrs slot. */
+  readonly attrs: Readonly<Record<string, number>>;
+  /** The primary-resource key pair: which attr is the life bar, and which is its ceiling. */
+  readonly primaryResource: {
+    readonly current: string;
+    readonly max: string;
+  };
+  /** The death threshold: the primary resource at or below this means death. */
+  readonly deathAtOrBelow: number;
+  /**
+   * The strike operand channels (T4/T10's mandatory field face): which attr
+   * key feeds the player→npc formula's attack operand, which would feed a
+   * defense operand (declared for C2's two-way formula; C1's retaliation is
+   * bare damage and reads no player key — the seat is declared, not used),
+   * and the element/source vocabulary words a C1 bare-hand strike carries.
+   */
+  readonly strike: {
+    readonly attackAttr: string;
+    readonly defenseAttr: string;
+    readonly element: string;
+    readonly source: string;
+  };
+}
+
+/**
+ * The combat band table (`content/config/combat-tiers.json`, #56): the
+ * NUMBER boundaries behind the band NAMES an event carries — display-tiers'
+ * same species (a ratio table, pack-authored). The NAMES themselves are the
+ * dimensions table's vocabulary (damageBand/lifeBand); this table only maps
+ * ratios to them, so there is no second home for a band name (D6 review
+ * note 4: band names belong to the dimensions table alone).
+ */
+export interface CombatTierBand {
+  /** The band's name — a dimensions-table key of the matching dimension. */
+  readonly band: string;
+  /** The band's inclusive lower ratio bound. */
+  readonly min: number;
+  /** The band's exclusive upper ratio bound (the last band clamps). */
+  readonly max: number;
+}
+
+/** dimension → its bands, ascending by min. */
+export interface CombatTiersTable {
+  /**
+   * The file's own `id` stamp is deliberately not typed here — the
+   * dimensions table's own arrangement (an index-signature table cannot
+   * carry a differently-typed `id`; the schema tolerates and ignores it).
+   */
+  readonly [dimension: string]: readonly CombatTierBand[] | undefined;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -210,5 +272,122 @@ export function assertWorldTable(world: WorldTable | undefined): void {
   }
   if (typeof world.startRoomId !== "string" || world.startRoomId === "") {
     throw new Error("content registry: world table must declare startRoomId as a non-empty string");
+  }
+}
+
+const isAttrSeeds = (value: unknown): value is Record<string, number> => {
+  if (!isPlainObject(value)) return false;
+  return Object.values(value).every(
+    (seed) => typeof seed === "number" && Number.isFinite(seed),
+  );
+};
+
+/**
+ * Load-time shape check for the character table (#56 T4). The checks are the
+ * standing arrangement (shape here, cross-reference at the consumer's
+ * first read): the key-pair channels must NAME keys, the seed values must be
+ * finite numbers. Whether the named keys actually exist in `attrs` is the
+ * strike settlement's loud failure to make the moment it reads them — a
+ * table that names a key it never seeds is a pack bug either way, and the
+ * consumer naming its own missing key is the sharper message.
+ */
+export function assertCharacterTable(character: CharacterTable | undefined): void {
+  if (character === undefined) {
+    return;
+  }
+  if (!isPlainObject(character)) {
+    throw new Error("content registry: character table must be an object");
+  }
+  if (!isAttrSeeds(character.attrs) || Object.keys(character.attrs).length === 0) {
+    throw new Error(
+      "content registry: character table must declare attrs as a non-empty map of finite numbers",
+    );
+  }
+  const { primaryResource, deathAtOrBelow, strike } = character;
+  if (
+    !isPlainObject(primaryResource) ||
+    typeof primaryResource.current !== "string" ||
+    primaryResource.current === "" ||
+    typeof primaryResource.max !== "string" ||
+    primaryResource.max === ""
+  ) {
+    throw new Error(
+      "content registry: character table must declare primaryResource as { current, max } attr keys",
+    );
+  }
+  if (typeof deathAtOrBelow !== "number" || !Number.isFinite(deathAtOrBelow)) {
+    throw new Error("content registry: character table must declare deathAtOrBelow as a finite number");
+  }
+  if (
+    !isPlainObject(strike) ||
+    typeof strike.attackAttr !== "string" ||
+    strike.attackAttr === "" ||
+    typeof strike.defenseAttr !== "string" ||
+    strike.defenseAttr === "" ||
+    typeof strike.element !== "string" ||
+    strike.element === "" ||
+    typeof strike.source !== "string" ||
+    strike.source === ""
+  ) {
+    throw new Error(
+      "content registry: character table must declare strike as { attackAttr, defenseAttr, element, source }",
+    );
+  }
+}
+
+/**
+ * Load-time shape check for the combat band table (#56): every dimension's
+ * band list non-empty, band names non-empty, ratios finite, bands ascending
+ * and non-overlapping. Whether the band NAMES belong to the dimensions
+ * table's vocabulary is closed at the registry proper (the #27 rule: only
+ * when a dimensions table was handed over) — a schema cannot read
+ * dimensions.json without hardcoding one pack's vocabulary.
+ */
+export function assertCombatTiersTable(tiers: CombatTiersTable | undefined): void {
+  if (tiers === undefined) {
+    return;
+  }
+  if (!isPlainObject(tiers)) {
+    throw new Error("content registry: combat tiers table must be an object");
+  }
+  let declaredAny = false;
+  for (const [dimension, bands] of Object.entries(tiers)) {
+    if (dimension === "id" || bands === undefined) {
+      continue;
+    }
+    declaredAny = true;
+    if (!Array.isArray(bands) || bands.length === 0) {
+      throw new Error(`content registry: combat tiers dimension "${dimension}" declares no bands`);
+    }
+    let previousMax = Number.NEGATIVE_INFINITY;
+    for (const band of bands) {
+      if (
+        !isPlainObject(band) ||
+        typeof band.band !== "string" ||
+        band.band === "" ||
+        typeof band.min !== "number" ||
+        !Number.isFinite(band.min) ||
+        typeof band.max !== "number" ||
+        !Number.isFinite(band.max)
+      ) {
+        throw new Error(
+          `content registry: combat tiers dimension "${dimension}" has a band that is not { band, min, max }`,
+        );
+      }
+      if (band.min >= band.max) {
+        throw new Error(
+          `content registry: combat tiers dimension "${dimension}" band "${band.band}" has min >= max`,
+        );
+      }
+      if (band.min < previousMax) {
+        throw new Error(
+          `content registry: combat tiers dimension "${dimension}" bands overlap or descend at "${band.band}"`,
+        );
+      }
+      previousMax = band.max;
+    }
+  }
+  if (!declaredAny) {
+    throw new Error("content registry: combat tiers table declares no dimension (an empty table is not a table)");
   }
 }

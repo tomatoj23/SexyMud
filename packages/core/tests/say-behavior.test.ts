@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandResult } from "../src/types.js";
 import { commandSetSources } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
+import type { EffectEntry } from "../src/effects/entry.js";
 import type { CommandSpec, Message } from "../src/command/pipeline.js";
 import { createCommandHarness, expectMessageSequence } from "../src/command/testing.js";
 import { createContentRegistry } from "../src/content/registry.js";
@@ -377,6 +378,7 @@ function loadRegistry(): ContentRegistry {
     rooms: loadCollection<RoomEntry>("rooms"),
     npcs: loadCollection<NpcEntry>("npcs"),
     monsters: loadCollection<{ id: string }>("monster"),
+    effects: loadCollection<EffectEntry>("effects"),
   });
 }
 

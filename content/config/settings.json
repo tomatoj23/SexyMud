@@ -1,3 +1,7 @@
 {
-  "id": "settings"
+  "id": "settings",
+  "combat": {
+    "formula": "玩家出手伤害 = max(1, round(攻击 × (1 − 防御/(防御+defenseK))))，防御取对头 stats.externalDefense；对头反击 = stats.attack 裸伤（不走公式、不吃玩家防御与闪避，#56 T10）",
+    "defenseK": 10
+  }
 }

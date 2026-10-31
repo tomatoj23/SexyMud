@@ -6,7 +6,7 @@
 
 ```
 content/
-├── config/           # 结构性配置：dimensions、display-tiers、settings、calendar、world（维度表／
+├── config/           # 结构性配置：dimensions、display-tiers、settings、calendar、world、character、combat-tiers（维度表／
 │                     #   显示档位区间表／阈值与公式常数／日历／世界引导表——引擎零写死数量的载体；
 │                     #   settings 顶层九类封闭，组内开放，见 spec/06 §6；
 │                     #   calendar 见下文「日历集合」节，M4-T2 已落；
@@ -80,9 +80,26 @@ assets/               # 美术资产（MVP 允许为空）
 - `argForm`：参数形态枚举 `none`／`text`／`target`／`target-ordinal`／`target-index`（引擎 `ArgForm`，spec/02 §1.2）。
 - `cmdset`＋`priority`＋`mergetype`：归属命令集（合并源名，如 `character`／`session`／`room`）与该集的合并规则。**合并规则属于命令集**：同一 `cmdset` 的所有条目必须声明一致的 `priority` 与 `mergetype`（省略 = `Union`），`ContentRegistry` 分组（`commandSetSources`）对不一致抛错。
 - `preconditions`：门禁映射（`condition.schema.json#/definitions/accessRules`）。**命令集合的 accessType 词汇表：`use`**——宿主装配 `CommandSpec` 时以 `commandSpecFromEntry(entry, { accessType: "use", func })` 传入；省略字段 = 无门禁。
-- `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。
+- `effects`：**效果引用**（#56 起）：`["eff-<名>", …]` 指向 `content/effects/` 条目——命令的行为经效果管线表达（如 `cmd-strike` 的「一击结算＋概率上毒」）。注册表加载期校验悬空引用（悬空即启动失败，不打到玩家那一拳）。
+- `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。**#56 起执行段拒绝同用 `err_*` 面**（`err_notVisible`／`err_notCombatant`／`err_targetDead`／`err_targetLocked` 等——键名是拒绝语义，camelCase 允许；cmd-strike 条目是首批实例）。
 
 引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands })`（重复 id 抛错）→ `commandSetSources(registry.commands)`（按 cmdset 分组）→ `mergeCmdSets` → `verbEntries()` 即动词表。**引擎 src/ 永不 import 内容 JSON**。
+
+## 效果集合（content/effects/，#56 已激活）
+
+每个效果一个 JSON 文件（文件名 = id），**效果 = primitive 组合条目**——武功/怪物/命令经 `effects: [...]` 引用同一批定义，数值永不复制（`schemas/effects.schema.json` ／ 引擎 `EffectEntry`（`packages/core/src/effects/entry.ts`）与本节三处同步）。字段：
+
+- `id`：`eff-<语义名>`（如 `eff-strike-fist`），一经发布不可变更。
+- `primitives[]`（≥1）：primitive 组合，按序执行。每条带 `type`（**类型 id，不写死枚举**——引擎注册表按 id 找实现，#56 首批 `instant-damage`／`damage-over-time`）＋该类型的参数：
+  - `instant-damage`：触发一击公式结算（伤害＝声明表操作数×公式，**条目 `amount` 闲置留位**——为将来内容 authored 平衡伤害保座，T11①(a)）。
+  - `damage-over-time`：`amount`（每跳伤害，挂载时算定入会话记账——跳时不再读条目，T11②）＋`tickIntervalTicks`（跳间隔，≥1；第一跳在挂载后一个间隔）＋`maxPulses`（跳数语义上限，≥1；**不是性能护栏**）＋`chance`（0..1 概率挂载，缺省＝必然）。**毒的终止由 `tickIntervalTicks × maxPulses` 管辖**（`durationTicks` 归 stat-modifier 族、DoT 不读——T11④）。
+  - 通用参数（可扩充）：`targetSelector`／`condition`／`stat`／`unit`／`durationTicks`／`cooldownTicks`／`narrative`。
+- `description`：叙事文本（style-guide）。
+
+## config 两张战斗表（#56 新增）
+
+- **`character.json`（角色模型声明，STRUCTURE）**：`attrs`（属性键 → 新档初值——**这份键清单就是玩家数值属性的形状**，加属性＝加键）＋`primaryResource: { current, max }`（生命条与上限的 attrs 键对）＋`deathAtOrBelow`（死亡阈值）＋`strike: { attackAttr, defenseAttr, element, source }`（一击操作数通道——element/source 值取 dimensions 的同名维度）。**引擎零认识任何具体键**。
+- **`combat-tiers.json`（战斗档位区间表，STRUCTURE）**：`damageBand`／`lifeBand` 的 **ratio → 档名** 数值边界（区间左闭右开、按 min 升序）。**档名必须是对应 dimensions 维度的既有取值**（加载期闭合校验）——本表只放数值边界，不另立档名真相。分母基准：伤害档＝伤害÷受击者 maxHp；气血档＝剩余 HP÷maxHp。
 
 ## 房间集合（content/rooms/，M1-T6 已定稿）
 

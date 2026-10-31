@@ -2,6 +2,7 @@
   "id": "mon-lq-001",
   "name": "孙彪",
   "role": "普通",
+  "source": "external",
   "stats": {
     "maxHp": 140,
     "attack": 15,

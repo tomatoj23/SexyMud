@@ -1,0 +1,13 @@
+{
+  "id": "eff-poison-fist",
+  "primitives": [
+    {
+      "type": "damage-over-time",
+      "amount": 10,
+      "tickIntervalTicks": 2,
+      "maxPulses": 5,
+      "chance": 0.35
+    }
+  ],
+  "description": "拳风里淬着木系毒质，沾上便隐隐作痒。"
+}

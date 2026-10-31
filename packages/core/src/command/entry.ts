@@ -72,6 +72,14 @@ export interface CommandEntry extends EntryCommon {
    * back to the renderer's generic copy.
    */
   readonly [errKey: `err_${string}`]: string | undefined;
+  /**
+   * Effect references (#56): the effect entries this command's behaviour
+   * executes — damage, poison, whatever the referenced primitives declare.
+   * The registry validates at load that every reference resolves (the
+   * npc→monsterId precedent: a dangling reference is a broken content set,
+   * and it fails at startup, not mid-strike).
+   */
+  readonly effects?: readonly string[];
 }
 
 /**

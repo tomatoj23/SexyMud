@@ -1,0 +1,9 @@
+{
+  "id": "eff-strike-fist",
+  "primitives": [
+    {
+      "type": "instant-damage"
+    }
+  ],
+  "description": "劈面便是一记硬拳。"
+}

@@ -340,18 +340,22 @@ describe("equipment 词缀：string[] 孤例改齐（ADR-0029 §1）", () => {
 });
 
 describe("覆盖面：schemas/ 下的条目集合一个不漏", () => {
-  it("只有 config 五类与两个被引用库不在条目集合之列", () => {
+  it("只有 config 七类与两个被引用库不在条目集合之列", () => {
     // Derived from the directory, so adding a schema file forces a decision
     // here instead of letting a collection quietly go without the contract.
     // `config.calendar` joined the exempt list with #21: a calendar is not an
     // entry collection (spec/04 §3); `config.world` joined with #49 — the
-    // start-room declaration is not one either.
+    // start-room declaration is not one either; `config.character` and
+    // `config.combat-tiers` joined with #56 — the character-model declaration
+    // and the combat band table are config tables, not entry collections.
     const onDisk = readdirSync(schemasDir).filter((name) => name.endsWith(".schema.json")).sort();
     const covered = new Set(ENTRY_FIXTURES.map((fixture) => `${fixture.collection}.schema.json`));
     expect(onDisk.filter((name) => !covered.has(name))).toEqual([
       "common.schema.json",
       "condition.schema.json",
       "config.calendar.schema.json",
+      "config.character.schema.json",
+      "config.combat-tiers.schema.json",
       "config.dimensions.schema.json",
       "config.display-tiers.schema.json",
       "config.settings.schema.json",

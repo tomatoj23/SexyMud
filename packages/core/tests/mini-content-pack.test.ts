@@ -887,6 +887,7 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
       rooms: pack.rooms.map((other) => (other.id === room.id ? room : other)),
       npcs: pack.npcs,
       monsters: pack.monsters,
+      effects: pack.effects,
     });
 
     // `elements` for `element`: no schema can see this — entry schemas do not
@@ -935,7 +936,7 @@ describe("the dimensions table travels with the pack (ADR-0029 §5)", () => {
     );
     expect(() =>
       createContentRegistry(
-        { commands: pack.commands, rooms, npcs: pack.npcs, monsters: pack.monsters },
+        { commands: pack.commands, rooms, npcs: pack.npcs, monsters: pack.monsters, effects: pack.effects },
         { dimensions: pack.dimensions },
       ),
     ).toThrow(/has_tag references unknown dimension "clearence"/);

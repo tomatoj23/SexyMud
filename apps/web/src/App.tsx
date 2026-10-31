@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { setupCloud, type CloudStack } from "./cloudSetup.js";
 import type { CloudSync } from "./game/cloudSync.js";
 import { LocalSaveStore, LocalSaveUnavailableError } from "./game/localSaveStore.js";
+import { createHostClock } from "./game/hostClock.js";
 import { loadShippedPack } from "./game/browserPack.js";
 import { createPlayableSession } from "./game/gameSession.js";
 import type { GameSession } from "./game/gameSession.js";
@@ -30,6 +31,14 @@ const VIEWPORT = { width: 40, height: 24 };
  * OWNS this one (its reader, #52's 继续按钮, reads the same key).
  */
 const GAME_SLOT_KEY = "game-slot-1";
+
+/**
+ * One tick is two real seconds (#56): the tracer bullet's poison hops every
+ * couple of commands, and the world's "now" otherwise never moved (every
+ * command ran at the same tick). A HOST parameter by ruling (O5) — the
+ * engine speaks ticks only.
+ */
+const TICK_SECONDS = 2;
 
 /**
  * Host shell. The tracer bullet (#51) makes the game the door: the title
@@ -77,6 +86,7 @@ export default function App() {
       store: gameSlot,
       viewport: VIEWPORT,
       copy: WEB_HOST_COPY,
+      hostClock: createHostClock({ tickSeconds: TICK_SECONDS }),
     });
 
   const startNewGame = (name: string) => {

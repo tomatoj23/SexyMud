@@ -69,6 +69,28 @@ export function createTestClock(startTick = 0): TestClock {
 }
 
 /**
+ * A TestClock OVER an existing TickClock — the world side's own (#56): the
+ * harness's clock face with the high-water mark owned by the runtime, so a
+ * host session wiring the harness onto a live world has ONE "now" (the
+ * dispatches, the settler and the status line all read the same mark)
+ * instead of the harness's private copy drifting beside it.
+ */
+export function testClockOver(clock: TickClock): TestClock {
+  let pending = clock.nowTick();
+  return {
+    nowTick: () => clock.nowTick(),
+    observe(tick) {
+      pending = clock.observe(tick);
+      return pending;
+    },
+    nextTick: () => pending,
+    advance(ticks) {
+      pending += ticks;
+    },
+  };
+}
+
+/**
  * The input side of one command (issue #36): who typed what, and when. The
  * harness owns the `seq` counter — it is the session's, not the call's.
  */

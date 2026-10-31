@@ -156,10 +156,14 @@ describe("commands.schema.json (draft-07, $ref library consumer)", () => {
     // bans what neither properties nor patternProperties matched.
     expect(validate({ ...minimal, err_use: "…" })).toBe(true);
 
+    // Effect references are a declared field since #56 (an array of effect
+    // ids; the dangling-reference check is the registry's, at load).
+    expect(validate({ ...minimal, effects: ["eff-001"] })).toBe(true);
+    expect(validate({ ...minimal, effects: "eff-001" })).toBe(false);
+
     // Superseded field shapes must not sneak back in (aliases folded into
-    // verbs by spec/02 §6; effects are a later milestone's field).
+    // verbs by spec/02 §6).
     expect(validate({ ...minimal, aliases: ["look"] })).toBe(false);
-    expect(validate({ ...minimal, effects: ["eff-001"] })).toBe(false);
     expect(validate({ ...minimal, description: "look around" })).toBe(false);
   });
 });

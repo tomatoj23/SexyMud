@@ -10,6 +10,7 @@ import type { CommandSpec } from "../src/command/pipeline.js";
 import { verbTableFrom } from "../src/command/resolve.js";
 import { commandSetSources, commandSpecFromEntry } from "../src/command/entry.js";
 import type { CommandEntry } from "../src/command/entry.js";
+import type { EffectEntry } from "../src/effects/entry.js";
 import { createContentRegistry } from "../src/content/registry.js";
 import type { ExitEntry, NpcEntry, RoomEntry } from "../src/world/entry.js";
 
@@ -43,6 +44,7 @@ function loadWorld() {
     rooms: loadCollection<RoomEntry>("rooms"),
     npcs: loadCollection<NpcEntry>("npcs"),
     monsters: loadCollection<{ id: string }>("monster"),
+    effects: loadCollection<EffectEntry>("effects"),
   });
 }
 

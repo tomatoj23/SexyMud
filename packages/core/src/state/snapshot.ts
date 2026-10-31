@@ -11,7 +11,7 @@ import {
   SLOT_RULES,
   validateSlots,
 } from "./slot-rules.js";
-import type { EntityState, WorldState } from "./tree.js";
+import type { CombatSession, EntityState, WorldState } from "./tree.js";
 import type { DueItem } from "../time/due.js";
 
 /**
@@ -75,6 +75,11 @@ import type { DueItem } from "../time/due.js";
  * serializeWorld writes it only when set, and restore leaves its absence
  * alone (the "unfilled" row, state/slot-rules.ts).
  *
+ * `attrs` and `combat` (#56) join the optional tail the same in-version way
+ * (`tags` precedent, no v3): an absent `attrs` reads as the empty map, an
+ * absent `combat` reads as "no fight" (the second "unfilled" row) — and a
+ * present-but-malformed either is refused at load, like every late slot.
+ *
  * Each optional slot's tolerance is one row in `state/slot-rules.ts`, and
  * the reader half of that row says one thing: a late optional slot is
  * tolerated when ABSENT and refused when MALFORMED. `id` is the one field
@@ -83,9 +88,11 @@ import type { DueItem } from "../time/due.js";
  */
 export type EntityRecord = Omit<
   EntityState,
-  DerivedEntityKey | "tags" | "lastSeenTick" | "cooldowns"
+  DerivedEntityKey | "tags" | "attrs" | "combat" | "lastSeenTick" | "cooldowns"
 > & {
   tags?: TagMap;
+  attrs?: Record<string, number>;
+  combat?: CombatSession;
   lastSeenTick?: number;
   cooldowns?: Record<string, number>;
 };
@@ -186,6 +193,20 @@ function canonicalCooldowns(cooldowns: Record<string, number> | undefined): Reco
 }
 
 /**
+ * An attrs map in canonical form: keys ascending (#56, the `cooldowns`
+ * precedent). The slot's canonicalizer lives HERE rather than in its
+ * SLOT_RULES row on purpose — a row shapes load tolerance, serialization
+ * order is the serializer's own promise ("not a row", spec/04 §1.4).
+ */
+function canonicalAttrs(attrs: Record<string, number> | undefined): Record<string, number> {
+  const canonical: Record<string, number> = {};
+  for (const key of Object.keys(attrs ?? {}).sort()) {
+    canonical[key] = attrs?.[key] ?? 0;
+  }
+  return canonical;
+}
+
+/**
  * Due items in canonical form: ascending by `dueTick`, stable within one tick
  * (the `flags` precedent again — the promise is the serializer's, never the
  * writer's). `DueBucket.snapshot()` already returns them in this order; the
@@ -219,7 +240,7 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
     // JS host's garbage) — writing either would be the engine handing its
     // own load path a key it rejects outright (owner ruling 2026-10-25, #52
     // audit N-1: write-side elision, read-side refusal).
-    const { name, ...persistent } = state;
+    const { name, combat, ...persistent } = state;
     // Canonicalize FIRST, strip LAST: the live arrays' order is untouched,
     // and a field cannot be resurrected by a later step — the strip is the
     // last thing that happens to a record, so the table stays authoritative
@@ -228,8 +249,33 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
       {
         ...persistent,
         ...(typeof name === "string" && name !== "" ? { name } : {}),
+        // The combat session rides only when one exists (#56): "a field
+        // that was never written is not persisted" — no-fight records stay
+        // byte-identical to what they were before the slot existed. The
+        // copy is rebuilt field by field so the record's key order (and
+        // therefore its bytes) never depends on the live object's history.
+        ...(combat !== undefined
+          ? {
+              combat: {
+                targetNpcId: combat.targetNpcId,
+                targetHp: combat.targetHp,
+                targetDead: combat.targetDead,
+                ...(combat.dot !== undefined
+                  ? {
+                      dot: {
+                        effectId: combat.dot.effectId,
+                        startTick: combat.dot.startTick,
+                        applied: combat.dot.applied,
+                        perTick: combat.dot.perTick,
+                      },
+                    }
+                  : {}),
+              },
+            }
+          : {}),
         flags: [...state.flags].sort(),
         tags: canonicalTags(state.tags),
+        attrs: canonicalAttrs(state.attrs),
         cooldowns: canonicalCooldowns(state.cooldowns),
       },
       DERIVED_ENTITY_KEYS,

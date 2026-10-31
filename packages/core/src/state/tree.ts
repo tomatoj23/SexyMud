@@ -44,6 +44,29 @@ export interface EntityState {
    */
   tags: TagMap;
   /**
+   * Numeric attributes (#56, D3): `attr key → value`, the engine's FIRST
+   * designed shape for the slot spec/04 §4.3 refused to open early. WHICH
+   * keys exist and what they mean is entirely the pack's character-model
+   * declaration (content/config/character.json) — the engine stores, seeds
+   * and answers them and knows no key (ADR-0009 §10: key lookup and set
+   * intersection only). Seeded `{}` by `addEntity`; a NEW GAME seeds the
+   * declared table over it (seedCharacterAttrs, combat/character use); an
+   * old save's absence means empty (the `tags` precedent, in-version
+   * landing — no v3).
+   */
+  attrs: Record<string, number>;
+  /**
+   * The combat SESSION (#56, D2/D11): not an HP store — a session bound to
+   * one target NPC, persisted with the save (resume the fight, the NPC's
+   * death survives the reload) because NPCs are static presence and never
+   * enter the tree (ADR-0028), so the player's own state is the only shelf
+   * their fight can live on. ABSENT means no fight (the `name` row's
+   * "unfilled" policy: absence is a reading of its own — there is no empty
+   * session to invent). C1 fills the minimal fields; C2 grows the RHYTHM
+   * fields (interval, next-strike tick) on this SAME slot, no rename.
+   */
+  combat?: CombatSession;
+  /**
    * The tick this entity was last settled TO (spec/04 §4.3, ADR-0034 §2) —
    * the start of the entity layer's next advance, and the reason an offline
    * span is ever non-zero. The entity layer advances the ACTOR only, so an
@@ -85,6 +108,43 @@ export interface EntityState {
    * state/slot-rules.ts, absent "unfilled").
    */
   name?: string;
+}
+
+/**
+ * One poison instance's ledger, riding the combat session (#56, D11): the
+ * observation-time compensation settlement's write-back surface ("write back
+ * `applied`", spec/04 §4.2). `effectId` is the look-back channel — interval
+ * and maxPulses are deliberately NOT persisted (they are entry data, read
+ * back through the id when the poison resumes after a reload); `perTick` is
+ * the pulse damage COMPUTED AT APPLICATION (T11②: the number is frozen into
+ * the ledger, never re-derived per pulse).
+ */
+export interface DotLedger {
+  /** The effect entry this instance was armed from (the look-back key). */
+  readonly effectId: string;
+  /** The tick the poison was applied at (pulse 0; pulse k is due at startTick + k×interval). */
+  readonly startTick: number;
+  /** Pulses already applied — the compensation's resume point. */
+  applied: number;
+  /** The pulse damage, computed at application time (T11②). */
+  readonly perTick: number;
+}
+
+/**
+ * The combat session's minimal C1 fields (#56, D11): one target NPC (C1 is
+ * single-target, D12), their mutable HP and death mark — the NPC's whole
+ * fight-side existence, since it has no tree row — and the poison instance
+ * on them, when one is armed. C2 grows the rhythm fields here.
+ */
+export interface CombatSession {
+  /** The npc entry id the fight is with (single target, D12). */
+  readonly targetNpcId: string;
+  /** The target's current HP (seeded from the monster entry's stats at first strike). */
+  targetHp: number;
+  /** The target's death mark: set when HP reaches the threshold; further strikes are refused. */
+  targetDead: boolean;
+  /** The poison instance on the target, when one is armed (single instance, C1). */
+  dot?: DotLedger;
 }
 
 /**
