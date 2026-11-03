@@ -95,6 +95,14 @@ export interface MonsterStats {
   readonly externalDefense?: number;
   readonly internalDefense?: number;
   readonly dodge?: number;
+  /**
+   * The NPC's auto-strike interval in ticks (#57 D8/D12): OPTIONAL with an
+   * engine default — the "an undeclared field reads its default" precedent
+   * (an undeclared `source` reads external), so a standing entry that never
+   * declared one stays legal. Read back from the record at every settlement,
+   * never persisted (the poison effectId's look-back law).
+   */
+  readonly attackIntervalTicks?: number;
 }
 
 /**
@@ -119,6 +127,13 @@ export interface MonsterRecord extends EntryCommon {
   readonly source?: string;
   /** The monster attack's element word; absent reads the combat default. */
   readonly element?: string;
+  /**
+   * Whether this monster opens the fight itself when the player walks in
+   * (#57 D14, AC9): an optional behaviour flag, absent reads false (the
+   * standing passive behaviour). Top level, beside `source` — a behaviour
+   * declaration, not one of `stats`' numbers.
+   */
+  readonly proactive?: boolean;
 }
 
 /**

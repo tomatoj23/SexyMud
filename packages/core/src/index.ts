@@ -117,22 +117,36 @@ export type {
   EffectExecutionContext,
   EffectPrimitiveHandler,
 } from "./effects/registry.js";
-// The combat kernel (#56): the strike orchestration adapter, the shipped
-// primitives, the arithmetic, the character-model seeds, and the poison's
-// observation-time compensation settle handler.
+// The combat kernel (#56/#57): the strike orchestration adapter, the shared
+// blow, the shipped primitives, the arithmetic, the character-model seeds,
+// the rhythm-bearing settle handler, the load-point restart, the
+// combat-bearing traversal (escape + proactive), and the declarative
+// in-combat gate.
 export { strikeSpec } from "./combat/strike.js";
-export type { StrikeSpecOptions } from "./combat/strike.js";
+export { playerBlow } from "./combat/blow.js";
+export type { BlowOptions, BlowPorts, StrikeSpecOptions } from "./combat/blow.js";
 export { defaultEffectPrimitives } from "./combat/primitives.js";
 export {
   bandOf,
+  clampedHp,
+  DEFAULT_NPC_ATTACK_INTERVAL_TICKS,
   DEFAULT_STRIKE_ELEMENT,
   DEFAULT_STRIKE_SOURCE,
   monsterCombatFace,
   readDefenseK,
-  retaliationDamage,
+  readEscapeChance,
   strikeDamage,
 } from "./combat/damage.js";
-export { createDotSettleHandler, primaryResourceOf, seedCharacterAttrs } from "./combat/session.js";
+export {
+  createCombatSettleHandler,
+  npcStrike,
+  primaryResourceOf,
+  resumeCombatSession,
+  seedCharacterAttrs,
+} from "./combat/session.js";
+export type { CombatSettleOptions } from "./combat/session.js";
+export { combatTraversalSpec, COMBAT_ESCAPE_EVENT } from "./combat/traversal.js";
+export { guardNotInCombat, IN_COMBAT } from "./combat/guard.js";
 export { grantFlagSpec } from "./world/flag.js";
 export { resolveNpcTarget } from "./world/target.js";
 export type { NpcTargetResolution, TargetFailure } from "./world/target.js";

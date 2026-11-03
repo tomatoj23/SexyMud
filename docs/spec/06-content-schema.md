@@ -1,6 +1,6 @@
 # 06 · 内容集合与 Schema
 
-> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**23 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）、**`effects.schema.json`（#56 激活：tick 化改名＋`maxPulses` 补声明，首批两条目）**是**新落的集合 schema**，其余 **15 个**需随本规格重估（**限定语**：= 23 − 4 新落集合 − 2 被引用库 − 2 已落地新 config 表〔character／combat-tiers〕；这 15 个含 `config` 旧五类与 **10 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（7 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕／`world`〔#49 新增〕／`character`＋`combat-tiers`〔#56 新增〕）、`commands/`（6 条）、`rooms/`（4 间）、`npcs/`（3 位）、`monster/`（1 条）、`effects/`（2 条〔#56〕）。
+> **状态**：`content:check` 管线**已实现**（M1-T5 起支持跨文件 `$ref`）；**23 个** schema 中 `condition.schema.json`（M1-T3）与 `common.schema.json`（M3-T1）是**被引用库**（不对应任何集合），`commands.schema.json`（M1-T5）、`rooms.schema.json` ＋ `npcs.schema.json`（M1-T6）、**`effects.schema.json`（#56 激活：tick 化改名＋`maxPulses` 补声明，首批两条目）**是**新落的集合 schema**，其余 **15 个**需随本规格重估（**限定语**：= 23 − 4 新落集合 − 2 被引用库 − 2 已落地新 config 表〔character／combat-tiers〕；这 15 个含 `config` 旧五类与 **10 个**放置期集合 schema；`monster.schema.json` 已随首批怪物条目 `mon-lq-001` 进入编译与门禁，但重估仍未做）。`content/` 现有 `config/`（7 个 JSON：`dimensions`／`display-tiers`／`settings`／`calendar`〔M4-T2 新增〕／`world`〔#49 新增〕／`character`＋`combat-tiers`〔#56 新增〕）、`commands/`（6 条）、`rooms/`（5 间〔#57 新增镇北破庙〕）、`npcs/`（4 位〔#57 新增破庙泼皮〕）、`monster/`（2 条〔#57 新增主动怪 mon-lq-002：`proactive: true`＋`attackIntervalTicks`〕）、`effects/`（2 条〔#56〕）。
 > **依据**：ADR-0003、ADR-0008、ADR-0025 记录（配置三分法）、`docs/agents/content.md`（内容管线权威）。
 
 ## 1. 集合
@@ -99,6 +99,8 @@ corepack pnpm content:check
 ### 6.1 `settings.json` 首发建议 9 类
 
 `combat` / `progression` / `derivedStats` / `economy` / `rng` / `caps` / `time` / `newPlayerDefaults` / `throttles`
+
+> `combat` 组既有 `defenseK`（减伤常数）与 `formula` 人可读串（#56 起）；#57 增 `escapeChance`（逃逸成功率，全局概率常数——实体影响面 C3+）。**出手间隔不进本表**：玩家间隔＝`character.json` 的 `strikeIntervalTicks`（必填声明位）、NPC 间隔＝怪物 `stats.attackIntervalTicks`（可选＋引擎缺省）——实体差异面 ≠ 全局常数。
 
 顶层键 = 这九类 + `id`，schema 已封闭（`additionalProperties: false`）——类别是**结构**（新增类别 = Schema 变更，三处同步），组内键是**调参**（保持开放）。
 

@@ -1,12 +1,24 @@
 {
   "id": "cmd-rest",
-  "verbs": ["歇", "歇息", "rest"],
+  "verbs": [
+    "歇",
+    "歇息",
+    "rest"
+  ],
   "argForm": "none",
   "cmdset": "character",
   "priority": 0,
+  "notInCombat": true,
   "preconditions": {
     "default": true,
-    "use": { "not": [{ "has_state": "wounded" }] }
+    "use": {
+      "not": [
+        {
+          "has_state": "wounded"
+        }
+      ]
+    }
   },
-  "err_use": "你伤势未愈，此刻无法安歇。"
+  "err_use": "你伤势未愈，此刻无法安歇。",
+  "err_inCombat": "刀兵未歇，此刻不成。"
 }

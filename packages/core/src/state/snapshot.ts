@@ -254,12 +254,25 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
         // byte-identical to what they were before the slot existed. The
         // copy is rebuilt field by field so the record's key order (and
         // therefore its bytes) never depends on the live object's history.
+        // The rhythm pair (#57 D13) rides only when BOTH sides' ticks are
+        // set — write-side symmetry with the read side's pair validation
+        // (the #52 N-1 law: the engine never writes a key its own load
+        // path would refuse), and a session still without rhythm data
+        // (never observed since the save) stays byte-identical to its C1
+        // shape.
         ...(combat !== undefined
           ? {
               combat: {
                 targetNpcId: combat.targetNpcId,
                 targetHp: combat.targetHp,
                 targetDead: combat.targetDead,
+                ...(combat.playerNextStrikeTick !== undefined &&
+                  combat.npcNextStrikeTick !== undefined
+                  ? {
+                      playerNextStrikeTick: combat.playerNextStrikeTick,
+                      npcNextStrikeTick: combat.npcNextStrikeTick,
+                    }
+                  : {}),
                 ...(combat.dot !== undefined
                   ? {
                       dot: {

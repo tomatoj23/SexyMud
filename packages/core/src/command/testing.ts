@@ -207,6 +207,21 @@ export interface CommandHarness<W> {
    * the shorthand for `{ raw }`).
    */
   call(spec: CommandSpec<W>, input: string | CommandInput): CallOutcome;
+  /**
+   * One ACTOR-BEARING beat (#57 C2-T7): advances the entity layer for an
+   * actor WITHOUT a command — the host heartbeat's engine-side face. Unlike
+   * the driver's own `heartbeat` (world layer alone, no actor, ADR-0034
+   * §5), this settles the ACTOR's entity layer, which is what "standing in
+   * a fight while idle" needs: the hands come due tick by tick and the
+   * player reads them live.
+   *
+   * The seq comes from the SAME monotonic counter the commands use — a beat
+   * is not a forged command, but its events keep "seq N = everything that
+   * happened at N" one line. The tick defaults to the harness clock's next;
+   * a host heartbeat passes the wall's reading. Settling is idempotent at a
+   * standing clock: the span is empty and nothing emits.
+   */
+  beat(input?: { tick?: number; actorId?: string }): Message[];
 }
 
 /**
@@ -288,6 +303,22 @@ export function createCommandHarness<W>(options: HarnessOptions<W>): CommandHarn
 
   return {
     clock,
+    beat(input = {}) {
+      // The settle hook is the whole point; without one the beat only
+      // raises the mark (the driver's heartbeat semantics), which keeps the
+      // no-advance harness honest without inventing an advance.
+      const toTick = input.tick ?? clock.nextTick();
+      const seq = nextSeq++;
+      const settled = options.session?.settle
+        ? options.session.settle({
+            toTick,
+            seq,
+            actorId: input.actorId ?? "actor-1",
+          })
+        : [];
+      clock.observe(toTick);
+      return settled;
+    },
     call(spec, input) {
       if (typeof input === "object" && Object.hasOwn(input, "seq")) {
         // Same species as the retired options: a non-literal descriptor can

@@ -1,0 +1,15 @@
+{
+  "id": "mon-lq-002",
+  "name": "泼皮",
+  "role": "普通",
+  "source": "external",
+  "proactive": true,
+  "stats": {
+    "maxHp": 60,
+    "attack": 8,
+    "externalDefense": 2,
+    "dodge": 0,
+    "attackIntervalTicks": 2
+  },
+  "description": "镇北破庙里赖着的泼皮，见生人近前便撸袖挥拳，全无半点江湖规矩。"
+}

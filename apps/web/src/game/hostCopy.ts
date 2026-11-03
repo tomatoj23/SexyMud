@@ -48,6 +48,15 @@ export interface HostCopy {
    */
   readonly flagGrantedLine: string;
   /**
+   * The escape's two lines (#57 C2-T5): the combatEscape event rides the
+   * flagGranted precedent — an extension arm the SESSION words, not the
+   * renderer. `escapeOkLine` reads on a disengage (the session cleared,
+   * the move runs); `escapeFailLine` on a pinned attempt (the fight holds,
+   * a hand's time spent).
+   */
+  readonly escapeOkLine: string;
+  readonly escapeFailLine: string;
+  /**
    * The visible line when a dispatch itself threw (#56 audit): the engine's
    * loud wiring failures reach the player as one line, never a frozen
    * terminal (the save-failure line's own family).
@@ -141,6 +150,8 @@ export const WEB_HOST_COPY: HostCopy = {
     return `「${raw}」是什么招式？`;
   },
   flagGrantedLine: "掌柜的收下银子，递给你一块住客木牌：客官往后院请便。",
+  escapeOkLine: "你且战且退，脱身而去。",
+  escapeFailLine: "对方缠得紧，你脱不开身。",
   submitFailed: "（这一下没能出手——世界配置有误，稍后再试。）",
   saveFailed: "（本地存档暂不可用，这一步之后的进度未能保存。）",
   openFailed: "开局失败——世界配置有误，无法进入江湖。",

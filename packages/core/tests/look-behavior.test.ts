@@ -332,6 +332,7 @@ describe("the look factory adapter over real content (ADR-0028 §2)", () => {
             exits: [
               { exitId: "exit-lq-002-south", direction: "南" },
               { exitId: "exit-lq-002-west", direction: "西" },
+              { exitId: "exit-lq-002-north", direction: "北" },
             ],
             staticPresence: [],
             occupants: [],

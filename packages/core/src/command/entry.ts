@@ -80,6 +80,16 @@ export interface CommandEntry extends EntryCommon {
    * and it fails at startup, not mid-strike).
    */
   readonly effects?: readonly string[];
+  /**
+   * The in-combat gate (#57 D7, AC8): `true` declares "this command may not
+   * run mid-fight" — a DECLARATIVE field, because a gate table belongs with
+   * the content pack, not the engine (the rejected alternative to this
+   * field). Absent means allowed (say/examine/look ride free); movement is
+   * never gated this way — mid-fight movement is the ESCAPE channel, a
+   * behaviour of its own. The engine's execution-stage check reads the
+   * combat slot and refuses through the entry's own `err_inCombat` copy.
+   */
+  readonly notInCombat?: true;
 }
 
 /**

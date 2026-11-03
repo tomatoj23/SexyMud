@@ -104,11 +104,20 @@ export interface CharacterTable {
   /** The death threshold: the primary resource at or below this means death. */
   readonly deathAtOrBelow: number;
   /**
+   * The player's auto-strike interval in ticks (#57 D8/D12, AC10): a
+   * declaration-table field, NOT an attrs key — the settlement reads it
+   * straight from the table every time (the intervals are never persisted,
+   * the poison effectId's look-back law). MANDATORY like the rest of the
+   * table: a character model without a rhythm seat is an incomplete
+   * assembly diagram.
+   */
+  readonly strikeIntervalTicks: number;
+  /**
    * The strike operand channels (T4/T10's mandatory field face): which attr
-   * key feeds the player→npc formula's attack operand, which would feed a
-   * defense operand (declared for C2's two-way formula; C1's retaliation is
-   * bare damage and reads no player key — the seat is declared, not used),
-   * and the element/source vocabulary words a C1 bare-hand strike carries.
+   * key feeds the player→npc formula's attack operand, which feeds the
+   * defense operand of the NPC→player formula (C2's two-way formula — C1's
+   * retaliation was bare damage and read no player key), and the
+   * element/source vocabulary words a bare-hand strike carries.
    */
   readonly strike: {
     readonly attackAttr: string;
@@ -317,6 +326,15 @@ export function assertCharacterTable(character: CharacterTable | undefined): voi
   }
   if (typeof deathAtOrBelow !== "number" || !Number.isFinite(deathAtOrBelow)) {
     throw new Error("content registry: character table must declare deathAtOrBelow as a finite number");
+  }
+  if (
+    typeof character.strikeIntervalTicks !== "number" ||
+    !Number.isSafeInteger(character.strikeIntervalTicks) ||
+    character.strikeIntervalTicks < 1
+  ) {
+    throw new Error(
+      "content registry: character table must declare strikeIntervalTicks as a positive integer (#57)",
+    );
   }
   if (
     !isPlainObject(strike) ||

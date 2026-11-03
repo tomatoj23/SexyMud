@@ -126,6 +126,25 @@ const SUPERSEDED = [
     reason:
       "Evennia 的属性命名空间，本作不采用（CONTEXT.md「状态持久化」）：typed 状态对象 + `derived` 标记，没有 `db`／`ndb` 命名空间",
   },
+  {
+    // #57 D17①: the round-vocabulary retirement. A bare substring rule — no
+    // negative lookahead (it would miss real uses like 「推进战斗回合并…」;
+    // the `db.*` precedent above is a lookBEHIND, not ahead). The gate guards
+    // FUTURE writing only: the two residual uses at gate time sat on lines
+    // the line-level allow rules already skipped, and were pinned by hand.
+    term: "战斗回合",
+    unless: /剔除|禁用|上游|_Avoid_/,
+    reason:
+      "「回合」词族技术措辞禁用（ADR-0042 D17）：指心跳则与出手不对应（per-entity 间隔下一拍内可能无人出手或多人出手），指出手则双方间隔不同无共同边界——写「双方按各自间隔出手」",
+  },
+  {
+    // Pure substring: the 「每回＋合并」 false merge is a known, accepted
+    // cost (出现即改措辞) — splitting the word to dodge the gate is worse.
+    term: "每回合",
+    unless: /剔除|禁用|上游|_Avoid_/,
+    reason:
+      "「回合」词族技术措辞禁用（ADR-0042 D17）——同「战斗回合」条；写「每次出手／每个间隔」",
+  },
 ];
 
 /**

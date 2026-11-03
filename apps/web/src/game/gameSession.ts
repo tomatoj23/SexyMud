@@ -3,8 +3,10 @@ import {
   chunkOutput,
   collectMeta,
   commandSetSources,
+  combatTraversalSpec,
+  COMBAT_ESCAPE_EVENT,
   createCommandHarness,
-  createDotSettleHandler,
+  createCombatSettleHandler,
   createDueBucket,
   createEntity,
   createGameTime,
@@ -12,17 +14,18 @@ import {
   createSettler,
   createWorldRuntime,
   grantFlagSpec,
+  guardNotInCombat,
   lineOf,
   lookSpec,
   renderEvent,
   resolve,
+  resumeCombatSession,
   sanitizePlayerInput,
   saySpec,
   seedCharacterAttrs,
   serializeWorld,
   strikeSpec,
   testClockOver,
-  traversalSpec,
   verbTableFrom,
 } from "@sexymud/core";
 import type {
@@ -32,6 +35,7 @@ import type {
   CommandHarness,
   CommandSpec,
   DueBucket,
+  Message,
   OutputLine,
   RenderContent,
   Rng,
@@ -116,6 +120,15 @@ export const DEFAULT_FACTORY_ADAPTERS: readonly FactoryAdapter[] = [
   { commandId: "cmd-lodge", spec: (entry) => grantFlagSpec(entry, "inn-lodger") },
 ];
 
+/**
+ * The strike command's effect chain (#57): the settle handler's scheduled
+ * player hands walk the SAME chain the typed opening hand does — one
+ * behaviour, typed or scheduled. The id travels with this host's binding
+ * table (the adapters above name the same entry); a pack swap swaps both.
+ */
+const strikeEffects = (pack: LoadedPack): readonly string[] =>
+  pack.registry.command("cmd-strike").effects ?? [];
+
 export interface GameSessionOptions {
   readonly pack: LoadedPack;
   readonly store: SaveStore;
@@ -133,6 +146,14 @@ export interface GameSessionOptions {
    * advance the wall).
    */
   readonly hostClock?: HostClock;
+  /**
+   * The idle-combat heartbeat's period in milliseconds (#57 C2-T7): with a
+   * host clock wired, the session advances the standing fight on THIS timer
+   * so an idle player reads the hands live (the "standing in a fight while
+   * idle" obligation). Default 1000; the beat is idempotent at a standing
+   * wall, so a period finer than the pack's tick is harmless.
+   */
+  readonly heartbeatMs?: number;
   /** Rendered, folded and chunked output, ready for the terminal window. */
   readonly onOutput: (chunks: readonly (readonly OutputLine[])[]) => void;
   /** The status line's new face, after every settled dispatch. */
@@ -152,6 +173,14 @@ export interface GameSession {
   continueGame(): Promise<"resumed" | "no-save">;
   /** One player input through the full chain, autosaved after settlement. */
   submit(raw: string): Promise<void>;
+  /**
+   * One manual heartbeat (#57 C2-T7): advances the standing fight to the
+   * wall's now and renders what came due — the same chain the automatic
+   * timer drives, exposed for hosts and tests that keep their own clock.
+   */
+  heartbeat(): Promise<void>;
+  /** Stops the automatic heartbeat timer — the 「回标题」 path's cleanup. */
+  dispose(): void;
   /** The player's display name (the actor id is the fixed `player`). */
   playerName(): string;
   status(): StatusPanel;
@@ -215,11 +244,15 @@ export function createGameSession(options: GameSessionOptions): GameSession {
   const wireHarness = (live: { runtime: WorldRuntime; rng: Rng; bucket: DueBucket }): void => {
     // ONE "now": the harness's clock face bridges the runtime's own mark
     // (#56), so the dispatches, the settler and the status line all read
-    // the same number — and the advance settles the poison with it.
+    // the same number — and the advance settles the poison and the fight's
+    // hands with it (#57: one scheduler, due-tick order).
     const settler = createSettler({
       state: live.runtime.state,
       clock: live.runtime.clock,
-      entity: createDotSettleHandler(live.runtime),
+      entity: createCombatSettleHandler(live.runtime, {
+        rng: live.rng,
+        effects: strikeEffects(pack),
+      }),
     });
     harness = createCommandHarness<WorldRuntime>({
       world: { live: live.runtime },
@@ -271,10 +304,16 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       // with the pack ("换包换表"), and a stale table is a wiring bug.
       const entry = pack.registry.command(adapter.commandId);
       bound.push(entry);
-      bindings.set(entry.id, () => adapter.spec(entry));
+      // The entry's own notInCombat declaration wraps its spec (#57 D7):
+      // the gate table rides with the content, the wrapper rides with the
+      // binding — an entry without the field wraps to itself.
+      bindings.set(entry.id, () => guardNotInCombat(entry, adapter.spec(entry)));
     }
     for (const exit of room.exits) {
-      bindings.set(exit.id, () => traversalSpec(exit));
+      // The combat-bearing traversal (#57): the escape roll before the move,
+      // the proactive edge after it — the pure adapter stands in for packs
+      // without fights.
+      bindings.set(exit.id, () => combatTraversalSpec(exit));
     }
     return {
       sources: [...commandSetSources(bound), ...commandSetSources(room.exits)],
@@ -312,10 +351,10 @@ export function createGameSession(options: GameSessionOptions): GameSession {
     }
   };
 
-  /** One harness dispatch, settled: render → fold/chunk → status → autosave. */
-  const settle = async (outcome: CallOutcome) => {
+  /** One message batch settled: render → fold/chunk → status → autosave — the dispatch and the heartbeat share it. */
+  const settleMessages = async (messages: readonly Message[]): Promise<void> => {
     const lines: OutputLine[] = [];
-    for (const message of outcome.messages) {
+    for (const message of messages) {
       if (message.to !== "player") continue;
       // A granted flag's event is an extension arm, and the C1 rendering
       // seam renders the engine's arms only (#56 T1) — the SESSION words
@@ -324,12 +363,32 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         lines.push(lineOf([{ text: copy.flagGrantedLine, style: "plain" }]));
         continue;
       }
+      // The escape's two outcomes ride the same extension-arm precedent
+      // (#57 C2-T5): the event is semantic, the words are this host's.
+      if (message.event.type === COMBAT_ESCAPE_EVENT) {
+        const outcomeKind = (message.event as { outcome?: string }).outcome;
+        lines.push(
+          lineOf([
+            {
+              text:
+                outcomeKind === "escaped"
+                  ? copy.escapeOkLine
+                  : copy.escapeFailLine,
+              style: "plain",
+            },
+          ]),
+        );
+        continue;
+      }
       lines.push(...renderEvent(message.event, { observerId: "player" }, render));
     }
     emit(lines);
     onStatus(statusPanel());
     await autosave();
   };
+
+  /** One harness dispatch, settled. */
+  const settle = (outcome: CallOutcome) => settleMessages(outcome.messages);
 
   const autosave = async (): Promise<void> => {
     if (runtime === undefined || rng === undefined || bucket === undefined) return;
@@ -351,6 +410,35 @@ export function createGameSession(options: GameSessionOptions): GameSession {
    */
   const dispatchFailedLine = (): OutputLine =>
     lineOf([{ text: copy.submitFailed, style: "danger" }]);
+
+  /**
+   * The idle-combat heartbeat (#57 C2-T7): one actor-bearing beat through
+   * the SAME harness, settle chain and autosave a command rides — the
+   * standing fight advances to the wall's now and the idle player reads
+   * the hands live. No wall clock wired means no beat to take (the pre-C2
+   * tests' world); a standing wall settles an empty span and changes
+   * nothing, which is what makes the automatic timer harmless in jsdom.
+   */
+  const heartbeat = async (): Promise<void> => {
+    if (runtime === undefined || harness === undefined) return;
+    const tick = options.hostClock?.nowTick();
+    if (tick === undefined) return;
+    try {
+      await settleMessages(harness.beat({ tick, actorId: "player" }));
+    } catch {
+      // The submit channel's own family (#56 audit): a wiring failure in
+      // the beat is one visible line, never an unhandled rejection.
+      emit([dispatchFailedLine()]);
+    }
+  };
+
+  // The automatic timer: the moment a wall clock is wired, the standing
+  // fight stops waiting for the player's next input. dispose() clears it —
+  // the 「回标题」 path's one cleanup duty.
+  const heartbeatTimer =
+    options.hostClock === undefined
+      ? undefined
+      : setInterval(() => void heartbeat(), options.heartbeatMs ?? 1000);
 
   return {
     async startNewGame(rawName) {
@@ -478,6 +566,17 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       ) {
         seedCharacterAttrs(resumedState, characterTable);
       }
+      // The load-point rhythm restart (#57 D3): a mid-fight save's owed
+      // hands are never settled — an expired next-strike resets to the
+      // wall's now + the interval, a still-future one keeps its place, a
+      // C1-era session without rhythm data is seeded. The wall's now is
+      // read HERE (the one true reading); without a host clock the world's
+      // own mark stands in (tests that never move the wall).
+      resumeCombatSession(
+        assembled.runtime.state,
+        pack.registry,
+        options.hostClock?.nowTick() ?? assembled.runtime.clock.nowTick(),
+      );
       wireHarness(assembled);
 
       if (fellBack) {
@@ -522,6 +621,14 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         );
       } catch {
         emit([dispatchFailedLine()]);
+      }
+    },
+    async heartbeat() {
+      await heartbeat();
+    },
+    dispose() {
+      if (heartbeatTimer !== undefined) {
+        clearInterval(heartbeatTimer);
       }
     },
     playerName() {

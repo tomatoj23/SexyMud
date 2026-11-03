@@ -1,6 +1,6 @@
 # 01 · 引擎对外契约
 
-> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约 + 快照 v1 M2-T5 + **快照 v2 与首条真实迁移 M4-T5 #24**）**已落**；`time/` **已落**（M4-T2：`time/calendar.ts` 的游戏内时间求值 + `time/tuning.ts` 的 `settings.time` 读数；M4-T3 #22：`time/settle.ts` 两层推进；M4-T4 #23：`time/due.ts` 到期桶／`time/cooldown.ts` 冷却／`time/stage.ts` 纯 stage 求值。⚠️ tick 高水位不在这里，它在 `src/clock.ts`，M4-T1）；**`effects/` 与 `combat/` 已落（#56 一击结算内核：效果契约＋primitive 注册表＋修饰符最小核空退化形＋strike 出厂适配器＋毒 DoT 补偿结算＋事件三臂；渲染缝收口见 spec/05）**。
+> **状态**：§1 端口、§2 命令、§3 三类失败、§4 事件流、§5 输出边界**已实现**（M1-T1：`packages/core/src/types.ts` + `command/pipeline.ts`，放置遗留已清零）；命令解析（M1-T2）、cmdset 合并（M1-T4）、条件门禁（M1-T3）、命令内容化与 `ContentRegistry`（M1-T5）已落；§6 目录树中 `world/`（内容契约 M1-T6 + 实体/hook/运行时/穿行适配器 M2-T1）、`state/`（状态树种子 M2-T1 + `derived` 契约 + 快照 v1 M2-T5 + **快照 v2 与首条真实迁移 M4-T5 #24**）**已落**；`time/` **已落**（M4-T2：`time/calendar.ts` 的游戏内时间求值 + `time/tuning.ts` 的 `settings.time` 读数；M4-T3 #22：`time/settle.ts` 两层推进；M4-T4 #23：`time/due.ts` 到期桶／`time/cooldown.ts` 冷却／`time/stage.ts` 纯 stage 求值。⚠️ tick 高水位不在这里，它在 `src/clock.ts`，M4-T1）；**`effects/` 与 `combat/` 已落（#56 一击结算内核：效果契约＋primitive 注册表＋修饰符最小核空退化形＋strike 出厂适配器＋毒 DoT 补偿结算＋事件三臂；渲染缝收口见 spec/05；#57 战斗会话与自动互打：节奏对＋单调度器补偿结算战斗变体＋读档条件重起＋逃逸＋声明式门禁＋proactive——ADR-0042）**。
 > **依据**：ADR-0002、ADR-0017、ADR-0025 §一、ADR-0006、ADR-0018。
 
 ## 1. 注入端口（Ports）
@@ -159,9 +159,12 @@ packages/core/          引擎（可独立发布的库，零题材词）
     effects/            效果契约与注册（#56）：条目形状 entry.ts／修饰符最小核 modifiers.ts
                         （ADR-0005 两层空退化形）／primitive 注册表 registry.ts——
                         零机制 import；实现住消费侧（combat/primitives.ts 注册进本表）
-    combat/             一击结算内核（#56）：strike.ts 出厂适配器（编排）／damage.ts（公式
-                        与档位）／session.ts（会话槽＋毒补偿结算 handler＋角色种子）／
-                        primitives.ts（首批 instant-damage／damage-over-time 实现）
+    combat/             战斗内核（#56 一击结算＋#57 会话与自动互打）：strike.ts 开战适配器
+                        （第一手）／blow.ts 一手共享编排（闪避掷上提＋效果链＋死即清）／
+                        damage.ts（公式、档位、间隔缺省、clamp）／session.ts（会话节奏调度
+                        handler＋NPC 手＋读档重起＋角色种子）／primitives.ts（首批两实现）／
+                        traversal.ts（战斗面穿行：逃逸掷＋proactive 进房边沿）／
+                        guard.ts（notInCombat 声明式门禁包装器）
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑
 

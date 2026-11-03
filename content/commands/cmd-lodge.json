@@ -1,7 +1,13 @@
 {
   "id": "cmd-lodge",
-  "verbs": ["住店", "投宿", "lodge"],
+  "verbs": [
+    "住店",
+    "投宿",
+    "lodge"
+  ],
   "argForm": "none",
   "cmdset": "character",
-  "priority": 0
+  "priority": 0,
+  "notInCombat": true,
+  "err_inCombat": "刀兵未歇，此刻不成。"
 }

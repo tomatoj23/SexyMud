@@ -134,6 +134,10 @@ export default function App() {
    * named).
    */
   const returnToTitle = () => {
+    // The heartbeat timer stops with the game (#57 C2-T7): the session
+    // object is unreachable from here on, and its interval must not out-
+    // live it firing at a dead harness.
+    game?.session.dispose();
     setOpenFailed(false);
     setContinueFailedKind(null);
     setGame(null);

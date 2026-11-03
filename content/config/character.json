@@ -6,8 +6,12 @@
     "attack": 30,
     "externalDefense": 3
   },
-  "primaryResource": { "current": "hp", "max": "maxHp" },
+  "primaryResource": {
+    "current": "hp",
+    "max": "maxHp"
+  },
   "deathAtOrBelow": 0,
+  "strikeIntervalTicks": 2,
   "strike": {
     "attackAttr": "attack",
     "defenseAttr": "externalDefense",

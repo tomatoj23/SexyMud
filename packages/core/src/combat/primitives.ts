@@ -8,16 +8,16 @@ import type {
 import { aggregateModifiers } from "../effects/modifiers.js";
 import {
   bandPairOf,
+  clampedHp,
   monsterCombatFace,
   readDefenseK,
   requireCharacterTable,
   strikeDamage,
 } from "./damage.js";
-import { primaryResourceOf } from "./session.js";
 
 /**
- * The first two primitive implementations (#56, D9): `instant-damage` and
- * `damage-over-time`, the C1 strike's whole effect vocabulary. They live
+ * The first two primitive implementations (#56 D9, #57 F2): `instant-damage`
+ * and `damage-over-time`, the strike's whole effect vocabulary. They live
  * HERE — with the consumer that owns their semantics — and register into the
  * effect contract's registry (effects/registry.ts): the contract side
  * imports no mechanism module (AC8's pinned direction), and a future
@@ -30,7 +30,7 @@ function sessionOf(ctx: EffectExecutionContext) {
   const state = ctx.runtime.state.entities[ctx.attackerId];
   const session = state?.combat;
   if (state === undefined || session === undefined || session.targetNpcId !== ctx.targetNpcId) {
-    // The orchestration (strikeSpec) builds the session before walking
+    // The orchestration (combat/blow.ts) builds the session before walking
     // effects; reaching here without one is a wiring bug, not play.
     throw new Error(
       `combat: no combat session for "${ctx.attackerId}" against "${ctx.targetNpcId}"`,
@@ -43,9 +43,12 @@ function sessionOf(ctx: EffectExecutionContext) {
  * `instant-damage`: the entry TRIGGERS the strike settlement (T11①(a)) —
  * the formula runs with the character table's operands, and the primitive's
  * static `amount` is deliberately unused (the seat stays declared for the
- * day a content-authored flat damage wants it). Dodge rolls the monster's
- * single stat.dodge value as a probability (T2); a dodge lands the strike
- * event with 0 damage and no HP write.
+ * day a content-authored flat damage wants it).
+ *
+ * #57 F2: the dodge roll NO LONGER lives here — it rolled one primitive's
+ * damage while the blow's other effects (a poison fist) still landed, C1's
+ * known corner. The roll moved UP to the blow's orchestration (combat/
+ * blow.ts): a dodged blow never reaches this primitive at all.
  */
 export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
   const { state, session } = sessionOf(ctx);
@@ -62,20 +65,17 @@ export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
       `combat: the player's attrs carry no usable attack value (key "${character.strike.attackAttr}") — seed the character table at startNewGame`,
     );
   }
-  const isDodge = face.dodge > 0 && ctx.rng.next() < face.dodge;
-  const damage = isDodge
-    ? 0
-    : strikeDamage(attack, face.externalDefense, readDefenseK(registry.settings));
-  if (!isDodge) {
-    session.targetHp -= damage;
-  }
+  const damage = strikeDamage(attack, face.externalDefense, readDefenseK(registry.settings));
+  // F6: one clamped write — a save's HP above a content-revised ceiling
+  // heals itself on the very next settlement.
+  session.targetHp = clampedHp(session.targetHp - damage, face.maxHp);
   const bands = bandPairOf(registry.combatTiers, damage, face.maxHp, session.targetHp);
   ctx.emit(ctx.attackerId, strikeEvent({
     attackerId: ctx.attackerId,
     defenderId: ctx.targetNpcId,
     damage,
     ...bands,
-    isDodge,
+    isDodge: false,
     isCrit: false,
     element: character.strike.element,
     source: character.strike.source,

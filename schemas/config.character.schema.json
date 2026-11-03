@@ -4,7 +4,7 @@
   "title": "角色模型声明（content/config/character.json）",
   "description": "STRUCTURE（spec/06 §6 第二行，#56 T4）：玩家数值属性的**键清单＋初值**＋主资源键对＋死亡阈值＋一击操作数通道。引擎零认识任何具体键（ADR-0009 §10：键取值与集合求交）——键语义全部住本表。三处同步：本文件／`packages/core/src/content/config.ts` 的 `CharacterTable`／`docs/agents/content.md`。",
   "type": "object",
-  "required": ["id", "attrs", "primaryResource", "deathAtOrBelow", "strike"],
+  "required": ["id", "attrs", "primaryResource", "deathAtOrBelow", "strikeIntervalTicks", "strike"],
   "properties": {
     "id": { "type": "string", "const": "character" },
     "attrs": {
@@ -26,6 +26,11 @@
     "deathAtOrBelow": {
       "type": "number",
       "description": "死亡阈值：主资源当前值 ≤ 此值即死亡（D7 玩家侧；NPC 侧恒 HP≤0）。"
+    },
+    "strikeIntervalTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "玩家自动出手间隔（tick 数，#57 D8/D12，AC10）：声明表字段，**非** attrs 键——结算时直读本表、不落盘（毒 effectId 回溯同构）。必填：角色模型装配图性质（与 primaryResource/deathAtOrBelow 同族），漏键＝装配图不完整。"
     },
     "strike": {
       "type": "object",

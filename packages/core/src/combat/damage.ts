@@ -20,6 +20,13 @@ import type { Modifier } from "../effects/modifiers.js";
 export const DEFAULT_STRIKE_SOURCE = "external";
 /** The undeclared element default — C1's bare-handed strikes carry no element (AC7). */
 export const DEFAULT_STRIKE_ELEMENT = "none";
+/**
+ * The undeclared NPC attack interval in ticks (#57 D8/D12): an engine
+ * literal, not a settings number — it is the per-entity rhythm's DEFAULT,
+ * the same family as the two delivery defaults above, while `defenseK` is a
+ * formula constant (a different thing entirely).
+ */
+export const DEFAULT_NPC_ATTACK_INTERVAL_TICKS = 2;
 
 /** The monster's combat face: the strike kernel's read of a monster record. */
 export interface MonsterCombatFace {
@@ -29,6 +36,10 @@ export interface MonsterCombatFace {
   readonly dodge: number;
   readonly source: string;
   readonly element: string;
+  /** The NPC's auto-strike interval, the declared value or the engine default. */
+  readonly attackIntervalTicks: number;
+  /** Whether the monster opens the fight on the player's arrival (#57 D14). */
+  readonly proactive: boolean;
 }
 
 /**
@@ -52,6 +63,15 @@ export function monsterCombatFace(monster: MonsterRecord): MonsterCombatFace {
   }
   const numberOrZero = (value: unknown): number =>
     typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const interval = stats.attackIntervalTicks;
+  if (
+    interval !== undefined &&
+    (typeof interval !== "number" || !Number.isSafeInteger(interval) || interval < 1)
+  ) {
+    throw new Error(
+      `combat: monster "${monster.id}" declares stats.attackIntervalTicks of ${String(interval)} — it must be a positive integer`,
+    );
+  }
   return {
     maxHp: stats.maxHp,
     attack: numberOrZero(stats.attack),
@@ -59,6 +79,8 @@ export function monsterCombatFace(monster: MonsterRecord): MonsterCombatFace {
     dodge: numberOrZero(stats.dodge),
     source: monster.source ?? DEFAULT_STRIKE_SOURCE,
     element: monster.element ?? DEFAULT_STRIKE_ELEMENT,
+    attackIntervalTicks: interval ?? DEFAULT_NPC_ATTACK_INTERVAL_TICKS,
+    proactive: monster.proactive === true,
   };
 }
 
@@ -78,6 +100,26 @@ export function readDefenseK(settings: SettingsTable | undefined): number {
 }
 
 /**
+ * `settings.combat.escapeChance` — the escape roll's probability (#57 D11,
+ * AC7): a combat-group tuning constant beside `defenseK`. Entity-influenced
+ * escape faces are C3+'s; today's roll is one global number.
+ */
+export function readEscapeChance(settings: SettingsTable | undefined): number {
+  const value = settings?.["combat"]?.["escapeChance"];
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    value > 1
+  ) {
+    throw new Error(
+      "combat: settings.combat.escapeChance is missing or not a probability in (0, 1]",
+    );
+  }
+  return value;
+}
+
+/**
  * The strike formula (AC4): `max(1, round(attack × (1 − defense/(defense + K))))`.
  * The attack operand is piped through the modifier core FIRST (T9: no
  * damage path bypasses it); the defense is the monster's externalDefense —
@@ -85,6 +127,10 @@ export function readDefenseK(settings: SettingsTable | undefined): number {
  * is out of this ticket's scope. The floor of 1 keeps a fully-mitigated hit
  * a hit: an unkillable-by-design stalemate is a content bug, not a mechanic
  * (D7's rejected Q7③ in reverse).
+ *
+ * #57 D4: the NPC→player hand runs the SAME formula — the monster's attack
+ * against the player's defenseAttr value — the two-way formula C1's
+ * `defenseAttr` seat was declared for.
  */
 export function strikeDamage(
   baseAttack: number,
@@ -98,16 +144,14 @@ export function strikeDamage(
 }
 
 /**
- * The retaliation's bare damage (T10): the monster's attack stat walked
- * through the same modifier core — no formula, no player defense, no dodge
- * roll (T2: the player rolls nothing in C1). Retaliation ignores the
- * player's growth entirely, by ruling.
+ * The F6 clamp (#57 D8, AC11): one write-point helper for every HP a
+ * settlement writes — a save's HP beside a content-revised ceiling heals
+ * itself on the next settlement, no migration, no ledger. The death checks
+ * read the UNCLAMPED subtraction (this only caps the top edge; a killing
+ * blow stays negative).
  */
-export function retaliationDamage(
-  baseAttack: number,
-  modifiers: readonly Modifier[] = [],
-): number {
-  return Math.round(aggregateModifiers(baseAttack, modifiers));
+export function clampedHp(hp: number, maxHp: number): number {
+  return Math.min(hp, maxHp);
 }
 
 /**

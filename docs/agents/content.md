@@ -81,6 +81,7 @@ assets/               # 美术资产（MVP 允许为空）
 - `cmdset`＋`priority`＋`mergetype`：归属命令集（合并源名，如 `character`／`session`／`room`）与该集的合并规则。**合并规则属于命令集**：同一 `cmdset` 的所有条目必须声明一致的 `priority` 与 `mergetype`（省略 = `Union`），`ContentRegistry` 分组（`commandSetSources`）对不一致抛错。
 - `preconditions`：门禁映射（`condition.schema.json#/definitions/accessRules`）。**命令集合的 accessType 词汇表：`use`**——宿主装配 `CommandSpec` 时以 `commandSpecFromEntry(entry, { accessType: "use", func })` 传入；省略字段 = 无门禁。
 - `effects`：**效果引用**（#56 起）：`["eff-<名>", …]` 指向 `content/effects/` 条目——命令的行为经效果管线表达（如 `cmd-strike` 的「一击结算＋概率上毒」）。注册表加载期校验悬空引用（悬空即启动失败，不打到玩家那一拳）。
+- `notInCombat`：**战斗内门禁**（#57 D7 起）：`true` ＝战斗会话进行中拒绝执行（歇息、住店这类；缺省＝允许——说话、打量、环顾不拦）。拒绝文案键＝`err_inCombat`（本条目自己的字段）。**门禁表随内容包走**：引擎只查战斗槽，不硬编码任何命令清单；移动命令不走此门（战斗中移动＝逃逸通道，行为另有归属）。
 - `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。**#56 起执行段拒绝同用 `err_*` 面**（`err_notVisible`／`err_notCombatant`／`err_targetDead`／`err_targetLocked` 等——键名是拒绝语义，camelCase 允许；cmd-strike 条目是首批实例）。
 
 引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands })`（重复 id 抛错）→ `commandSetSources(registry.commands)`（按 cmdset 分组）→ `mergeCmdSets` → `verbEntries()` 即动词表。**引擎 src/ 永不 import 内容 JSON**。
@@ -98,7 +99,7 @@ assets/               # 美术资产（MVP 允许为空）
 
 ## config 两张战斗表（#56 新增）
 
-- **`character.json`（角色模型声明，STRUCTURE）**：`attrs`（属性键 → 新档初值——**这份键清单就是玩家数值属性的形状**，加属性＝加键）＋`primaryResource: { current, max }`（生命条与上限的 attrs 键对）＋`deathAtOrBelow`（死亡阈值）＋`strike: { attackAttr, defenseAttr, element, source }`（一击操作数通道——element/source 值取 dimensions 的同名维度）。**引擎零认识任何具体键**。
+- **`character.json`（角色模型声明，STRUCTURE）**：`attrs`（属性键 → 新档初值——**这份键清单就是玩家数值属性的形状**，加属性＝加键）＋`primaryResource: { current, max }`（生命条与上限的 attrs 键对）＋`deathAtOrBelow`（死亡阈值）＋`strike: { attackAttr, defenseAttr, element, source }`（一击操作数通道——element/source 值取 dimensions 的同名维度）＋`strikeIntervalTicks`（#57 起必填：玩家自动出手间隔，tick 数——声明表字段、结算时直读，非 attrs 键）。**引擎零认识任何具体键**。
 - **`combat-tiers.json`（战斗档位区间表，STRUCTURE）**：`damageBand`／`lifeBand` 的 **ratio → 档名** 数值边界（区间左闭右开、按 min 升序）。**档名必须是对应 dimensions 维度的既有取值**（加载期闭合校验）——本表只放数值边界，不另立档名真相。分母基准：伤害档＝伤害÷受击者 maxHp；气血档＝剩余 HP÷maxHp。
 
 ## 房间集合（content/rooms/，M1-T6 已定稿）

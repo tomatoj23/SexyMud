@@ -131,6 +131,7 @@ describe("content/rooms/ and content/npcs/ as loaded content", () => {
       "room-lq-002",
       "room-lq-003",
       "room-lq-004",
+      "room-lq-005",
     ]);
     for (const room of registry.rooms) {
       expect(room.name.length, `${room.id} has a name`).toBeGreaterThan(0);
@@ -176,6 +177,7 @@ describe("content/rooms/ and content/npcs/ as loaded content", () => {
       "room-lq-001 places npc-lq-001 x1",
       "room-lq-003 places npc-lq-002 x1",
       "room-lq-004 places npc-lq-003 x1",
+      "room-lq-005 places npc-lq-004 x1",
     ]);
     for (const npc of registry.npcs) {
       expect(registry.npc(npc.id).name.length).toBeGreaterThan(0);
@@ -207,16 +209,26 @@ describe("content/rooms/ and content/npcs/ as loaded content", () => {
 
   it("npcs reference monsters by id, never copy combat numbers (spec/03 §4)", () => {
     const registry = loadWorld();
-    expect(registry.npcs.map((npc) => npc.id)).toEqual(["npc-lq-001", "npc-lq-002", "npc-lq-003"]);
+    expect(registry.npcs.map((npc) => npc.id)).toEqual([
+      "npc-lq-001",
+      "npc-lq-002",
+      "npc-lq-003",
+      "npc-lq-004",
+    ]);
 
     // Non-combat figures (shopkeeper, peddler) declare no monsterId.
     expect(registry.npc("npc-lq-001").monsterId).toBeUndefined();
     expect(registry.npc("npc-lq-002").monsterId).toBeUndefined();
 
-    // The combat-capable figure references the monster collection.
+    // The combat-capable figures reference the monster collection — the
+    // guard passively (#56), the brute proactively (#57 D14).
     const guard = registry.npc("npc-lq-003");
     expect(guard.monsterId).toBe("mon-lq-001");
     expect(registry.monster("mon-lq-001").id).toBe("mon-lq-001");
+    const brute = registry.npc("npc-lq-004");
+    expect(brute.monsterId).toBe("mon-lq-002");
+    expect(registry.monster("mon-lq-002").proactive).toBe(true);
+    expect(registry.monster("mon-lq-001").proactive).toBeUndefined();
   });
 
   it("assembles deterministically regardless of file load order (ADR-0024 §2)", () => {

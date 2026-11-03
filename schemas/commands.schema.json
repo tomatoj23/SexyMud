@@ -47,6 +47,11 @@
       },
       "description": "效果引用（#56）：指向 content/effects/ 条目——命令的行为经效果管线表达（如「打」＝一击结算＋概率上毒）。注册表加载期校验悬空引用（npc→monsterId 先例：悬空即启动失败，不打到玩家那一拳）。引擎按 primitive type id 分派执行。"
     },
+    "notInCombat": {
+      "type": "boolean",
+      "enum": [true],
+      "description": "战斗内门禁（#57 D7，AC8）：声明 true ＝战斗会话进行中拒绝执行（如歇息、住店——打尖与睡觉都不成）；缺省＝允许（说话、打量、环顾不拦）。门禁表随内容包走——引擎只查战斗槽、按本条目 err_inCombat 文案拒绝，不硬编码任何命令清单。移动命令不走此门（战斗中移动＝逃逸通道，行为自有归属）。拒绝文案键＝err_inCombat。"
+    },
     "tags": { "$ref": "common.schema.json#/definitions/tags" },
     "flags": { "$ref": "common.schema.json#/definitions/flags" },
     "prototypeKey": { "$ref": "common.schema.json#/definitions/prototypeKey" },

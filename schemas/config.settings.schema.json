@@ -12,6 +12,7 @@
       "properties": {
         "formula": { "$ref": "#/definitions/formula" },
         "defenseK": { "type": "number", "minimum": 0, "description": "减伤 = 防御 / (防御 + defenseK)（外功防御词条）" },
+        "escapeChance": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "逃逸成功率（#57 D11，AC7）：战斗中移动＝掷此概率——全局常数（defenseK 同族概率调参；实体影响面 C3+）。成功＝移动执行＋清会话；失败＝留战斗＋玩家下一手推一个间隔。" },
         "dodge": {
           "type": "object",
           "description": "闪避：基础 5-10%、上限约 40%、递减 闪避/(闪避+K)",

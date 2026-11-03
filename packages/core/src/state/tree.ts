@@ -131,18 +131,39 @@ export interface DotLedger {
 }
 
 /**
- * The combat session's minimal C1 fields (#56, D11): one target NPC (C1 is
- * single-target, D12), their mutable HP and death mark — the NPC's whole
- * fight-side existence, since it has no tree row — and the poison instance
- * on them, when one is armed. C2 grows the rhythm fields here.
+ * The combat session (#56 D11, #57 D13): one target NPC (single target,
+ * D12), their mutable HP and death mark — the NPC's whole fight-side
+ * existence, since it has no tree row — the poison instance on them when one
+ * is armed, and C2's RHYTHM pair. The intervals themselves are deliberately
+ * NOT here: both sides' next-strike ticks ride the save, the intervals are
+ * read back from the declarations at every settlement (the poison effectId's
+ * look-back law, #57 C2-T8).
+ *
+ * The rhythm fields are optional as a PAIR (D13): absent means "no rhythm
+ * data" — a C1-era save or a host-assembled session — and the first
+ * observation seeds them; one without the other is malformation and the
+ * slot's validator refuses it.
  */
 export interface CombatSession {
   /** The npc entry id the fight is with (single target, D12). */
   readonly targetNpcId: string;
   /** The target's current HP (seeded from the monster entry's stats at first strike). */
   targetHp: number;
-  /** The target's death mark: set when HP reaches the threshold; further strikes are refused. */
+  /**
+   * The target's death mark (C1's field, kept for the C1-save compatibility
+   * red line). Under C2's death-clears-session ruling the engine never
+   * SETS it — a leftover `true` (a C1 save) is cleared with the whole
+   * session at the first observation or strike.
+   */
   targetDead: boolean;
+  /**
+   * The tick the player's NEXT auto-strike is due (#57 D2/D3): the opening
+   * blow lands immediately and arms this at now + the player's interval;
+   * every later blow is the settle layer's, stamped with its due tick.
+   */
+  playerNextStrikeTick?: number;
+  /** The tick the NPC's next auto-strike is due — the player field's pair (D13). */
+  npcNextStrikeTick?: number;
   /** The poison instance on the target, when one is armed (single instance, C1). */
   dot?: DotLedger;
 }

@@ -1,7 +1,8 @@
 {
   "id": "settings",
   "combat": {
-    "formula": "玩家出手伤害 = max(1, round(攻击 × (1 − 防御/(防御+defenseK))))，防御取对头 stats.externalDefense；对头反击 = stats.attack 裸伤（不走公式、不吃玩家防御与闪避，#56 T10）",
-    "defenseK": 10
+    "formula": "双向同式：max(1, round(攻击 × (1 − 防御/(防御+defenseK))))——玩家出手＝attackAttr 攻击 × 对头 stats.externalDefense 防御；对头出手＝stats.attack 攻击 × defenseAttr 防御（#57 D4，双向公式）。战斗中移动＝掷 escapeChance 逃逸（#57 D11）。出手间隔：玩家＝character.strikeIntervalTicks、对头＝monster stats.attackIntervalTicks（缺省引擎字面量）——结算时直读声明表、不落盘。",
+    "defenseK": 10,
+    "escapeChance": 0.5
   }
 }

@@ -8,7 +8,12 @@
       "id": "exit-lq-002-south",
       "direction": "南",
       "targetRoomId": "room-lq-001",
-      "verbs": ["南", "south", "s", "往南走"],
+      "verbs": [
+        "南",
+        "south",
+        "s",
+        "往南走"
+      ],
       "argForm": "none",
       "cmdset": "exits",
       "priority": 101
@@ -17,7 +22,26 @@
       "id": "exit-lq-002-west",
       "direction": "西",
       "targetRoomId": "room-lq-003",
-      "verbs": ["西", "west", "w", "往西走"],
+      "verbs": [
+        "西",
+        "west",
+        "w",
+        "往西走"
+      ],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    },
+    {
+      "id": "exit-lq-002-north",
+      "direction": "北",
+      "targetRoomId": "room-lq-005",
+      "verbs": [
+        "北",
+        "north",
+        "n",
+        "往北走"
+      ],
       "argForm": "none",
       "cmdset": "exits",
       "priority": 101

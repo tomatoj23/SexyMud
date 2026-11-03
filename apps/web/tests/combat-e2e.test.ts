@@ -8,18 +8,18 @@ import { loadWuxiaPack } from "./wuxia-pack.js";
 import type { StatusPanel } from "../src/ui/terminalView.js";
 
 /**
- * AC1's hand-played whole chain (#56): a new game walks to the lodge,
- * checks in (T1's flag route), steps into the back yard, strikes Sun Biao
- * (damage line, retaliation line), watches the poison hop (the dotTick
- * render's first live consumer), kills him (the death line) and is refused
- * a further strike — all through the REAL shipped content, the real
- * session, and a scripted wall clock (the poison hops by real ticks, so the
- * rig moves the wall between commands).
+ * The hand-played whole chains (#57 over #56): the opening strike and the
+ * rhythm that follows it (no more immediate retaliation — the guard's hand
+ * arrives on HER interval, at the next observation), the death that now
+ * CLEARS the session (a further strike opens a brand-new fight, not a
+ * corpse refusal), the escape door, and AC12's full line — open, exchange,
+ * escape, walk into a proactive room and be ambushed, kill, clear, reopen.
  *
- * The dice are the session's own seed-1 stream: fixed input ⇒ fixed
- * output, and the assertions read the exact arithmetic the shipped numbers
- * produce (attack 30, defense 6, K 10 ⇒ 19 damage; retaliation 15; poison
- * 10 × 5 every 2 ticks at 0.35).
+ * All through the REAL shipped content, the real session, and a scripted
+ * wall clock. The automatic heartbeat is parked (a period the test never
+ * reaches) and the beats are DRIVEN by hand — the rig moves the wall, then
+ * beats, so every rhythm assertion is deterministic. The dice are the
+ * session's own seed-1 stream: fixed input ⇒ fixed output.
  */
 
 const PACK = loadWuxiaPack();
@@ -46,6 +46,9 @@ function makeRig() {
     viewport: { width: 40, height: 24 } as Viewport,
     copy: WEB_HOST_COPY,
     hostClock: createHostClock({ tickSeconds: 1, now: () => wallMs }),
+    // The automatic heartbeat is parked at an hour: the rig drives every
+    // beat by hand below, so a rhythm assertion never races a timer.
+    heartbeatMs: 3_600_000,
     onOutput: (chunks) => {
       for (const chunk of chunks) for (const line of chunk) lines.push(line.text);
     },
@@ -61,93 +64,95 @@ function makeRig() {
       wallMs += secondsLater * 1000;
       await session.submit(input);
     },
+    /** Moves the wall and drives one beat — the idle-fight's live face. */
+    async beat(secondsLater = 3) {
+      wallMs += secondsLater * 1000;
+      await session.heartbeat();
+    },
   };
 }
 
-describe("AC1 — the hand-played combat chain over the shipped pack (#56)", () => {
-  it("checks in, walks in, strikes, poisons, kills and is refused a corpse strike", async () => {
+/** The walk to the back yard: north, west, check in, north. */
+async function walkToYard(rig: ReturnType<typeof makeRig>) {
+  await rig.play("北");
+  await rig.play("西");
+  await rig.play("住店");
+  await rig.play("北");
+}
+
+describe("the hand-played combat chains over the shipped pack (#56/#57)", () => {
+  it("opens, exchanges on rhythm, poisons, kills — and a further strike is a NEW fight (D6)", async () => {
     const rig = makeRig();
     await rig.session.startNewGame("测试侠");
-    expect(rig.session.status().roomName).toBe("柳青镇镇口");
-
-    // Walk to the lodge hall (north, then west) and check in (T1's route:
-    // the flag has exactly one way in, and the gate's own words do not move).
-    await rig.play("北");
-    await rig.play("西");
-    expect(rig.session.status().roomName).toBe("迎宾客栈大堂");
-    await rig.play("住店");
-    // Folded at the viewport: the phrase spans physical lines, so the pin
-    // reads the joined text (the folder adds breaks, never characters).
-    expect(rig.lines.join("")).toContain(WEB_HOST_COPY.flagGrantedLine);
-
-    // In: the back yard opens to a lodger (the gate that used to be
-    // unreachable, T1's whole point).
-    await rig.play("北");
+    await walkToYard(rig);
     expect(rig.session.status().roomName).toBe("迎宾客栈后院");
 
-    // Strike until the fight resolves: the seed-1 stream decides dodge and
-    // poison rolls; whatever it decides, the PLAYER-READ lines are the
-    // contract — damage lines, retaliation lines, the poison's hop line on
-    // the commands after an armed one, and Sun Biao's death.
-    let strikes = 0;
-    while (strikes < 30) {
-      const before = rig.lines.length;
-      await rig.play("打 孙彪", 3);
-      strikes += 1;
-      const produced = rig.lines.slice(before).join("");
-      if (produced.includes("他已经倒下了，不必再补一手。")) break;
+    // The OPENING hand lands now (C1's feel, kept) — and NO retaliation
+    // rides it anymore: the guard's first hand is due on her interval.
+    await rig.play("打 孙彪");
+    expect(rig.lines.join("")).toContain("一拳打向孙彪");
+    expect(rig.lines.join("")).not.toContain("还了一手");
+
+    // The exchange runs on the rhythm: each beat settles the due hands —
+    // the player's (the hit line) and the guard's (the retaliation line,
+    // now the settle layer's, stamped with its due tick).
+    let beats = 0;
+    while (beats < 40) {
+      await rig.beat(3);
+      beats += 1;
+      if (rig.lines.join("").includes("孙彪闷哼一声")) break;
     }
     const text = rig.lines.join("");
-    // The strike line and the retaliation line — T7's host templates.
-    expect(text).toContain("一拳打向孙彪");
+    // 破坏性③'s pinned retaliation line — present, on the rhythm.
     expect(text).toContain("孙彪还了一手");
-    // The poison hopped into the terminal (the dotTick render's live pass).
+    // The poison hopped into the terminal (the dotTick render, unchanged).
     expect(text).toContain("孙彪毒性发作");
     // Sun Biao died on screen.
     expect(text).toContain("孙彪闷哼一声");
-    // The corpse refuses the further strike (the loop's exit).
-    expect(text).toContain("他已经倒下了，不必再补一手。");
 
-    // The autosave carries the corpse mark: a reload refuses to resume the
-    // fight (the session's whole persistence face, AC9).
-    const last = rig.store.saved.at(-1)!;
-    const record = (last.data as { entities: Record<string, { combat?: { targetDead?: boolean } }> })
+    // D6: the death CLEARED the session — the autosave carries no fight
+    // (C1's targetDead corpse mark is gone with the whole session).
+    const dead = rig.store.saved.at(-1)!;
+    const deadRecord = (dead.data as { entities: Record<string, { combat?: unknown }> })
       .entities["player"]!;
-    expect(record.combat?.targetDead).toBe(true);
+    expect(deadRecord.combat).toBeUndefined();
+
+    // A further strike OPENS a brand-new fight at full HP (破坏性①: the
+    // corpse refusal is unreachable under C2).
+    await rig.play("打 孙彪");
+    expect(rig.lines.join("")).toContain("一拳打向孙彪");
+    const reopened = rig.store.saved.at(-1)!;
+    const session = (reopened.data as {
+      entities: Record<string, { combat?: { targetHp?: number; targetDead?: boolean } }>;
+    }).entities["player"]!.combat!;
+    expect(session.targetDead).toBe(false);
+    expect(session.targetHp).toBe(121); // the fresh 140-HP fight, 19 in.
   });
 
-  it("shows the retaliation line through the host template on the very first strike", async () => {
-    // The strike/retaliation WORDS the player reads, pinned on the first
-    // exchange (the engine-side semantics — both deaths, the refill, the
-    // relocation — live in tests/combat-strike.test.ts; the player-side
-    // death template is pinned in packages/core/tests/text-render.test.ts).
+  it("pins the FIRST-hand timing: no retaliation on the strike itself, both hands on the next beat", async () => {
     const rig = makeRig();
     await rig.session.startNewGame("测试侠");
-    await rig.play("北");
-    await rig.play("西");
-    await rig.play("住店");
-    await rig.play("北");
+    await walkToYard(rig);
+
+    // The strike command's own output: the player's hand only (破坏性③'s
+    // dedicated timing pin — C1's immediate-retaliation example, rewritten).
     await rig.play("打 孙彪");
-    expect(rig.lines.join("")).toContain("孙彪还了一手，你受创");
-    expect(rig.lines.join("")).toContain("孙彪受创");
+    const afterStrike = rig.lines.join("");
+    expect(afterStrike).toContain("孙彪受创");
+    expect(afterStrike).not.toContain("还了一手");
+
+    // One beat later (wall +3s, both hands due at +2): the player's
+    // auto-hand lands and the guard answers on the formula — 15 × (1 −
+    // 3/13) → 12 (破坏性②: the bare 15 is retired).
+    await rig.beat(3);
+    const afterBeat = rig.lines.join("");
+    expect(afterBeat).toContain("孙彪还了一手，你受创12点。");
   });
 
-  it("resumes a pre-#56 save into a fight — the empty attrs slot is seeded, not fatal (#56 audit)", async () => {
-    // A save that predates the attrs slot carries no attrs at all (its
-    // absence reads as the empty map, the slot's own law). Resuming it and
-    // striking must WORK: the session seeds the character model over the
-    // empty map (a save that carried attrs keeps every value), and a
-    // dispatch that throws reaches the player as one line — never an
-    // unhandled rejection freezing the terminal.
+  it("resumes a pre-#56 save into a fight — attrs seeded, rhythm seeded, no fatal line", async () => {
     const rig = makeRig();
     await rig.session.startNewGame("旧档侠");
-    // Walk the first session into the yard (flags carrying the lodger mark,
-    // position the yard) so the resumed save can strike immediately.
-    await rig.play("北");
-    await rig.play("西");
-    await rig.play("住店");
-    await rig.play("北");
-    expect(rig.session.status().roomName).toBe("迎宾客栈后院");
+    await walkToYard(rig);
     const legacy = rig.store.saved.at(-1)!;
     // Strip the pre-#56 face: no attrs, no combat.
     const legacyEntities = (legacy.data as {
@@ -167,6 +172,7 @@ describe("AC1 — the hand-played combat chain over the shipped pack (#56)", () 
       viewport: { width: 40, height: 24 },
       copy: WEB_HOST_COPY,
       hostClock: createHostClock({ tickSeconds: 1, now: () => wallMs }),
+      heartbeatMs: 3_600_000,
       onOutput: (chunks) => {
         for (const chunk of chunks) for (const line of chunk) lines.push(line.text);
       },
@@ -177,8 +183,75 @@ describe("AC1 — the hand-played combat chain over the shipped pack (#56)", () 
     await resumed.submit("打 孙彪");
     const text = lines.join("");
     expect(text).toContain("孙彪受创");
-    expect(text).toContain("孙彪还了一手");
-    // No wiring line surfaced: the seed made the fight legal.
-    expect(text).not.toContain(WEB_HOST_COPY.submitFailed);
+    // The rhythm was seeded at the OPENING (a C1 save has no rhythm pair):
+    // no retaliation on the strike itself —
+    expect(text).not.toContain("还了一手");
+    // — and the seeded exchange runs on the next beat (AC12's first half).
+    wallMs += 3000;
+    await resumed.heartbeat();
+    expect(lines.join("")).toContain("孙彪还了一手");
+    // No wiring line surfaced: the seeds made the fight legal.
+    expect(lines.join("")).not.toContain(WEB_HOST_COPY.submitFailed);
+  });
+});
+
+describe("AC12 — the full line: open, exchange, escape, ambush, kill, clear, reopen (#57)", () => {
+  it("walks the whole road with the shipped pack", async () => {
+    const rig = makeRig();
+    await rig.session.startNewGame("全链侠");
+
+    // OPEN: strike Sun Biao in the back yard — the first hand lands now.
+    await walkToYard(rig);
+    await rig.play("打 孙彪");
+    expect(rig.lines.join("")).toContain("一拳打向孙彪");
+
+    // EXCHANGE: a beat settles both due hands.
+    await rig.beat(3);
+    expect(rig.lines.join("")).toContain("孙彪还了一手");
+
+    // ESCAPE: mid-fight moves roll until one lands — each miss spends a
+    // hand's time and says so; the hit clears the fight and moves out.
+    let escapes = 0;
+    while (escapes < 30) {
+      await rig.play("南", 3);
+      escapes += 1;
+      const produced = rig.lines.join("");
+      if (produced.includes("你且战且退，脱身而去。")) break;
+      expect(produced).toContain("脱不开身");
+    }
+    expect(rig.session.status().roomName).toBe("迎宾客栈大堂");
+    expect(rig.lines.join("")).toContain("你且战且退，脱身而去。");
+
+    // AMBUSH: the market's north door opens into the ruined temple — the
+    // proactive brute's hand is the first thing through it.
+    await rig.play("东");
+    await rig.play("北");
+    expect(rig.session.status().roomName).toBe("镇北破庙");
+    expect(rig.lines.join("")).toContain("泼皮还了一手，你受创");
+
+    // KILL: the exchange runs — the player's auto-hands (25 a hand against
+    // the brute's 2 defense) — until the brute falls.
+    let beats = 0;
+    while (beats < 40) {
+      await rig.beat(3);
+      beats += 1;
+      if (rig.lines.join("").includes("泼皮闷哼一声")) break;
+    }
+    expect(rig.lines.join("")).toContain("泼皮闷哼一声");
+
+    // CLEAR: the death took the whole session — the save carries no fight.
+    const killed = rig.store.saved.at(-1)!;
+    const killedRecord = (killed.data as { entities: Record<string, { combat?: unknown }> })
+      .entities["player"]!;
+    expect(killedRecord.combat).toBeUndefined();
+
+    // REOPEN: a fresh strike at the same name is a brand-new full-HP fight.
+    await rig.play("打 泼皮");
+    expect(rig.lines.join("")).toContain("一拳打向泼皮");
+    const reopened = rig.store.saved.at(-1)!;
+    const session = (reopened.data as {
+      entities: Record<string, { combat?: { targetHp?: number } }>;
+    }).entities["player"]!.combat!;
+    expect(session.targetHp).toBe(35); // the fresh 60-HP fight, 25 in.
   });
 });

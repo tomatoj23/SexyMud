@@ -39,9 +39,15 @@
         "attack": { "type": "number", "minimum": 0 },
         "externalDefense": { "type": "number", "minimum": 0, "description": "外功防御" },
         "internalDefense": { "type": "number", "minimum": 0, "description": "内功防御" },
-        "dodge": { "type": "number", "minimum": 0, "maximum": 1 }
+        "dodge": { "type": "number", "minimum": 0, "maximum": 1 },
+        "attackIntervalTicks": { "type": "integer", "minimum": 1, "description": "自动出手间隔（tick 数，#57 D8/D12）：可选＋引擎缺省——未声明按引擎缺省字面量（与未声明 source 按 external 同先例），存量条目不因缺此字段而校验红。间隔不落盘：结算时从本条目直读（毒 effectId 回溯同构），内容热更后旧档用新值。" }
       },
       "additionalProperties": true
+    },
+    "proactive": {
+      "type": "boolean",
+      "enum": [true],
+      "description": "主动攻击（#57 D14，AC9）：声明 true ＝玩家移动进房时自动开战（开战者第一手立即）；缺省 false＝现状被动（站着挨打）。顶层布尔——行为声明（与 source 同族），不是 stats 数值。多只主动怪取在场清单首个（围攻挂多目标票）；三种非移动落房路径（死亡传送／读档落房／新档落起始房）不触发。"
     },
     "effects": {
       "type": "array",

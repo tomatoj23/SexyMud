@@ -2,53 +2,37 @@ import { commandSpecFromEntry } from "../command/entry.js";
 import type { CommandEntry } from "../command/entry.js";
 import type { CommandRejection, CommandSpec } from "../command/pipeline.js";
 import type { TargetRef } from "../command/parser.js";
-import { commandRefusedEvent, customCode, deathEvent, strikeEvent } from "../events.js";
+import { commandRefusedEvent, customCode } from "../events.js";
 import type { ReasonCode } from "../types.js";
-import { moveTo } from "../world/move.js";
 import { resolveNpcTarget } from "../world/target.js";
 import type { WorldRuntime } from "../world/runtime.js";
-import type { EffectExecutionContext, EffectPrimitiveHandler } from "../effects/registry.js";
-import { bandPairOf, monsterCombatFace, requireCharacterTable, retaliationDamage } from "./damage.js";
-import { defaultEffectPrimitives } from "./primitives.js";
-import { primaryResourceOf } from "./session.js";
+import { monsterCombatFace, requireCharacterTable } from "./damage.js";
+import { playerBlow } from "./blow.js";
+import type { StrikeSpecOptions } from "./blow.js";
+import { IN_COMBAT } from "./guard.js";
 
 /**
- * The strike orchestration (#56, AC1): the engine's factory adapter for the
- * strike command — traversal/look/say's sibling (the func belongs with the
- * engine; a host binds `strikeSpec(entry)` into its table and swaps packs by
- * swapping tables). One command = one player attack and one immediate npc
- * retaliation (D1's ruled C1 face — the immediate-retaliation half is
- * provisional by that same ruling).
+ * The strike command's C2 face (#57, AC1): striking a name OPENS the
+ * fight — the first hand settles immediately (C1's feel, kept), the session
+ * turns into the AUTO-EXCHANGE both rhythm fields now drive, and the npc's
+ * first hand is due at the opening tick + HER interval (D10: C1's immediate
+ * retaliation was ruled a provisional reading, and this is its replacement).
  *
- * The three target-side checks (same room, a declared monster, not dead)
- * run as EXECUTION-STAGE refusals (the ticket's ruled route): the predicate
- * model evaluates a tree-side PLAYER subject and has no target seat, while
- * target resolution — this command's own first act — produces exactly what
- * the checks need. A refusal words itself through the entry's `err_*` copy
- * (commandKey + errKey), the CommandRejection precedent.
+ * Striking again mid-fight is refused either way (D2): the same target
+ * because the auto-exchange already has the player's hands (`inCombat`), a
+ * different target because one fight at a time is the standing rule (T3).
+ * A dead session left by a C1-era save is cleared on sight — under D6 death
+ * clears the whole session, and a fresh strike at the same name opens a
+ * brand-new fight at full HP.
  *
- * Effect references (the entry's `effects`) drive the attack itself: each
- * referenced entry's primitives run through the injected registry
- * (instant-damage settles the strike, damage-over-time may arm a poison —
- * T11), and the retaliation follows unless the target died. A player death
- * refills the primary resource, relocates to the declared start room
- * (moveTo — the announcements ride along), and clears the whole combat
- * session (T6: the poison ledger and the NPC's death mark go with it).
+ * The player's death path is NOT here anymore: the npc's hands are the
+ * settle layer's now (combat/session.ts), and the settle layer owns the
+ * killing hand's consequences.
  */
 
 /** The refusal codes this adapter mints beyond the engine's own literals. */
 const NOT_COMBATANT = customCode("notCombatant");
-const TARGET_DEAD = customCode("targetDead");
 const TARGET_LOCKED = customCode("targetLocked");
-
-export interface StrikeSpecOptions {
-  /**
-   * The primitive implementations to execute effect references with;
-   * defaults to the engine's shipped pair (combat/primitives.ts). Hosts
-   * extend or replace the table the predicate-registry way.
-   */
-  readonly primitives?: ReadonlyMap<string, EffectPrimitiveHandler>;
-}
 
 /** Words one execution-stage refusal: the semantic event plus the rejection. */
 function refuse(
@@ -63,7 +47,6 @@ function refuse(
 }
 
 export function strikeSpec(entry: CommandEntry, options: StrikeSpecOptions = {}): CommandSpec<WorldRuntime> {
-  const primitives = options.primitives ?? defaultEffectPrimitives;
   return commandSpecFromEntry<WorldRuntime>(entry, {
     func: (ctx) => {
       const runtime = ctx.world;
@@ -86,88 +69,48 @@ export function strikeSpec(entry: CommandEntry, options: StrikeSpecOptions = {})
       // resolveNpcTarget guarantees the monsterId on its ok arm.
       const monsterId = npc.monsterId as string;
 
-      // 2. The session: continue the standing fight, refuse a switch (T3),
-      //    refuse a corpse (D7), or open one seeded from the monster's face.
-      let session = state.combat;
-      if (session !== undefined) {
-        if (session.targetNpcId !== npc.id) {
+      // 2. The session: a standing fight refuses the strike either way (D2)
+      //    — the same target because the auto-exchange already carries the
+      //    player's hands, another target because one fight at a time (T3).
+      //    A C1-era dead session is cleared on sight (D6's late half).
+      if (state.combat !== undefined) {
+        if (state.combat.targetDead) {
+          delete state.combat;
+        } else if (state.combat.targetNpcId === npc.id) {
+          return refuse(ctx, actorId, entry.id, IN_COMBAT, "err_inCombat");
+        } else {
           return refuse(ctx, actorId, entry.id, TARGET_LOCKED, "err_targetLocked");
         }
-        if (session.targetDead) {
-          return refuse(ctx, actorId, entry.id, TARGET_DEAD, "err_targetDead");
-        }
-      } else {
-        const face = monsterCombatFace(registry.monster(monsterId));
-        session = { targetNpcId: npc.id, targetHp: face.maxHp, targetDead: false };
-        state.combat = session;
       }
 
-      // 3. The attack: every referenced effect's primitives, in entry order.
-      //    A type with no implementation is a wiring miss, loud by design.
+      // 3. Open the fight (D2/D10): both sides' next hands arm at the
+      //    opening tick + their own interval — the opening hand below is
+      //    the player's NOW, and the npc starts from hers.
       const nowTick = ctx.clock.nowTick();
-      for (const effectId of entry.effects ?? []) {
-        const effect = registry.effect(effectId);
-        for (const primitive of effect.primitives) {
-          const handler = primitives.get(primitive.type);
-          if (handler === undefined) {
-            throw new Error(
-              `combat: no implementation registered for primitive type "${primitive.type}" (effect "${effectId}")`,
-            );
-          }
-          const context: EffectExecutionContext = {
-            runtime,
-            attackerId: actorId,
-            targetNpcId: npc.id,
-            nowTick,
-            rng: ctx.rng,
-            emit: ctx.emit,
-            effectId,
-          };
-          handler(primitive, context);
-        }
-      }
-
-      // 4. The retaliation (T10: bare damage — no formula, no player
-      //    defense, no dodge roll) unless the attack already killed.
-      if (session.targetDead) {
-        return;
-      }
-      const character = requireCharacterTable(registry);
       const face = monsterCombatFace(registry.monster(monsterId));
-      const resource = primaryResourceOf(state, character);
-      const damage = retaliationDamage(face.attack);
-      const hp = resource.current - damage;
-      state.attrs[character.primaryResource.current] = hp;
-      const bands = bandPairOf(registry.combatTiers, damage, resource.max, hp);
-      ctx.emit(actorId, strikeEvent({
-        attackerId: npc.id,
-        defenderId: actorId,
-        damage,
-        ...bands,
-        isDodge: false,
-        isCrit: false,
-        element: face.element,
-        source: face.source,
-      }));
+      const character = requireCharacterTable(registry);
+      state.combat = {
+        targetNpcId: npc.id,
+        targetHp: face.maxHp,
+        targetDead: false,
+        playerNextStrikeTick: nowTick + character.strikeIntervalTicks,
+        npcNextStrikeTick: nowTick + face.attackIntervalTicks,
+      };
 
-      // 5. The player's death (D7): announce, refill the primary resource,
-      //    clear the WHOLE session (T6 — the NPC's death mark and any poison
-      //    go with it), and relocate through the movement orchestration so
-      //    the departure/arrival announcements ride the same events.
-      if (hp <= character.deathAtOrBelow) {
-        ctx.emit(actorId, deathEvent({ deceasedId: actorId, kind: "player", cause: "strike" }));
-        state.attrs[character.primaryResource.current] = resource.max;
-        delete state.combat;
-        const world = registry.world;
-        if (world === undefined) {
-          throw new Error("combat: the pack declares no world table — nowhere to send the dead");
-        }
-        moveTo(
-          runtime,
-          { entityId: actorId, toLocationId: world.startRoomId, moveType: "teleport" },
-          { emit: ctx.emit },
-        );
-      }
+      // 4. The opening hand (D2: keep C1's feel): the shared blow — dodge
+      //    rolled at the orchestration level, the entry's effect chain, and
+      //    D6's session-clearing on a kill, all in combat/blow.ts.
+      playerBlow(
+        runtime,
+        state,
+        npc.id,
+        {
+          nowTick,
+          rng: ctx.rng,
+          emit: (to, draft) => ctx.emit(to, draft),
+        },
+        { effects: entry.effects ?? [], primitives: options.primitives },
+      );
     },
   });
 }

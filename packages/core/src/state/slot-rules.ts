@@ -171,11 +171,13 @@ const isFiniteNumber: SlotValidator = (value, what) => {
 };
 
 /**
- * The combat session's kind check (#56): present means a fight claim, and a
- * malformed one is refused outright — a wrong-shaped session would resume a
- * fight against a nonsense target. The poison ledger, when present, is
- * checked in the same breath: its `applied` is a non-negative integer (a
- * pulse count) and its numbers must be readable.
+ * The combat session's kind check (#56, #57 D13): present means a fight
+ * claim, and a malformed one is refused outright — a wrong-shaped session
+ * would resume a fight against a nonsense target. The rhythm pair, when
+ * present, must arrive TOGETHER (D13: both sides' fields in or both out —
+ * one without the other is a half-written claim); the poison ledger, when
+ * present, is checked in the same breath: its `applied` is a non-negative
+ * integer (a pulse count) and its numbers must be readable.
  */
 const isCombatSession: SlotValidator = (value, what) => {
   const session = asRecord(value, what);
@@ -183,6 +185,19 @@ const isCombatSession: SlotValidator = (value, what) => {
   isFiniteNumber(session.targetHp, `${what}.targetHp`);
   if (typeof session.targetDead !== "boolean") {
     throw new Error(`snapshot: ${what}.targetDead is not a boolean`);
+  }
+  const playerNext = session.playerNextStrikeTick;
+  const npcNext = session.npcNextStrikeTick;
+  if ((playerNext === undefined) !== (npcNext === undefined)) {
+    throw new Error(
+      `snapshot: ${what} carries only one of playerNextStrikeTick/npcNextStrikeTick — the rhythm pair travels together (D13)`,
+    );
+  }
+  if (playerNext !== undefined) {
+    isTick(playerNext, `${what}.playerNextStrikeTick`);
+  }
+  if (npcNext !== undefined) {
+    isTick(npcNext, `${what}.npcNextStrikeTick`);
   }
   const dot = session.dot;
   if (dot !== undefined) {

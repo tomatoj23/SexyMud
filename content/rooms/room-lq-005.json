@@ -1,0 +1,28 @@
+{
+  "id": "room-lq-005",
+  "name": "镇北破庙",
+  "description": "荒庙半塌，蛛网结满梁柱，香炉里插着几根断了头的香。一个衣衫油亮的泼皮占了供桌，正眯眼打量来人。",
+  "enterText": "你踏进破庙，霉味混着香灰扑面而来。",
+  "exits": [
+    {
+      "id": "exit-lq-005-south",
+      "direction": "南",
+      "targetRoomId": "room-lq-002",
+      "verbs": [
+        "南",
+        "south",
+        "s",
+        "往南走"
+      ],
+      "argForm": "none",
+      "cmdset": "exits",
+      "priority": 101
+    }
+  ],
+  "objects": [
+    {
+      "id": "npc-lq-004",
+      "count": 1
+    }
+  ]
+}
