@@ -94,11 +94,16 @@ export default function App() {
     // The output lines are pulled by snapshot, so lines published before the
     // terminal mounts are simply there when it first renders. A failed open
     // (a broken pack, a missing world table) stays ON the title screen and
-    // says so — an unhandled rejection is not a message.
+    // says so — an unhandled rejection is not a message. The heartbeat
+    // timer the session armed at creation stops with the discarded session
+    // (#57 C2-T7: a retry must not stack another interval).
     assembly.session
       .startNewGame(name)
       .then(() => setGame(assembly))
-      .catch(() => setOpenFailed(true));
+      .catch(() => {
+        assembly.session.dispose();
+        setOpenFailed(true);
+      });
   };
 
   const continueGame = () => {
@@ -109,8 +114,10 @@ export default function App() {
       .then((outcome) => {
         // "no-save" is the honest no-op: the door was lit on bytes that
         // vanished between the probe and the click — there is nothing to
-        // resume and nothing to say.
+        // resume and nothing to say — and the session it opened (heartbeat
+        // timer included) goes with it.
         if (outcome === "resumed") setGame(assembly);
+        else assembly.session.dispose();
       })
       // A load that fails loudly keeps its verdict (#52 AC3); the SURFACE
       // splits by class (#53/N-2): unreachable storage is its own door
@@ -118,6 +125,7 @@ export default function App() {
       // corrupt verdict on the envelope, the engine's own damage verdict on
       // the payload — is the repair/overwrite door.
       .catch((error: unknown) => {
+        assembly.session.dispose();
         setContinueFailedKind(
           error instanceof LocalSaveUnavailableError ? "unavailable" : "corrupt",
         );

@@ -61,7 +61,7 @@
     "^err_[a-z][a-zA-Z0-9-]*$": {
       "type": "string",
       "minLength": 1,
-      "description": "拒绝文案：键名 = err_ + accessType（「use」门拒绝读 err_use；默认门拒绝读 err_default）；#56 起执行段拒绝同用此面（err_notVisible／err_targetDead 等——键名是拒绝语义，camelCase 允许）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。err_* 可整体省略（渲染层回退通用文案），但写了就必须非空。须遵守 content/style-guide.md（第二人称「你」、古典白话）。命令集合 accessType 词汇表只有 use 与 default——带 accessType 语义的键拼错将永远无人读取。"
+      "description": "拒绝文案：键名 = err_ + accessType（「use」门拒绝读 err_use；默认门拒绝读 err_default）；#56 起执行段拒绝同用此面（err_notVisible／err_inCombat 等——键名是拒绝语义，camelCase 允许）。**拒绝也是一种叙事**（spec/02 §5.4）：引擎事件只带 errKey，文案本体永远在条目数据里。err_* 可整体省略（渲染层回退通用文案），但写了就必须非空。须遵守 content/style-guide.md（第二人称「你」、古典白话）。命令集合 accessType 词汇表只有 use 与 default——带 accessType 语义的键拼错将永远无人读取。"
     }
   },
   "additionalProperties": false

@@ -193,6 +193,64 @@ describe("the hand-played combat chains over the shipped pack (#56/#57)", () => 
     // No wiring line surfaced: the seeds made the fight legal.
     expect(lines.join("")).not.toContain(WEB_HOST_COPY.submitFailed);
   });
+
+  it("resumes a C1 save MID-FIGHT — the load-point restart holds the owed hands (AC12 first half, D3)", async () => {
+    // The AC12 face the third example cannot cover: a save that still
+    // CARRIES a combat session (no rhythm pair, a C1 shape) and resumes
+    // INTO the fight. The load point must seed the rhythm at the wall's
+    // now — one exchange on the next beat, NOT thousands of owed hands
+    // settled from the save's ancient tick (ADR-0016: offline fights
+    // nobody's fights). This is also the only test that bites the
+    // continueGame → resumeCombatSession wiring itself.
+    const rig = makeRig();
+    await rig.session.startNewGame("续战侠");
+    await walkToYard(rig);
+    const saved = rig.store.saved.at(-1)!;
+    const entities = (saved.data as {
+      entities: Record<string, Record<string, unknown>>;
+    }).entities;
+    // A C1-shaped mid-fight save: the session rides whole, rhythm pair
+    // absent, the save's nowTick ancient relative to the resumed wall.
+    entities["player"]!.combat = {
+      targetNpcId: "npc-lq-003",
+      targetHp: 100,
+      targetDead: false,
+    };
+    (saved.data as { nowTick?: number }).nowTick = 100;
+
+    const lines: string[] = [];
+    let wallMs = 3_000_000;
+    const resumed = createGameSession({
+      pack: PACK,
+      store: { load: async () => saved, save: async () => {} },
+      viewport: { width: 40, height: 24 },
+      copy: WEB_HOST_COPY,
+      hostClock: createHostClock({ tickSeconds: 1, now: () => wallMs }),
+      heartbeatMs: 3_600_000,
+      onOutput: (chunks) => {
+        for (const chunk of chunks) for (const line of chunk) lines.push(line.text);
+      },
+      onStatus: () => {},
+    });
+    await resumed.continueGame();
+    // One beat: the seeded rhythm owes exactly one exchange (both hands due
+    // at wall +2, the beat reads wall +3) — not a catch-up pile.
+    const before = lines.length;
+    wallMs += 3000;
+    await resumed.heartbeat();
+    const produced = lines.slice(before).join("");
+    expect(produced).toContain("孙彪还了一手");
+    expect(produced).toContain("一拳打向孙彪");
+    // The restarted session carried the saved HP forward: 100 − 19 = 81
+    // reads the FULL life band on the player's hand line.
+    expect(produced).toContain("孙彪受创19点");
+    // And nothing else settled: one exchange, two lines of hands (plus the
+    // render's own folding) — assert the pile stayed small by counting
+    // strikes.
+    const strikes = produced.match(/拳|还了一手/g) ?? [];
+    expect(strikes.length).toBeLessThanOrEqual(4);
+    expect(produced).not.toContain(WEB_HOST_COPY.submitFailed);
+  });
 });
 
 describe("AC12 — the full line: open, exchange, escape, ambush, kill, clear, reopen (#57)", () => {

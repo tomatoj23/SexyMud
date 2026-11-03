@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   SAVE_VERSION,
   displayWidth,
 } from "@sexymud/core";
 import type { OutputLine, SaveStore, Snapshot, Viewport } from "@sexymud/core";
+import { createHostClock } from "../src/game/hostClock.js";
 import { createGameSession } from "../src/game/gameSession.js";
 import type { GameSession } from "../src/game/gameSession.js";
 import { WEB_HOST_COPY } from "../src/game/hostCopy.js";
@@ -429,5 +430,56 @@ describe("the input gate also serves the player name (#54 复核 F2, spec/05 §8
     const rig = makeSession();
     await rig.session.startNewGame("甲".repeat(205));
     expect(rig.session.playerName()).toBe("甲".repeat(200));
+  });
+});
+
+describe("the heartbeat timer's lifecycle (#57 C2-T7)", () => {
+  it("arms one interval at creation with a wall clock, disposes it whole, idles safe before an opening", async () => {
+    // Fake timers: the interval the session arms is COUNTABLE, so the
+    // lifecycle is pinned mechanically — one timer while the session lives
+    // (however it was opened or not), zero after dispose(), and a beat
+    // before any opening is a safe no-op (the discarded-session paths in
+    // App.tsx rely on exactly this shape).
+    const files = readPackFiles(); // read under real timers (fs-based)
+    vi.useFakeTimers();
+    try {
+      let wallMs = 1_000_000;
+      const store: SaveStore = { load: async () => null, save: async () => {} };
+      const session = createGameSession({
+        pack: loadPack(files, WEB_HOST_COPY),
+        store,
+        viewport: { width: 40, height: 24 },
+        copy: WEB_HOST_COPY,
+        hostClock: createHostClock({ tickSeconds: 1, now: () => wallMs }),
+        heartbeatMs: 100,
+        onOutput: () => {},
+        onStatus: () => {},
+      });
+      expect(vi.getTimerCount()).toBe(1);
+
+      // Before any opening the beat is a no-op: no world, no throw, no lines.
+      wallMs += 1000;
+      await expect(session.heartbeat()).resolves.toBeUndefined();
+
+      // dispose() clears the whole timer and is idempotent.
+      session.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      session.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+
+      // A session WITHOUT a host clock arms nothing (the pre-C2 shape).
+      const clockless = createGameSession({
+        pack: loadPack(files, WEB_HOST_COPY),
+        store,
+        viewport: { width: 40, height: 24 },
+        copy: WEB_HOST_COPY,
+        onOutput: () => {},
+        onStatus: () => {},
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      clockless.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
