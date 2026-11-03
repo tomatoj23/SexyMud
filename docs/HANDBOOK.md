@@ -117,7 +117,7 @@
 - **世界首批内容（M1-T6）**：柳青镇 4 房间／3 人物／1 怪物；出口即命令（`ExitEntry extends CommandEntry`），门禁与拒绝文案全在内容 JSON
 - **第二内容包（M2-T6，`packages/core/tests/fixtures/mini-pack/`）**：非武侠（近轨灯塔站，M3-T6 后 **5 房间／6 出口／2 命令／2 人物**——含「舱室基类」原型 `room-orb-000` 与舷外作业平台，方向词 前/后/内/外），与 `content/` 走**同一装载函数**（换包 = 换目录，**维度表与日历也随包装载**），经同一引擎跑通走/看/说——**验收标准 2 首次机械化，引擎零改动**，换包只换宿主的「命令 id → 出厂行为」绑定表
 - **文档门禁（`corepack pnpm docs:check`，`scripts/check-docs.mjs`）**：扫**活文档**（`docs/spec/**`、`HANDBOOK.md`、`AGENTS.md`、`CONTEXT.md`、`docs/agents/content.md`、`docs/chinese-mud-concerns.md`）三件事——① 被后来的 ADR 覆盖掉的旧口径（如 `进入执行段`／`不共用代码路径`／已删除的 `CommandDeps.clock`／`db.*`、`ndb.*`；白名单只认**显式退役标记**，#28 收紧——旧/删/更宽这类词不再整行放行）② 数字口径——测试规模只在 HANDBOOK「当前事实」（连写「N 文件／M 用例」与分写都拦），且 schema／条目集合／内容 JSON／维度／中文清单条数／测试文件数**六项与目录实际核对** ③ `ADR-00NN` 引用是否指向存在的文件、ADR 篇数（「N 篇决策历史」／「N 个架构决策」／「N 个 ADR」三种写法都认）是否与目录一致。**故意不扫 `docs/adr/`**：ADR 是决策日志，里面的旧措辞正是历史本身。扩扫描范围 = 先 `DOCS_CHECK_REPORT_ONLY=1` 只报告跑一遍看规模、再正式纳入。改术语或改数字后必跑
-- **`content:check` 五道**：① Schema 校验（有内容者硬失败）② **已废概念门禁**（命中即失败）③ **原型环检测**（按集合遍历 `prototypeParent` 图，成环即失败并打印环；M3-T6 落，`content/` 至今零原型故暂无内容可守）④ 无内容可映射 schema 的反向扫描 ⑤ **draft-07 合法性清扫**（全部 schema 编译；无内容者的违规 WARN 呈现不阻塞）
+- **`content:check` 五道**（序＝`scripts/check-content.mjs` 头注释）：① Schema 校验（有内容者硬失败）② **已废概念门禁**（命中即失败）③ **原型环检测**（按集合遍历 `prototypeParent` 图，成环即失败并打印环；M3-T6 落，`content/` 至今零原型故暂无内容可守）④ **draft-07 合法性清扫**（全部 schema 编译；无内容者的违规 WARN 呈现不阻塞——旧口径曾拆作「无内容反向扫描」与「draft-07」两道，实为一道）⑤ **世界可达性**（#49：`world.json` 声明缺失即失败＋起始房为根 BFS 出口图、不可达非模板房间逐个列出；`prototypeKey` 豁免、全可达零输出）
 - 术语词典 / 文风指南 / 内容管线约定 / **43 个 ADR** 齐备；兽数据归 `beast/` 集合，获取走 sect `exchange` 贡献兑换
 
 ### 待办
