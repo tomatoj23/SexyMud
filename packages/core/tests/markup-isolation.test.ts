@@ -31,6 +31,7 @@ const CONTENT: RenderContent = {
     appearanceItems: "",
     appearancePeople: "",
     strikeHit: "",
+    strikeHitMartial: "",
     strikeDodge: "",
     strikeTake: "",
     dotTickLine: "",

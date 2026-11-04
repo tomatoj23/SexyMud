@@ -113,15 +113,43 @@ export interface CharacterTable {
    */
   readonly strikeIntervalTicks: number;
   /**
-   * The strike operand channels (T4/T10's mandatory field face): which attr
-   * key feeds the player→npc formula's attack operand, which feeds the
-   * defense operand of the NPC→player formula (C2's two-way formula — C1's
-   * retaliation was bare damage and read no player key), and the
+   * The secondary-resource key pair (#58 D18): which attr keys carry the
+   * martial-arts resource (the internal force of the wuxia pack — the
+   * ENGINE knows neither the words nor the keys, it reads THIS pair).
+   * Martial costs deduct the `current` key, regeneration caps at the `max`
+   * key. OPTIONAL: a character model without a resource the martial system
+   * draws on declares none, and the consumers that need one fail loudly at
+   * their first read (the calendar/settings arrangement).
+   */
+  readonly secondaryResource?: {
+    readonly current: string;
+    readonly max: string;
+  };
+  /**
+   * The martial-arts declaration (#58 D13): the KNOWN list (content-declared
+   * — no runtime learning path, D2) and the ids a NEW GAME equips into the
+   * save's `martial` slot. `initialEquipped ⊆ known` is the offline gate's
+   * cross-field rule (draft-07 cannot express it); reference resolution is
+   * the registry's load-time check (the npc→monsterId precedent).
+   */
+  readonly martial?: {
+    readonly known: readonly string[];
+    readonly initialEquipped: readonly string[];
+  };
+  /**
+   * The strike operand channels (T4/T10's mandatory field face, #58 D17/D8
+   * widened it): which attr key feeds the player→npc formula's attack
+   * operand; the DELIVERY-WORD-KEYED defense pair the NPC→player formula
+   * routes through (a monster's top-level `source` picks the key — the
+   * dimensions source dimension's vocabulary, aligned); which attr key
+   * carries the player's dodge stat (the D8 roll's operand); and the
    * element/source vocabulary words a bare-hand strike carries.
    */
   readonly strike: {
     readonly attackAttr: string;
-    readonly defenseAttr: string;
+    /** source word (pack vocabulary) → the attrs key carrying that defense. */
+    readonly defenseAttrs: Readonly<Record<string, string>>;
+    readonly dodgeAttr: string;
     readonly element: string;
     readonly source: string;
   };
@@ -336,19 +364,45 @@ export function assertCharacterTable(character: CharacterTable | undefined): voi
       "content registry: character table must declare strikeIntervalTicks as a positive integer (#57)",
     );
   }
+  const secondary = character.secondaryResource;
+  if (
+    secondary !== undefined &&
+    (!isPlainObject(secondary) ||
+      typeof secondary.current !== "string" ||
+      secondary.current === "" ||
+      typeof secondary.max !== "string" ||
+      secondary.max === "")
+  ) {
+    throw new Error(
+      "content registry: character table must declare secondaryResource as { current, max } attr keys (#58)",
+    );
+  }
+  const martial = character.martial;
+  if (martial !== undefined) {
+    const isIdList = (value: unknown): value is readonly string[] =>
+      Array.isArray(value) && value.every((id) => typeof id === "string" && id !== "");
+    if (!isPlainObject(martial) || !isIdList(martial.known) || !isIdList(martial.initialEquipped)) {
+      throw new Error(
+        "content registry: character table must declare martial as { known, initialEquipped } id lists (#58)",
+      );
+    }
+  }
   if (
     !isPlainObject(strike) ||
     typeof strike.attackAttr !== "string" ||
     strike.attackAttr === "" ||
-    typeof strike.defenseAttr !== "string" ||
-    strike.defenseAttr === "" ||
+    typeof strike.dodgeAttr !== "string" ||
+    strike.dodgeAttr === "" ||
     typeof strike.element !== "string" ||
     strike.element === "" ||
     typeof strike.source !== "string" ||
-    strike.source === ""
+    strike.source === "" ||
+    !isPlainObject(strike.defenseAttrs) ||
+    Object.keys(strike.defenseAttrs).length === 0 ||
+    Object.values(strike.defenseAttrs).some((key) => typeof key !== "string" || key === "")
   ) {
     throw new Error(
-      "content registry: character table must declare strike as { attackAttr, defenseAttr, element, source }",
+      "content registry: character table must declare strike as { attackAttr, defenseAttrs, dodgeAttr, element, source } (#58)",
     );
   }
 }

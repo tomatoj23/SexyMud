@@ -1,0 +1,15 @@
+{
+  "id": "mrt-lq-004",
+  "kind": "招式",
+  "name": "开碑劲",
+  "tier": 3,
+  "source": "external",
+  "element": "none",
+  "cost": 30,
+  "cooldownTicks": 10,
+  "attackMultiplier": 2.0,
+  "effects": [
+    "eff-strike-fist"
+  ],
+  "description": "双掌沉腕蓄劲，一击有开碑裂石之势。耗力极巨，非到生死关头不轻用。"
+}

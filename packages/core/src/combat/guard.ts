@@ -1,5 +1,5 @@
 import type { CommandEntry } from "../command/entry.js";
-import type { CommandSpec } from "../command/pipeline.js";
+import type { CommandRejection, CommandSpec } from "../command/pipeline.js";
 import { commandRefusedEvent, customCode } from "../events.js";
 import type { ReasonCode } from "../types.js";
 import type { WorldRuntime } from "../world/runtime.js";
@@ -20,6 +20,22 @@ import type { WorldRuntime } from "../world/runtime.js";
 
 /** The refusal code the gate and the strike adapter's same-target branch share. */
 export const IN_COMBAT: ReasonCode = customCode("inCombat");
+
+/**
+ * Words one execution-stage refusal — the semantic event plus the rejection
+ * — the shape every combat adapter's own refusal faces share (the strike
+ * adapter's C2 original, the perform and equip adapters' #58 siblings).
+ */
+export function refuseExecutionStage(
+  ctx: { emit(recipientId: string, draft: { type: string; [key: string]: unknown }): void },
+  actorId: string,
+  entryId: string,
+  reason: ReasonCode,
+  errKey: string,
+): CommandRejection {
+  ctx.emit(actorId, commandRefusedEvent({ reason, commandKey: entryId, errKey }));
+  return { kind: "rejected", reason };
+}
 
 export function guardNotInCombat<W extends WorldRuntime>(
   entry: CommandEntry,

@@ -4,17 +4,43 @@
     "maxHp": 200,
     "hp": 200,
     "attack": 30,
-    "externalDefense": 3
+    "externalDefense": 3,
+    "internalDefense": 3,
+    "dodge": 10,
+    "internalForce": 100,
+    "maxInternalForce": 100
   },
   "primaryResource": {
     "current": "hp",
     "max": "maxHp"
   },
+  "secondaryResource": {
+    "current": "internalForce",
+    "max": "maxInternalForce"
+  },
   "deathAtOrBelow": 0,
   "strikeIntervalTicks": 2,
+  "martial": {
+    "known": [
+      "mrt-lq-001",
+      "mrt-lq-002",
+      "mrt-lq-003",
+      "mrt-lq-004"
+    ],
+    "initialEquipped": [
+      "mrt-lq-002",
+      "mrt-lq-003",
+      "mrt-lq-001",
+      "mrt-lq-004"
+    ]
+  },
   "strike": {
     "attackAttr": "attack",
-    "defenseAttr": "externalDefense",
+    "defenseAttrs": {
+      "external": "externalDefense",
+      "internal": "internalDefense"
+    },
+    "dodgeAttr": "dodge",
     "element": "none",
     "source": "external"
   }

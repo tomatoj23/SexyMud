@@ -1,74 +1,65 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "martial.schema.json",
-  "title": "武功：招式与心法（content/martial/，每条目一文件）",
-  "description": "武功 = 主动招式 + 被动心法，由 kind 字段区分（CONTEXT.md 武功/招式/心法词条）。装配上限：招式 4 / 心法 3。MVP 一个招式 = 一个条目，不做多形态；丰富度靠一条目多条文本变体（CONTEXT.md 招式文本变体词条）。",
+  "title": "武功招式（content/martial/，每条目一文件）",
+  "description": "武功条目＝主动招式（#58 D10 字段面定稿）。kind 字段保留可扩（心法＝被动常驻修饰符，挂修饰符票——#58 非目标）；已学集合由 config/character.json 的 martial.known 内容声明（无运行时学习途径）；装配进存档 martial 槽（上限 4、序即轮盘优先级）。三处同步：本文件／packages/core/src/content/registry.ts 的 MartialEntry／docs/agents/content.md。",
   "type": "object",
   "required": ["id", "kind", "name", "tier", "effects"],
   "properties": {
     "id": {
       "type": "string",
       "pattern": "^mrt-[a-z0-9]+-[0-9]{3}$",
-      "description": "如 mrt-hs-001（华山招式 1）。id 一经发布不可变更（content.md）。"
+      "description": "如 mrt-lq-001（柳青镇招式 1）。id 一经发布不可变更（content.md）；亦即 cooldowns 槽的裸键（mrt- 前缀天然防撞，#58 D12）。"
     },
     "kind": {
       "type": "string",
-      "description": "招式 | 心法（CONTEXT.md）。决定进哪类装配槽；取值可扩充，schema 不写死枚举（引擎零写死）。"
+      "minLength": 1,
+      "description": "条目种类：招式｜心法（CONTEXT.md）。心法挂修饰符票；取值可扩充，schema 不写死枚举（引擎零写死）。"
     },
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "招式名（四字格意象，同门风格统一）；叙事中出现时用「」括起（style-guide.md）"
+      "description": "招式名（四字格意象，同门风格统一）；叙事中出现时用「」括起（style-guide.md）。cmd-perform／装配／卸下按此名精确匹配（#58 C3-T5）。"
     },
     "tier": {
       "type": "integer",
       "minimum": 1,
       "maximum": 4,
-      "description": "品阶序号（1-4）。中文品阶名见 CONTEXT.md（下乘/中乘/上乘/绝学），由 config 映射；战斗文本片段数按品阶分档（style-guide.md）。"
+      "description": "品阶序号（1-4）。中文品阶名＝combat-tiers.json 的 quality 维度带（low/mid/high/ultimate ↔ 下乘/中乘/上乘/绝学，#58 C3-T2）；strike 事件的 rank 值取该带名。"
     },
     "source": {
       "type": "string",
-      "description": "作用方式：内功 | 外功。取值来自 content/config/dimensions.json 的 source 维度（ADR-0009：与系别正交，决定走哪个防御）。"
+      "minLength": 1,
+      "description": "作用方式：内功｜外功。取值来自 content/config/dimensions.json 的 source 维度；决定本招式手吃对头 stats.externalDefense 还是 stats.internalDefense（#58 D17 分路）。缺省读 character 声明表的 strike.source。"
     },
     "element": {
       "type": "string",
-      "description": "系别性质（七系 + 无属性）。取值来自 dimensions 的 element 维度；引擎不按具体值分支。"
+      "minLength": 1,
+      "description": "系别性质（七系 + 无属性）。取值来自 dimensions 的 element 维度；缺省读 character 声明表的 strike.element。引擎不按具体值分支。"
     },
-    "sectId": { "type": "string", "description": "门派归属（获取来源，不是所有权——已学武功与门派解耦 #2）" },
-    "lineageId": { "type": "string", "description": "脉归属：武功池的细分标签，不是玩家身份选择" },
-    "prerequisites": {
-      "type": "object",
-      "description": "先修武功与等级要求（content.md 通用字段）",
-      "properties": {
-        "martialIds": { "type": "array", "items": { "type": "string" } },
-        "martialLevelMin": { "type": "integer", "minimum": 0 },
-        "sectIds": { "type": "array", "items": { "type": "string" } }
-      },
-      "additionalProperties": false
+    "cost": {
+      "type": "number",
+      "minimum": 0,
+      "description": "出手消耗（#58 D10）：纯数值，扣哪个 attrs 键由玩家声明表（config/character.json 的 secondaryResource 键对）决定，条目不写死资源键名。缺省 0＝无消耗。"
     },
-    "costs": {
-      "type": "object",
-      "description": "招式消耗（内力，ADR-0010）。心法无消耗。",
-      "properties": {
-        "internalForce": { "type": "number", "minimum": 0 }
-      },
-      "additionalProperties": false
-    },
-    "cooldownMs": {
+    "cooldownTicks": {
       "type": "integer",
       "minimum": 0,
-      "description": "冷却（招式按冷却自动释放；冷却中出招权重归零）"
+      "description": "招式可用性冷却（tick 数，#58 D12）：该招式出手后挂 cooldowns[条目id]＝出手 tick＋本值（手动施展与轮盘自动手同律；未声明＝无冷却；基础攻击不挂冷却）。"
+    },
+    "attackMultiplier": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "攻击乘数（#58 D11）：进公式 baseAttack＝攻击属性 × 本值；缺省 1＝与基础攻击同威。效果条目 amount 继续闲置（数值面归招式层，C1-T11 缝合先例）。"
     },
     "effects": {
       "type": "array",
       "minItems": 1,
-      "description": "效果引用列表，指向 content/effects/ 的定义条目",
-      "items": { "type": "string" }
-    },
-    "textVariants": {
-      "type": "array",
-      "description": "招式文本变体：引用 content/combat-text/ 的模板 id，战斗中随机抽（CONTEXT.md 招式文本变体词条）",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string",
+        "pattern": "^eff-[a-z0-9-]+$"
+      },
+      "description": "效果引用列表，指向 content/effects/ 的定义条目——本招式一手走的完整效果链（直伤／上毒等）；注册表加载期校验悬空引用（command.effects 先例）。"
     },
     "tags": { "$ref": "common.schema.json#/definitions/tags" },
     "flags": { "$ref": "common.schema.json#/definitions/flags" },
@@ -76,11 +67,11 @@
     "prototypeParent": { "$ref": "common.schema.json#/definitions/prototypeParent" },
     "art": {
       "type": "string",
-      "description": "覆盖默认资产路径时的相对 assets/ 路径（content.md）"
+      "description": "覆盖默认资产路径时的相对 assets/ 路径（content.md 通用字段）。"
     },
     "description": {
       "type": "string",
-      "description": "叙事文本（1~3 句），须遵守 content/style-guide.md"
+      "description": "叙事文本（1~3 句），须遵守 content/style-guide.md。"
     }
   },
   "additionalProperties": false

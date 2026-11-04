@@ -154,7 +154,7 @@ interface TerminalView {
 ## 10. 自检清单
 
 - [x] `GameEvent` **不含已渲染文本**（M1-T1 定契约；M2-T1 测试显式断言事件串不含 `err_*` 文案）
-- [x] **渲染缝随机制模块票收口**（#56：战斗三臂 strike／dotTick／death 进 `renderEvent` 分派＋`RenderCopy` 扩六个固定模板键〔strikeHit／strikeDodge／strikeTake／dotTickLine／deathNpcLine／deathPlayerLine——键名机制词、词面宿主注入〕；扩展臂仍显式不渲染、宿主在会话层消费〔`flagGranted` 行首个实例〕；`apps/web/tests/combat-e2e.test.ts` 钉手玩全链四类行）
+- [x] **渲染缝随机制模块票收口**（#56：战斗三臂 strike／dotTick／death 进 `renderEvent` 分派＋`RenderCopy` 扩固定模板键〔strikeHit／strikeDodge／strikeTake／dotTickLine／deathNpcLine／deathPlayerLine——键名机制词、词面宿主注入〕；扩展臂仍显式不渲染、宿主在会话层消费〔`flagGranted` 行首个实例〕；`apps/web/tests/combat-e2e.test.ts` 钉手玩全链四类行）。**#58（C3-T3 择双模板键）扩第七键**：`strikeHitMartial`（招式手命中行，占位符 attacker/defender/damage/martial）——单模板可选槽被否（基础拳与招式行读法不同、空槽模板两头凑不成词），招式名经注入 names 表（martialId→name 宿主建表，#50 Q6 渲染器零注册表读不变）；`apps/web/tests/combat-c3-e2e.test.ts` 钉带名行
 - [x] 渲染是纯函数 `(event, observerState)`（#50：`src/text/render.ts`，取字表随第三参注入——Q6）
 - [x] **按接收者逐一渲染**（不是先渲染后群发）（#50：`ObserverState` 单观者签名）
 - [x] 采用 **Actor stance**，中文人称代词正确（#50：当事人读第二人称代词、旁观者读名字表）

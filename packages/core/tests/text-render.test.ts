@@ -47,6 +47,7 @@ const COPY: RenderCopy = {
   appearanceItems: `这里有：${markupKey("items")}`,
   appearancePeople: `在场：${markupKey("people")}`,
   strikeHit: `${markupKey("attacker")}击中${markupKey("defender")}，造成${markupKey("damage")}点伤害。`,
+  strikeHitMartial: `${markupKey("attacker")}一招「${markupKey("martial")}」击中${markupKey("defender")}，造成${markupKey("damage")}点伤害。`,
   strikeDodge: `${markupKey("defender")}闪过了${markupKey("attacker")}的攻势。`,
   strikeTake: `${markupKey("attacker")}还了一手，你受到${markupKey("damage")}点伤害。`,
   dotTickLine: `${markupKey("target")}毒发，损了${markupKey("damage")}点气血（${markupKey("applied")}/${markupKey("total")}）。`,

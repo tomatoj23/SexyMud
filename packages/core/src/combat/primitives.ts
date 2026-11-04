@@ -9,6 +9,7 @@ import { aggregateModifiers } from "../effects/modifiers.js";
 import {
   bandPairOf,
   clampedHp,
+  faceDefenseOf,
   monsterCombatFace,
   readDefenseK,
   requireCharacterTable,
@@ -49,6 +50,12 @@ function sessionOf(ctx: EffectExecutionContext) {
  * damage while the blow's other effects (a poison fist) still landed, C1's
  * known corner. The roll moved UP to the blow's orchestration (combat/
  * blow.ts): a dodged blow never reaches this primitive at all.
+ *
+ * #58 D11/D15/D17: the hand's strike face (combat/blow.ts's plan, carried
+ * on the context) scales the attack operand by the hand's multiplier and
+ * routes the monster-side defense by the hand's delivery word — absent is
+ * the basic strike's own face (multiplier 1, the table's words, the
+ * external defense), the C1/C2 arithmetic unchanged.
  */
 export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
   const { state, session } = sessionOf(ctx);
@@ -65,7 +72,13 @@ export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
       `combat: the player's attrs carry no usable attack value (key "${character.strike.attackAttr}") — seed the character table at startNewGame`,
     );
   }
-  const damage = strikeDamage(attack, face.externalDefense, readDefenseK(registry.settings));
+  const hand = ctx.strike;
+  const multiplier = hand?.attackMultiplier ?? 1;
+  if (typeof multiplier !== "number" || !Number.isFinite(multiplier) || multiplier <= 0) {
+    throw new Error("combat: a strike face carries a non-positive attack multiplier");
+  }
+  const defense = faceDefenseOf(face, hand?.source ?? character.strike.source);
+  const damage = strikeDamage(attack * multiplier, defense, readDefenseK(registry.settings));
   // F6: one clamped write — a save's HP above a content-revised ceiling
   // heals itself on the very next settlement.
   session.targetHp = clampedHp(session.targetHp - damage, face.maxHp);
@@ -77,8 +90,11 @@ export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
     ...bands,
     isDodge: false,
     isCrit: false,
-    element: character.strike.element,
-    source: character.strike.source,
+    element: hand?.element ?? character.strike.element,
+    source: hand?.source ?? character.strike.source,
+    ...(hand?.martialId !== undefined
+      ? { martialId: hand.martialId, rank: hand.rank }
+      : {}),
   }));
   if (session.targetHp <= 0 && !session.targetDead) {
     session.targetDead = true;

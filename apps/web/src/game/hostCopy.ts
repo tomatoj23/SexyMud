@@ -57,6 +57,22 @@ export interface HostCopy {
   readonly escapeOkLine: string;
   readonly escapeFailLine: string;
   /**
+   * The equip/unequip confirmations (#58 D13): the martialEquipped and
+   * martialUnequipped extension arms, worded by the SESSION with the name
+   * read out of the registry (the flagGranted family — the engine's event
+   * carries the id, never the word).
+   */
+  martialEquippedLine(name: string): string;
+  martialUnequippedLine(name: string): string;
+  /**
+   * The regeneration line (#58 D16②/C3-T4): one resourceRegen event per
+   * resource per observation span, worded by the ATTR KEY this host's pack
+   * declares (the keys are the pack's; only this host knows which words
+   * they deserve). An unknown key falls back to a generic line rather than
+   * throwing — a third-party pack riding this host still gets a line.
+   */
+  regenLine(resource: string, amount: number): string;
+  /**
    * The visible line when a dispatch itself threw (#56 audit): the engine's
    * loud wiring failures reach the player as one line, never a frozen
    * terminal (the save-failure line's own family).
@@ -127,9 +143,13 @@ export const WEB_HOST_COPY: HostCopy = {
     // The combat kernel's fixed templates (#56 T7: C1's minimal face lives
     // HERE, with the host; a later combat-text slice owns moving the words
     // into content). Wording follows content/style-guide.md — damage reads
-    // as harm taken, never a bare "N points of damage" line. Placeholders
-    // (markupKey): see render.ts's RenderCopy docs.
+    // as harm taken, never a bare "N points of damage" line. #58 D16① adds
+    // the martial twin (strikeHitMartial): the named technique's strike
+    // reads differently from the bare fist, so it is a second template, not
+    // an optional slot (C3-T3). Placeholders (markupKey): see render.ts's
+    // RenderCopy docs.
     strikeHit: `${markupKey("attacker")}一拳打向${markupKey("defender")}，${markupKey("defender")}受创${markupKey("damage")}点。`,
+    strikeHitMartial: `${markupKey("attacker")}一招「${markupKey("martial")}」打向${markupKey("defender")}，${markupKey("defender")}受创${markupKey("damage")}点。`,
     strikeDodge: `${markupKey("defender")}身形一侧，闪过了${markupKey("attacker")}的攻势。`,
     strikeTake: `${markupKey("attacker")}还了一手，你受创${markupKey("damage")}点。`,
     dotTickLine: `${markupKey("target")}毒性发作，损了${markupKey("damage")}点气血（第${markupKey("applied")}/${markupKey("total")}跳）。`,
@@ -152,6 +172,22 @@ export const WEB_HOST_COPY: HostCopy = {
   flagGrantedLine: "掌柜的收下银子，递给你一块住客木牌：客官往后院请便。",
   escapeOkLine: "你且战且退，脱身而去。",
   escapeFailLine: "对方缠得紧，你脱不开身。",
+  martialEquippedLine(name) {
+    return `你将「${name}」激发在手。`;
+  },
+  martialUnequippedLine(name) {
+    return `你收了「${name}」，喘匀了气息。`;
+  },
+  regenLine(resource, amount) {
+    const rounded = Math.round(amount * 10) / 10;
+    if (resource === "hp") {
+      return `你气息渐定，回复了${rounded}点气血。`;
+    }
+    if (resource === "internalForce") {
+      return `你调息片刻，回复了${rounded}点内力。`;
+    }
+    return `你回复了${rounded}点。（${resource}）`;
+  },
   submitFailed: "（这一下没能出手——世界配置有误，稍后再试。）",
   saveFailed: "（本地存档暂不可用，这一步之后的进度未能保存。）",
   openFailed: "开局失败——世界配置有误，无法进入江湖。",

@@ -13,11 +13,16 @@ import {
   createSeededRng,
   createSettler,
   createWorldRuntime,
+  equipSpec,
   grantFlagSpec,
   guardNotInCombat,
   lineOf,
   lookSpec,
+  MARTIAL_EQUIPPED_EVENT,
+  MARTIAL_UNEQUIPPED_EVENT,
+  performSpec,
   renderEvent,
+  RESOURCE_REGEN_EVENT,
   resolve,
   resumeCombatSession,
   sanitizePlayerInput,
@@ -26,6 +31,8 @@ import {
   serializeWorld,
   strikeSpec,
   testClockOver,
+  unequipSpec,
+  validateEquippedMartials,
   verbTableFrom,
 } from "@sexymud/core";
 import type {
@@ -111,19 +118,24 @@ export interface FactoryAdapter {
  * #56 adds the strike (the engine's combat adapter — the tracer bullet's
  * own kernel behaviour) and the lodge check-in (the engine's generic flag
  * adapter; the flag WORD is this pack's, and it rides here with the table —
- * "换包换表", the same law as the copy table).
+ * "换包换表", the same law as the copy table). #58 adds the perform cast and
+ * the equip/unequip pair — the engine's combat adapters, the pack's verbs.
  */
 export const DEFAULT_FACTORY_ADAPTERS: readonly FactoryAdapter[] = [
   { commandId: "cmd-look", spec: lookSpec },
   { commandId: "cmd-say", spec: saySpec },
   { commandId: "cmd-strike", spec: (entry) => strikeSpec(entry) },
   { commandId: "cmd-lodge", spec: (entry) => grantFlagSpec(entry, "inn-lodger") },
+  { commandId: "cmd-perform", spec: (entry) => performSpec(entry) },
+  { commandId: "cmd-equip", spec: (entry) => equipSpec(entry) },
+  { commandId: "cmd-unequip", spec: (entry) => unequipSpec(entry) },
 ];
 
 /**
- * The strike command's effect chain (#57): the settle handler's scheduled
- * player hands walk the SAME chain the typed opening hand does — one
- * behaviour, typed or scheduled. The id travels with this host's binding
+ * The BASE strike's effect chain (#57, #58 D15): the settle handler's
+ * scheduled hands walk this chain whenever the WHEEL falls back to the base
+ * strike — and the typed opening hand walks the same one. Martial hands
+ * walk their ENTRY's chain instead; the id travels with this host's binding
  * table (the adapters above name the same entry); a pack swap swaps both.
  */
 const strikeEffects = (pack: LoadedPack): readonly string[] =>
@@ -251,7 +263,7 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       clock: live.runtime.clock,
       entity: createCombatSettleHandler(live.runtime, {
         rng: live.rng,
-        effects: strikeEffects(pack),
+        baseEffects: strikeEffects(pack),
       }),
     });
     harness = createCommandHarness<WorldRuntime>({
@@ -374,6 +386,44 @@ export function createGameSession(options: GameSessionOptions): GameSession {
                 outcomeKind === "escaped"
                   ? copy.escapeOkLine
                   : copy.escapeFailLine,
+              style: "plain",
+            },
+          ]),
+        );
+        continue;
+      }
+      // The equip/unequip confirmations (#58 D13): the id rides the event,
+      // the name comes out of the registry — the SESSION words both, the
+      // flagGranted family.
+      if (
+        message.event.type === MARTIAL_EQUIPPED_EVENT ||
+        message.event.type === MARTIAL_UNEQUIPPED_EVENT
+      ) {
+        const martialId = (message.event as { martialId?: string }).martialId;
+        // The engine's own event always carries the id; an absent one is a
+        // wiring miss the throwing getter names — no silent "" fallback.
+        const name = pack.registry.martial(martialId!).name;
+        lines.push(
+          lineOf([
+            {
+              text:
+                message.event.type === MARTIAL_EQUIPPED_EVENT
+                  ? copy.martialEquippedLine(name)
+                  : copy.martialUnequippedLine(name),
+              style: "plain",
+            },
+          ]),
+        );
+        continue;
+      }
+      // The regeneration line (#58 D16②/C3-T4): one event per resource per
+      // observation span, worded by the attr key this host's pack declares.
+      if (message.event.type === RESOURCE_REGEN_EVENT) {
+        const fields = message.event as { resource?: string; amount?: number };
+        lines.push(
+          lineOf([
+            {
+              text: copy.regenLine(fields.resource ?? "", fields.amount ?? 0),
               style: "plain",
             },
           ]),
@@ -577,6 +627,11 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         pack.registry,
         options.hostClock?.nowTick() ?? assembled.runtime.clock.nowTick(),
       );
+      // The equipped slot's load-point reference check (#58 D13): a save's
+      // equipped ids must resolve against the CURRENT pack's martial
+      // collection and known list — content drift answers here, loudly,
+      // never as a silently uncastable hand mid-fight.
+      validateEquippedMartials(assembled.runtime.state, pack.registry);
       wireHarness(assembled);
 
       if (fellBack) {

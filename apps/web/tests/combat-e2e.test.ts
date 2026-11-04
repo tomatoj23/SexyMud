@@ -239,14 +239,24 @@ describe("the hand-played combat chains over the shipped pack (#56/#57)", () => 
     wallMs += 3000;
     await resumed.heartbeat();
     const produced = lines.slice(before).join("");
-    expect(produced).toContain("孙彪还了一手");
-    expect(produced).toContain("一拳打向孙彪");
-    // The restarted session carried the saved HP forward: 100 − 19 = 81
-    // reads the FULL life band on the player's hand line.
-    expect(produced).toContain("孙彪受创19点");
-    // And nothing else settled: one exchange, two lines of hands (plus the
-    // render's own folding) — assert the pile stayed small by counting
-    // strikes.
+    // The rhythm hand is the WHEEL's (#58 D6): the save carried the new
+    // game's equipped slot, and the first castable martial is 透骨指 —
+    // INTERNAL delivery against Sun Biao's 0 internal defense, so
+    // 30 × 1.5 × (1 − 0/10) → 45: the number only D9's routing produces
+    // (an external hand reads his 6 defense and lands 23).
+    expect(produced).toContain("一招「透骨指」打向孙彪");
+    expect(produced).toContain("孙彪受创45点");
+    // The guard's hand landed NOTHING this beat — the player's dodge roll
+    // won this fixed draw (#58 D8: a won roll is the WHOLE hand missing,
+    // F2's symmetry on the receiving side).
+    expect(produced).toContain("闪过了孙彪的攻势");
+    expect(produced).not.toContain("还了一手");
+    // The beat's regeneration span refilled exactly the cast's cost (#58
+    // D7): 15 back into the internal force — the only resource under its
+    // max (the hp rides full, so it stays silent).
+    expect(produced).toContain("回复了15点内力");
+    // And nothing else settled: one exchange — the strike-word count stays
+    // small (no catch-up pile of owed hands).
     const strikes = produced.match(/拳|还了一手/g) ?? [];
     expect(strikes.length).toBeLessThanOrEqual(4);
     expect(produced).not.toContain(WEB_HOST_COPY.submitFailed);

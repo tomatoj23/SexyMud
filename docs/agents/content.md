@@ -43,7 +43,7 @@ assets/               # 美术资产（MVP 允许为空）
 └── portraits/<集合>/<id>.png
 ```
 
-> `commands/` **已定稿**（M1-T5，`schemas/commands.schema.json`），字段约定见下文「命令集合」节；`rooms/` 与 `npcs/` **已定稿**（M1-T6，`schemas/rooms.schema.json` ／ `schemas/npcs.schema.json`），字段约定见下文「房间集合」「人物集合」两节。`monster/` 已随 M1-T6 落入首条内容（`mon-lq-001`，schema 仍属放置期设计、待随秘境票重估）。
+> `commands/` **已定稿**（M1-T5，`schemas/commands.schema.json`），字段约定见下文「命令集合」节；`rooms/` 与 `npcs/` **已定稿**（M1-T6，`schemas/rooms.schema.json` ／ `schemas/npcs.schema.json`），字段约定见下文「房间集合」「人物集合」两节；`martial/` **已激活**（#58，`schemas/martial.schema.json` 重设计——字段约定见下文「武功集合」节）。`monster/` 已随 M1-T6 落入首条内容（`mon-lq-001`，schema 仍属放置期设计、待随秘境票重估）。
 
 ## 硬性规则
 
@@ -58,7 +58,7 @@ assets/               # 美术资产（MVP 允许为空）
 
 通用字段（各集合按需使用，Schema 为准）：
 
-- `prerequisites`：先修条件（学此武功的前置），值是**单个条件表达式**（`schemas/condition.schema.json` 根定义：递归 `{all/any/not}` + 谓词，**不用字符串 DSL**）。
+- `prerequisites`：先修条件（学此武功的前置），值是**单个条件表达式**（`schemas/condition.schema.json` 根定义：递归 `{all/any/not}` + 谓词，**不用字符串 DSL**）。⚠️ #58 起从 `martial.schema.json` **移除**（等级/学习系统另立票，字段随该票回来再回）；本条留作通用字段约定的历史位。
 - `preconditions`：门禁映射 `{ "default": <条件>, "<accessType>": <条件表达式> }`（`condition.schema.json#/definitions/accessRules`，spec/02 §5）。`default` 是所问 accessType 无表达式时求值的**完整条件**（布尔即直白策略位，`false` = 缺省拒绝最常用）；accessType 词汇表由各集合自定（命令 `use`、出口 `traverse`、学习 `learn`）。**谓词实参形状**（引擎能力，三处同步 spec/06 §4）：`has_tag` 取 **`[维度, 键]` 二元组**（`{ "has_tag": ["zone", "outdoors"] }`——标签 = 维度 + 键，ADR-0029 §1，单字符串写法 schema 拒绝）、`attr_gte` 取 `[属性名, 下限]`、`has_flag`／`has_state`／`in_location`／`has_martial` 取单个非空字符串。
 - `err_*`：拒绝文案，键名 = `err_` + accessType（默认门拒绝时渲染层读 `err_default`，可省略）。**拒绝也是一种叙事**：引擎只报告读哪个字段（`commandRefused` 事件携带 `errKey`），文案本体永远在条目数据里，引擎零文案。
 - `masters`：门派条目的师父字段（`sect.masters`）。MVP 只留字段、无实际内容（可教武功池与贡献规则后续填充）；"学习武功"流程带条件检查点，做拜师门槛不动流程、只改配置。
@@ -82,9 +82,24 @@ assets/               # 美术资产（MVP 允许为空）
 - `preconditions`：门禁映射（`condition.schema.json#/definitions/accessRules`）。**命令集合的 accessType 词汇表：`use`**——宿主装配 `CommandSpec` 时以 `commandSpecFromEntry(entry, { accessType: "use", func })` 传入；省略字段 = 无门禁。
 - `effects`：**效果引用**（#56 起）：`["eff-<名>", …]` 指向 `content/effects/` 条目——命令的行为经效果管线表达（如 `cmd-strike` 的「一击结算＋概率上毒」）。注册表加载期校验悬空引用（悬空即启动失败，不打到玩家那一拳）。
 - `notInCombat`：**战斗内门禁**（#57 D7 起）：`true` ＝战斗会话进行中拒绝执行（歇息、住店这类；缺省＝允许——说话、打量、环顾不拦）。拒绝文案键＝`err_inCombat`（本条目自己的字段）。**门禁表随内容包走**：引擎只查战斗槽，不硬编码任何命令清单；移动命令不走此门（战斗中移动＝逃逸通道，行为另有归属）。
-- `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。**#56 起执行段拒绝同用 `err_*` 面**（`err_notVisible`／`err_notCombatant`／`err_inCombat`／`err_targetLocked` 等——键名是拒绝语义，camelCase 允许；cmd-strike 条目是首批实例）。
+- `err_use`／`err_default`：拒绝文案（键名 = `err_` + accessType），可省略；文案遵守 style-guide（第二人称「你」、古典白话）。**#56 起执行段拒绝同用 `err_*` 面**（`err_notVisible`／`err_notCombatant`／`err_inCombat`／`err_targetLocked` 等——键名是拒绝语义，camelCase 允许；cmd-strike 条目是首批实例）。**#58 的 perform 四拒绝面与装配面同走此面**（cmd-perform 的 `err_notInCombat`／`err_notEquipped`／`err_onCooldown`／`err_outOfForce`，cmd-equip 的 `err_notLearned`／`err_alreadyEquipped`／`err_martialSlotFull`，cmd-unequip 的 `err_notEquipped`）。
 
 引擎侧读法：宿主加载 JSON → `createContentRegistry({ commands })`（重复 id 抛错）→ `commandSetSources(registry.commands)`（按 cmdset 分组）→ `mergeCmdSets` → `verbEntries()` 即动词表。**引擎 src/ 永不 import 内容 JSON**。
+
+## 武功集合（content/martial/，#58 已激活）
+
+每个招式一个 JSON 文件（文件名 = id，`mrt-<门派/区域>-<序号>`），**招式 = 节奏轮盘的择式来源与「施展」的对象**（`schemas/martial.schema.json` ／ 引擎 `MartialEntry`（`packages/core/src/content/registry.ts`）与本节三处同步）。字段：
+
+- `kind`：条目种类（`招式`；心法挂修饰符票——字段位保留可扩，schema 不写死枚举）。
+- `name`：招式名（四字格意象；`施展`／`激发`／`收招` 按此名**精确匹配**——`argForm: text` 复用，不扩引擎枚举）。
+- `tier`：品阶序号 1-4（strike 事件 `rank` 值经 `combat-tiers.json` 的 `quality` 带映射——下乘/中乘/上乘/绝学的英文键 low/mid/high/ultimate）。
+- `source`／`element`：作用方式／系别（dimensions 同名维度取值；`source` 决定本招式手吃对头 `stats.externalDefense` 还是 `stats.internalDefense`；缺省回落 character 表 `strike.source`／`strike.element`）。
+- `cost`：出手消耗（纯数值、缺省 0——扣哪个 attrs 键由 character 表 `secondaryResource` 声明，条目不写死资源键名）。
+- `cooldownTicks`：招式冷却（出手挂 `cooldowns[条目id]`＝出手 tick＋本值；手动施展与轮盘自动手同律；未声明＝无冷却；基础攻击不挂）。
+- `attackMultiplier`：攻击乘数（进公式 `baseAttack = 攻击属性 × 本值`；缺省 1＝与基础攻击同威；效果条目 amount 继续闲置——数值面归招式层）。
+- `effects`：效果引用列表（本招式一手走的完整效果链；注册表加载期校验悬空引用——command.effects 先例）。
+- 已学/装配**不在条目里**：`character.json` 的 `martial.known/initialEquipped` 承载（已学＝内容声明，无运行时学习途径）；装配进存档 `martial` 槽（上限 4、序即优先级）。
+- ⚠️ #58 重设计移除的字段勿再写：`prerequisites`（等级票回来再回）、`sectId`／`lineageId`（门派无票不预承诺）、`textVariants`（C4 战斗文本票才有集合）、`costs.internalForce`（改纯 `cost`）、`cooldownMs`（改 `cooldownTicks`）。
 
 ## 效果集合（content/effects/，#56 已激活）
 
@@ -99,7 +114,7 @@ assets/               # 美术资产（MVP 允许为空）
 
 ## config 两张战斗表（#56 新增）
 
-- **`character.json`（角色模型声明，STRUCTURE）**：`attrs`（属性键 → 新档初值——**这份键清单就是玩家数值属性的形状**，加属性＝加键）＋`primaryResource: { current, max }`（生命条与上限的 attrs 键对）＋`deathAtOrBelow`（死亡阈值）＋`strike: { attackAttr, defenseAttr, element, source }`（一击操作数通道——element/source 值取 dimensions 的同名维度）＋`strikeIntervalTicks`（#57 起必填：玩家自动出手间隔，tick 数——声明表字段、结算时直读，非 attrs 键）。**引擎零认识任何具体键**。
+- **`character.json`（角色模型声明，STRUCTURE）**：`attrs`（属性键 → 新档初值——**这份键清单就是玩家数值属性的形状**，加属性＝加键）＋`primaryResource: { current, max }`（生命条与上限的 attrs 键对）＋`secondaryResource: { current, max }`（#58 起可选：内力与上限的 attrs 键对——招式 `cost` 扣 current 键、回复封顶于 max 键）＋`deathAtOrBelow`（死亡阈值）＋`strike: { attackAttr, defenseAttrs, dodgeAttr, element, source }`（一击操作数通道——#58 起 `defenseAttrs` 为**作用方式词→防御键**的分路对〔dimensions source 维度的每个词一个键〕、`dodgeAttr` 为玩家闪避属性键；element/source 值取 dimensions 的同名维度）＋`strikeIntervalTicks`（#57 起必填：玩家自动出手间隔，tick 数——声明表字段、结算时直读，非 attrs 键）＋`martial: { known, initialEquipped }`（#58 起可选：已学招式 id 清单〔`has_martial` 谓词的数据源、无运行时学习途径〕与新档初始装配〔序即轮盘优先级、上限 4；`initialEquipped ⊆ known` 由 content:check 跨字段规则校验〕）。**引擎零认识任何具体键**。
 - **`combat-tiers.json`（战斗档位区间表，STRUCTURE）**：`damageBand`／`lifeBand` 的 **ratio → 档名** 数值边界（区间左闭右开、按 min 升序）。**档名必须是对应 dimensions 维度的既有取值**（加载期闭合校验）——本表只放数值边界，不另立档名真相。分母基准：伤害档＝伤害÷受击者 maxHp；气血档＝剩余 HP÷maxHp。
 
 ## 房间集合（content/rooms/，M1-T6 已定稿）

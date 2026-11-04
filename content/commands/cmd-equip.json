@@ -1,0 +1,17 @@
+{
+  "id": "cmd-equip",
+  "verbs": [
+    "激发",
+    "装上",
+    "equip",
+    "jifa"
+  ],
+  "argForm": "text",
+  "cmdset": "character",
+  "priority": 0,
+  "notInCombat": true,
+  "err_notLearned": "你并未学过这一招。",
+  "err_alreadyEquipped": "这一招已在手上。",
+  "err_martialSlotFull": "你手上已满了四招，先收一招再来。",
+  "err_inCombat": "刀兵未歇，此刻不成。"
+}

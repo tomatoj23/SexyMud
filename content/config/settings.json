@@ -1,8 +1,20 @@
 {
   "id": "settings",
   "combat": {
-    "formula": "双向同式：max(1, round(攻击 × (1 − 防御/(防御+defenseK))))——玩家出手＝attackAttr 攻击 × 对头 stats.externalDefense 防御；对头出手＝stats.attack 攻击 × defenseAttr 防御（#57 D4，双向公式）。战斗中移动＝掷 escapeChance 逃逸（#57 D11）。出手间隔：玩家＝character.strikeIntervalTicks、对头＝monster stats.attackIntervalTicks（缺省引擎字面量）——结算时直读声明表、不落盘。",
+    "formula": "双向同式：max(1, round(攻击 × 乘数 × (1 − 防御/(防御+defenseK))))——乘数＝招式 attackMultiplier（基础攻击 1；内力耗尽态基础攻击 ×zeroCostAttackRatio——装配清单内无任何招式可负担时）。防御按 source 分路（#58 D17）：玩家手吃对头 stats.<source>Defense（externalDefense/internalDefense）；对头手按其条目顶层 source（缺省 external）吃玩家 defenseAttrs[source] 对应键。对头手先掷玩家闪避（#58 D8）：min(dodge.cap, dodge.base + dodge/(dodge+dodge.k))，掷中整击落空；玩家手掷对头 dodge 不变。内力回复＝combat.internalForce.regenPerTick、气血回复＝time.primaryRegenPerTick（观察时补偿结算、带上限、战斗内外与离线无差别）。招式出手挂 cooldowns[招式id]＝now＋cooldownTicks（手动/自动同律、基础攻击不挂）。出手间隔：玩家＝character.strikeIntervalTicks、对头＝monster stats.attackIntervalTicks（缺省引擎字面量）——结算时直读声明表、不落盘。战斗中移动＝掷 escapeChance 逃逸（#57 D11）。",
     "defenseK": 10,
-    "escapeChance": 0.5
+    "escapeChance": 0.5,
+    "dodge": {
+      "base": 0.05,
+      "cap": 0.4,
+      "k": 90
+    },
+    "internalForce": {
+      "regenPerTick": 1,
+      "zeroCostAttackRatio": 0.5
+    }
+  },
+  "time": {
+    "primaryRegenPerTick": 0.5
   }
 }

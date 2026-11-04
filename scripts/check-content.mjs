@@ -16,12 +16,14 @@
 // as WARN lines — design drafts get re-evaluated when their content lands,
 // and a warn-level signal beats invisibility (spec/06 §3.1).
 //
-// Five checks run, and all five are hard failures except where noted:
+// Six checks run, and all six are hard failures except where noted:
 //   1. every content file against its collection schema,
 //   2. the dead-concept gate (banned-terms.json),
 //   3. prototype cycles in the `prototypeParent` graph (added M3-T6, #19),
 //   4. draft-07 legality of the unmapped schemas (WARN only),
 //   5. world reachability from the declared start room (added #49).
+//   6. the character table's initialEquipped ⊆ known cross-field rule
+//      (#58 D13: draft-07 cannot express containment).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -346,6 +348,29 @@ if (!files.includes(worldFile)) {
             `UNREACHABLE room "${id}" — no walk from start room "${startId}" reaches it (template entries declaring prototypeKey are exempt)`,
           );
         }
+      }
+    }
+  }
+}
+
+// Cross-field rule (#58 D13, AC11): the character table's initialEquipped
+// must be a SUBSET of its known list — draft-07 cannot express containment,
+// so the offline gate owns it (the schema can only pin each list's own
+// shape). Whether either list's ids RESOLVE is the registry's load-time
+// check (the npc→monsterId division: offline owns relations inside one
+// file, load owns references across files).
+const characterFile = join(root, "content", "config", "character.json");
+const characterData = prototypeEntries.find(({ file }) => file === characterFile)?.data;
+if (characterData !== undefined && characterData !== null) {
+  const martialDecl = characterData.martial;
+  if (martialDecl !== undefined && Array.isArray(martialDecl.known)) {
+    const known = new Set(martialDecl.known);
+    for (const id of martialDecl.initialEquipped ?? []) {
+      if (!known.has(id)) {
+        failed = true;
+        console.error(
+          `INVALID content/config/character.json — martial.initialEquipped carries "${id}", which martial.known does not include (#58 D13: the opening loadout must be learned)`,
+        );
       }
     }
   }

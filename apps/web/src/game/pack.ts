@@ -3,6 +3,7 @@ import type {
   ContentRegistryOptions,
   ContentRegistry,
   EffectEntry,
+  MartialEntry,
   NpcEntry,
   RenderContent,
   RoomEntry,
@@ -61,6 +62,7 @@ const COLLECTION_DIRS = {
   npcs: "npcs",
   monster: "monsters",
   effects: "effects",
+  martial: "martials",
 } as const;
 
 /** `…/content/<rel>` → `<rel>`, tolerating a path that is already relative. */
@@ -89,6 +91,7 @@ export function loadPack(
   const npcs: NpcEntry[] = [];
   const monsters: { id: string }[] = [];
   const effects: EffectEntry[] = [];
+  const martials: MartialEntry[] = [];
   const config: Record<string, unknown> = {};
   for (const [path, parsed] of Object.entries(files)) {
     const [dir, fileName] = relativeToContentRoot(path).split("/");
@@ -113,11 +116,12 @@ export function loadPack(
     else if (option === "rooms") rooms.push(parsed as RoomEntry);
     else if (option === "npcs") npcs.push(parsed as NpcEntry);
     else if (option === "effects") effects.push(parsed as EffectEntry);
+    else if (option === "martials") martials.push(parsed as MartialEntry);
     else monsters.push(parsed as { id: string });
   }
 
   const registry = createContentRegistry(
-    { commands, rooms, npcs, monsters, effects },
+    { commands, rooms, npcs, monsters, effects, martials },
     {
       calendar: config.calendar as ContentRegistryOptions["calendar"],
       settings: config.settings as ContentRegistryOptions["settings"],
@@ -134,6 +138,13 @@ export function loadPack(
   const errCopy: Record<string, Readonly<Record<string, string>>> = {};
   for (const npc of registry.npcs) {
     names[npc.id] = npc.name;
+  }
+  // The martial entries' display names join the same table (#58 D16①): a
+  // strike event carries the martial's id, and the renderer substitutes the
+  // name through THIS table — the host builds it beside every other id, the
+  // renderer never learning a registry (the #50 Q6 red line).
+  for (const martial of registry.martials) {
+    names[martial.id] = martial.name;
   }
   for (const room of registry.rooms) {
     names[room.id] = room.name;

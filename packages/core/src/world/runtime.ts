@@ -231,7 +231,12 @@ export function createWorldRuntime(options: WorldRuntimeOptions): WorldRuntime {
         hasFlag: (flag) => entityState.flags.includes(flag),
         hasState: () => false,
         locationId: () => entityState.locationId,
-        hasSkill: () => false,
+        // The has_martial predicate's data source (#58 C3-T7): the KNOWN
+        // list is content-declared (D2 — no runtime learning path), so the
+        // facet reads the registry, not a tree row. Same answer for every
+        // entity by design: "knows a technique" is the pack's declaration.
+        hasSkill: (skillId) =>
+          (registry.character?.martial?.known ?? []).includes(skillId),
       };
     },
   };

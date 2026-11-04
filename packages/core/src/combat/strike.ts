@@ -8,8 +8,9 @@ import { resolveNpcTarget } from "../world/target.js";
 import type { WorldRuntime } from "../world/runtime.js";
 import { monsterCombatFace, requireCharacterTable } from "./damage.js";
 import { playerBlow } from "./blow.js";
+import { baseStrikePlan } from "./blow.js";
 import type { StrikeSpecOptions } from "./blow.js";
-import { IN_COMBAT } from "./guard.js";
+import { IN_COMBAT, refuseExecutionStage } from "./guard.js";
 
 /**
  * The strike command's C2 face (#57, AC1): striking a name OPENS the
@@ -34,17 +35,8 @@ import { IN_COMBAT } from "./guard.js";
 const NOT_COMBATANT = customCode("notCombatant");
 const TARGET_LOCKED = customCode("targetLocked");
 
-/** Words one execution-stage refusal: the semantic event plus the rejection. */
-function refuse(
-  ctx: { emit(recipientId: string, draft: { type: string; [key: string]: unknown }): void },
-  actorId: string,
-  entryId: string,
-  reason: ReasonCode,
-  errKey: string,
-): CommandRejection {
-  ctx.emit(actorId, commandRefusedEvent({ reason, commandKey: entryId, errKey }));
-  return { kind: "rejected", reason };
-}
+/** The shared refusal wording (guard.ts) — this adapter's own C2 shape, now one home. */
+const refuse = refuseExecutionStage;
 
 export function strikeSpec(entry: CommandEntry, options: StrikeSpecOptions = {}): CommandSpec<WorldRuntime> {
   return commandSpecFromEntry<WorldRuntime>(entry, {
@@ -97,9 +89,12 @@ export function strikeSpec(entry: CommandEntry, options: StrikeSpecOptions = {})
         npcNextStrikeTick: nowTick + face.attackIntervalTicks,
       };
 
-      // 4. The opening hand (D2: keep C1's feel): the shared blow — dodge
-      //    rolled at the orchestration level, the entry's effect chain, and
-      //    D6's session-clearing on a kill, all in combat/blow.ts.
+      // 4. The opening hand (D2: keep C1's feel — and #58 D6's scope: the
+      //    WHEEL owns the rhythm hands, perform owns the named cast; the
+      //    typed opening carries the BASE face, the entry's own chain): the
+      //    shared blow — dodge rolled at the orchestration level, the
+      //    entry's effect chain, and D6's session-clearing on a kill, all
+      //    in combat/blow.ts.
       playerBlow(
         runtime,
         state,
@@ -109,7 +104,8 @@ export function strikeSpec(entry: CommandEntry, options: StrikeSpecOptions = {})
           rng: ctx.rng,
           emit: (to, draft) => ctx.emit(to, draft),
         },
-        { effects: entry.effects ?? [], primitives: options.primitives },
+        baseStrikePlan(entry.effects ?? [], character.strike),
+        { primitives: options.primitives },
       );
     },
   });

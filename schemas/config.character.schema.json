@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "config.character.schema.json",
   "title": "角色模型声明（content/config/character.json）",
-  "description": "STRUCTURE（spec/06 §6 第二行，#56 T4）：玩家数值属性的**键清单＋初值**＋主资源键对＋死亡阈值＋一击操作数通道。引擎零认识任何具体键（ADR-0009 §10：键取值与集合求交）——键语义全部住本表。三处同步：本文件／`packages/core/src/content/config.ts` 的 `CharacterTable`／`docs/agents/content.md`。",
+  "description": "STRUCTURE（spec/06 §6 第二行，#56 T4；#58 D13/D17/D18 扩面）：玩家数值属性的**键清单＋初值**＋主/副资源键对＋死亡阈值＋一击操作数通道＋武功已学/初始装配清单。引擎零认识任何具体键（ADR-0009 §10：键取值与集合求交）——键语义全部住本表。三处同步：本文件／`packages/core/src/content/config.ts` 的 `CharacterTable`／`docs/agents/content.md`。",
   "type": "object",
   "required": ["id", "attrs", "primaryResource", "deathAtOrBelow", "strikeIntervalTicks", "strike"],
   "properties": {
@@ -10,16 +10,26 @@
     "attrs": {
       "type": "object",
       "minProperties": 1,
-      "description": "属性键 → 新档初值（有限数）。这份键清单就是玩家 attrs 槽的形状——加属性＝加键（值可后调，键名即结构）。",
+      "description": "属性键 → 新档初值（有限数）。这份键清单就是玩家 attrs 槽的形状——加属性＝加键（值可后调，键名即结构）。#58 D18：内力体系键对（当前/上限）、dodge、internalDefense 均由此落键。",
       "additionalProperties": { "type": "number" }
     },
     "primaryResource": {
       "type": "object",
       "required": ["current", "max"],
-      "description": "主资源键对：哪两个 attrs 键是生命条与它的上限（引擎死亡判定与「回满」读这对键；damageRatio/defenderHpRatio 的分母＝maxHp 键值）。",
+      "description": "主资源键对：哪两个 attrs 键是生命条与它的上限（引擎死亡判定与「回满」读这对键；damageRatio/defenderHpRatio 的分母＝max 键值；#58 起其回复速率读 settings.time.primaryRegenPerTick）。",
       "properties": {
         "current": { "type": "string", "minLength": 1, "description": "当前值键（attrs 键名）" },
         "max": { "type": "string", "minLength": 1, "description": "上限键（attrs 键名）" }
+      },
+      "additionalProperties": false
+    },
+    "secondaryResource": {
+      "type": "object",
+      "required": ["current", "max"],
+      "description": "副资源键对（#58 D18，照 primaryResource 先例）：哪两个 attrs 键是内力与它的上限——招式 cost 扣 current 键、回复封顶于 max 键、耗尽态判定读 current 键。引擎零认识具体键名；缺省＝本包无副资源（招式 cost>0 的包必须有，否则首手大声失败）。",
+      "properties": {
+        "current": { "type": "string", "minLength": 1, "description": "当前值键（attrs 键名，如 internalForce）" },
+        "max": { "type": "string", "minLength": 1, "description": "上限键（attrs 键名，如 maxInternalForce）" }
       },
       "additionalProperties": false
     },
@@ -32,13 +42,38 @@
       "minimum": 1,
       "description": "玩家自动出手间隔（tick 数，#57 D8/D12，AC10）：声明表字段，**非** attrs 键——结算时直读本表、不落盘（毒 effectId 回溯同构）。必填：角色模型装配图性质（与 primaryResource/deathAtOrBelow 同族），漏键＝装配图不完整。"
     },
+    "martial": {
+      "type": "object",
+      "required": ["known", "initialEquipped"],
+      "description": "武功清单（#58 D13）：已学集合＝内容声明（无运行时学习途径，D2）＋新档初始装配（序即轮盘优先级）。initialEquipped ⊆ known 由 check-content.mjs 跨字段规则校验（draft-07 表达不了包含关系）；两清单的 id 引用完整性由注册表构建期校验（npc→monsterId 先例）。",
+      "properties": {
+        "known": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^mrt-[a-z0-9]+-[0-9]{3}$" },
+          "description": "已学招式 id 清单（content/martial/ 条目）。has_martial 谓词的数据源。"
+        },
+        "initialEquipped": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "string", "pattern": "^mrt-[a-z0-9]+-[0-9]{3}$" },
+          "description": "新档写进存档 martial 槽的初始装配（上限 4；数组序＝轮盘优先序，D6）。"
+        }
+      },
+      "additionalProperties": false
+    },
     "strike": {
       "type": "object",
-      "required": ["attackAttr", "defenseAttr", "element", "source"],
-      "description": "一击操作数通道（T4 字段面必含；T10 六轮修正：attackAttr 是玩家→NPC 主方向的无条件操作数；defenseAttr 为 C2 双向公式声明占位——C1 的 NPC 反击是裸伤、不读玩家防御）。element/source 是攻击事件字段携带的词汇（值取自 dimensions 的 element/source 维度）。",
+      "required": ["attackAttr", "defenseAttrs", "dodgeAttr", "element", "source"],
+      "description": "一击操作数通道（T4/T10 字段面；#58 D8/D17 扩面）：attackAttr 是玩家→NPC 主方向的无条件操作数；defenseAttrs 是**按作用方式分路**的防御键对（对头条目顶层 source 作键——外功吃外防键、内功吃内防键，缺键＝本包防御对与 dimensions source 维度失配、对头手大声失败）；dodgeAttr 是玩家闪避属性键（对头手掷 min(cap, base + 值/(值+k))，消费 settings.combat.dodge）。element/source 是基础攻击事件字段携带的词汇（值取自 dimensions 的 element/source 维度；招式手的对应值由条目自带、缺省回落本表）。",
       "properties": {
-        "attackAttr": { "type": "string", "minLength": 1, "description": "攻击操作数键（attrs 键名）" },
-        "defenseAttr": { "type": "string", "minLength": 1, "description": "防御操作数键（attrs 键名；C1 声明占位、C2 消费）" },
+        "attackAttr": { "type": "string", "minLength": 1, "description": "攻击操作数键（attrs 键名）；招式手在此值上乘条目 attackMultiplier（#58 D11）" },
+        "defenseAttrs": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "作用方式词 → 防御操作数键（attrs 键名）。键集须与 dimensions source 维度对齐（#58 D17）。",
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "dodgeAttr": { "type": "string", "minLength": 1, "description": "闪避属性键（attrs 键名，#58 D8）" },
         "element": { "type": "string", "minLength": 1, "description": "攻击属性词（dimensions element 维度取值）" },
         "source": { "type": "string", "minLength": 1, "description": "作用方式词（dimensions source 维度取值）" }
       },

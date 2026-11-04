@@ -1,0 +1,16 @@
+{
+  "id": "cmd-perform",
+  "verbs": [
+    "施展",
+    "使",
+    "施",
+    "perform"
+  ],
+  "argForm": "text",
+  "cmdset": "character",
+  "priority": 0,
+  "err_notInCombat": "你此刻并不同人交手，这一招使给谁看？",
+  "err_notEquipped": "这一招你并未装在手上。",
+  "err_onCooldown": "这一招的劲力尚未回拢，再候片刻。",
+  "err_outOfForce": "你内力不济，使不出这一招。"
+}

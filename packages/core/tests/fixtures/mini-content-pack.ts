@@ -5,6 +5,7 @@ import type { CommandEntry } from "../../src/command/entry.js";
 import { createContentRegistry } from "../../src/content/registry.js";
 import type { CharacterTable, CombatTiersTable, WorldTable } from "../../src/content/config.js";
 import type { EffectEntry } from "../../src/effects/entry.js";
+import type { MartialEntry } from "../../src/content/registry.js";
 import type {
   ContentRegistry,
   DimensionTable,
@@ -102,6 +103,8 @@ export interface LoadedPack {
   readonly character?: CharacterTable;
   /** The pack's combat band table (config/combat-tiers.json, #56), when it has one. */
   readonly combatTiers?: CombatTiersTable;
+  /** The pack's martial entries (content/martial/, #58), when it has any. */
+  readonly martials: readonly MartialEntry[];
   /**
    * Every file's raw JSON text, concatenated. A pack's theme lives in its
    * copy as much as in its verbs, so the "no other pack's vocabulary" scan
@@ -116,6 +119,7 @@ export function loadPack(rootDir: string): LoadedPack {
   const npcTexts = readCollection(rootDir, "npcs");
   const monsterTexts = readCollection(rootDir, "monster");
   const effectTexts = readCollection(rootDir, "effects");
+  const martialTexts = readCollection(rootDir, "martial");
   const configTexts = readCollection(rootDir, "config");
   return {
     commands: commandTexts.map((text) => JSON.parse(text) as CommandEntry),
@@ -123,13 +127,14 @@ export function loadPack(rootDir: string): LoadedPack {
     npcs: npcTexts.map((text) => JSON.parse(text) as NpcEntry),
     monsters: monsterTexts.map((text) => JSON.parse(text) as MonsterRecord),
     effects: effectTexts.map((text) => JSON.parse(text) as EffectEntry),
+    martials: martialTexts.map((text) => JSON.parse(text) as MartialEntry),
     dimensions: readDimensions(rootDir),
     calendar: readConfig<Calendar>(rootDir, "calendar"),
     settings: readConfig<SettingsTable>(rootDir, "settings"),
     world: readConfig<WorldTable>(rootDir, "world"),
     character: readConfig<CharacterTable>(rootDir, "character"),
     combatTiers: readConfig<CombatTiersTable>(rootDir, "combat-tiers"),
-    text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...effectTexts, ...configTexts].join("\n"),
+    text: [...commandTexts, ...roomTexts, ...npcTexts, ...monsterTexts, ...effectTexts, ...martialTexts, ...configTexts].join("\n"),
   };
 }
 
@@ -147,6 +152,7 @@ export function packRegistry(rootDir: string): ContentRegistry {
       npcs: pack.npcs,
       monsters: pack.monsters,
       effects: pack.effects,
+      martials: pack.martials,
     },
     // The config tables travel WITH the pack (ADR-0029 §5, ADR-0032 §3,
     // issue #49): the same loader that finds rooms/ finds config/, so

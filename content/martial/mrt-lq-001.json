@@ -1,0 +1,14 @@
+{
+  "id": "mrt-lq-001",
+  "kind": "招式",
+  "name": "劈风掌",
+  "tier": 1,
+  "source": "external",
+  "element": "none",
+  "cost": 5,
+  "attackMultiplier": 1.2,
+  "effects": [
+    "eff-strike-fist"
+  ],
+  "description": "码头边讨生活练出的硬功夫，一掌劈出带着风声。这一掌可连绵出手、耗力甚少，是压箱底的根本手段。"
+}

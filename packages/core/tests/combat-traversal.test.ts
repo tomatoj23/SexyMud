@@ -40,16 +40,28 @@ import type { Rng } from "../src/types.js";
  * does not.
  */
 
-const SETTINGS: SettingsTable = { combat: { formula: "", defenseK: 10, escapeChance: 0.5 } };
+// #58 fixture face: dodge base 0 (a zero-probability roll consumes no dice
+// stream slot — the C1/C2 rng sequences stay comparable) and a zero primary
+// regen rate (the regeneration pass stays silent for these fights).
+const SETTINGS: SettingsTable = {
+  combat: {
+    formula: "",
+    defenseK: 10,
+    escapeChance: 0.5,
+    dodge: { base: 0, cap: 0.4, k: 90 },
+  },
+  time: { primaryRegenPerTick: 0 },
+};
 
 const CHARACTER: CharacterTable = {
-  attrs: { maxHp: 200, hp: 200, attack: 30, externalDefense: 3 },
+  attrs: { maxHp: 200, hp: 200, attack: 30, externalDefense: 3, dodge: 0 },
   primaryResource: { current: "hp", max: "maxHp" },
   deathAtOrBelow: 0,
   strikeIntervalTicks: 2,
   strike: {
     attackAttr: "attack",
-    defenseAttr: "externalDefense",
+    defenseAttrs: { external: "externalDefense", internal: "internalDefense" },
+    dodgeAttr: "dodge",
     element: "none",
     source: "external",
   },
@@ -230,7 +242,7 @@ function rig(startRoom = "room-yard"): Rig {
   const settler = createSettler({
     state: runtime.state,
     clock: runtime.clock,
-    entity: createCombatSettleHandler(runtime, { rng: stream, effects: STRIKE.effects ?? [] }),
+    entity: createCombatSettleHandler(runtime, { rng: stream, baseEffects: STRIKE.effects ?? [] }),
   });
   const harness = createCommandHarness<WorldRuntime>({
     world: { live: runtime },

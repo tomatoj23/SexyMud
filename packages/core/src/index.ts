@@ -93,6 +93,7 @@ export type {
   ContentRegistry,
   ContentRegistryOptions,
   DimensionTable,
+  MartialEntry,
   MonsterRecord,
   MonsterStats,
 } from "./content/registry.js";
@@ -117,14 +118,15 @@ export type {
   EffectExecutionContext,
   EffectPrimitiveHandler,
 } from "./effects/registry.js";
-// The combat kernel (#56/#57): the strike orchestration adapter, the shared
-// blow, the shipped primitives, the arithmetic, the character-model seeds,
-// the rhythm-bearing settle handler, the load-point restart, the
-// combat-bearing traversal (escape + proactive), and the declarative
-// in-combat gate.
+// The combat kernel (#56/#57/#58): the strike orchestration adapter, the
+// shared blow (plan-based since #58), the shipped primitives, the
+// arithmetic, the character-model seeds, the rhythm-bearing settle handler
+// (wheel + regeneration since #58), the load-point restarts, the
+// combat-bearing traversal (escape + proactive), the declarative in-combat
+// gate, the perform cast, the equip/unequip pair, and the wheel itself.
 export { strikeSpec } from "./combat/strike.js";
-export { playerBlow } from "./combat/blow.js";
-export type { BlowOptions, BlowPorts, StrikeSpecOptions } from "./combat/blow.js";
+export { playerBlow, baseStrikePlan } from "./combat/blow.js";
+export type { BlowPorts, StrikePlan, StrikeSpecOptions } from "./combat/blow.js";
 export { defaultEffectPrimitives } from "./combat/primitives.js";
 export {
   bandOf,
@@ -132,19 +134,43 @@ export {
   DEFAULT_NPC_ATTACK_INTERVAL_TICKS,
   DEFAULT_STRIKE_ELEMENT,
   DEFAULT_STRIKE_SOURCE,
+  faceDefenseOf,
   monsterCombatFace,
+  playerDodgeChance,
   readDefenseK,
+  readDodgeTuning,
   readEscapeChance,
+  readInternalForceTuning,
+  readPrimaryRegenPerTick,
   strikeDamage,
 } from "./combat/damage.js";
+export type { DodgeTuning, InternalForceTuning, MonsterCombatFace } from "./combat/damage.js";
 export {
   createCombatSettleHandler,
   npcStrike,
   primaryResourceOf,
+  regenResources,
   resumeCombatSession,
+  RESOURCE_REGEN_EVENT,
   seedCharacterAttrs,
 } from "./combat/session.js";
 export type { CombatSettleOptions } from "./combat/session.js";
+export {
+  equippedMartialsOf,
+  martialStrikePlan,
+  rankOfMartial,
+  secondaryResourceOf,
+  selectStrikePlan,
+  validateEquippedMartials,
+} from "./combat/martial.js";
+export { performSpec } from "./combat/perform.js";
+export {
+  equipSpec,
+  unequipSpec,
+  MARTIAL_EQUIPPED_EVENT,
+  MARTIAL_UNEQUIPPED_EVENT,
+  MARTIAL_SLOT_CAP,
+} from "./combat/equip.js";
 export { combatTraversalSpec, COMBAT_ESCAPE_EVENT } from "./combat/traversal.js";
 export { guardNotInCombat, IN_COMBAT } from "./combat/guard.js";
 export { grantFlagSpec } from "./world/flag.js";

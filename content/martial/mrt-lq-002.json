@@ -1,0 +1,15 @@
+{
+  "id": "mrt-lq-002",
+  "kind": "招式",
+  "name": "透骨指",
+  "tier": 2,
+  "source": "internal",
+  "element": "none",
+  "cost": 15,
+  "cooldownTicks": 6,
+  "attackMultiplier": 1.5,
+  "effects": [
+    "eff-strike-fist"
+  ],
+  "description": "并指如锥，内劲透体而入。外家横练挡得住拳脚，挡不住这一指直进骨缝。"
+}

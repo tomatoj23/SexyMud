@@ -112,12 +112,15 @@ describe("content/commands/ entries through the real dispatch path", () => {
     const table = verbTableFrom(commandSetSources(registry.commands));
 
     expect(registry.commands.map((command) => command.id)).toEqual([
+      "cmd-equip",
       "cmd-examine",
       "cmd-lodge",
       "cmd-look",
+      "cmd-perform",
       "cmd-rest",
       "cmd-say",
       "cmd-strike",
+      "cmd-unequip",
     ]);
     for (const command of registry.commands) {
       const verb = command.verbs[0];

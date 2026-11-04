@@ -276,8 +276,21 @@ export type StrikeEvent = EventSkeleton & {
   element: string;
   /** The attack's delivery method name (external/internal — pack vocabulary). */
   source: string;
-  /** Martial-rank placeholder — never set in C1 (no martial arts yet). */
+  /**
+   * The martial-rank placeholder, now set (#58): a martial hand carries the
+   * entry's tier as the QUALITY dimension's key (the band-table read); a
+   * basic attack leaves it absent, as ever.
+   */
   rank?: string;
+  /**
+   * The martial entry id when this hand is one (#58 D16①). Absent = the
+   * basic attack, ALWAYS — the optional shape is the compat obligation the
+   * union's red line owes (spec/01 §5.2: a later-added field must not break
+   * old event streams or simulator replay): an old replay simply never
+   * carried it, a new one carries it only on martial hands. Recorded with
+   * ADR-0044.
+   */
+  martialId?: string;
 };
 
 /**

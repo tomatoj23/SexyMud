@@ -43,6 +43,21 @@ export interface EffectExecutionContext {
   readonly nowTick: number;
   /** The injected dice (dodge rolls, application chances — ADR-0017). */
   readonly rng: Rng;
+  /**
+   * The hand's strike face (#58 D15): the martial half a hand carries —
+   * which delivery word routes the monster-side defense, which element word
+   * and id/rank ride the strike event, and the multiplier on the attack
+   * operand. ABSENT = the basic strike's own face: multiplier 1, the
+   * character table's delivery/element words, no martial id — the C1/C2
+   * behaviour, unchanged, for every caller that has no martial to name.
+   */
+  readonly strike?: {
+    readonly martialId?: string;
+    readonly rank?: string;
+    readonly source: string;
+    readonly element: string;
+    readonly attackMultiplier: number;
+  };
   /** How a primitive's events leave: semantic drafts, stamped by the pipeline. */
   emit(recipientId: string, draft: EventDraft): void;
 }

@@ -137,6 +137,38 @@ export interface MonsterRecord extends EntryCommon {
 }
 
 /**
+ * A martial-arts entry (#58 D10): the content the combat wheel reads — the
+ * effect chain a hand of it walks, the delivery/element words its strike
+ * carries, the cost charged against the secondary resource (a plain number —
+ * WHICH attr key it deducts is the character table's secondaryResource pair,
+ * the entry never names a resource key), the cooldown the hand arms, the
+ * tier whose quality word rides the strike event, and the attack multiplier
+ * into the formula. Kind stays an open word (D1: the passive half is a later
+ * ticket's, the field is its seat).
+ */
+export interface MartialEntry extends EntryCommon {
+  readonly id: string;
+  /** The entry's kind word — "technique" today, the passive kind is a later ticket's (D1). */
+  readonly kind: string;
+  /** Display name (the host's name table reads it; the engine never words it). */
+  readonly name: string;
+  /** The quality ordinal (1-4) — the rank word's source, read through the quality band table (C3-T2). */
+  readonly tier: number;
+  /** The delivery word (dimensions source) routing which defense the strike reads; absent reads the table's own. */
+  readonly source?: string;
+  /** The element word (dimensions element); absent reads the table's own. */
+  readonly element?: string;
+  /** The secondary-resource cost of one hand; absent reads 0. */
+  readonly cost?: number;
+  /** The cooldown one hand arms (cooldowns[id] = now + cooldownTicks); absent = none (D12). */
+  readonly cooldownTicks?: number;
+  /** The attack multiplier into the strike formula; absent reads 1 (D11). */
+  readonly attackMultiplier?: number;
+  /** The effect entries one hand walks — reference-checked like a command's (#56 precedent). */
+  readonly effects: readonly string[];
+}
+
+/**
  * A dimensions table: dimension → its CLOSED set of keys (ADR-0029 §5).
  * Hosts hand the registry the table their pack declared
  * (content/config/dimensions.json) — the engine never imports content, and a
@@ -226,6 +258,13 @@ export interface ContentRegistry {
   /** Every monster record, id-ascending. Empty when no monsters were loaded. */
   readonly monsters: readonly MonsterRecord[];
   monster(id: string): MonsterRecord;
+  /**
+   * Every martial-arts entry, id-ascending (#58). Empty when the pack ships
+   * none — the character table's known list then fails the load's reference
+   * check below.
+   */
+  readonly martials: readonly MartialEntry[];
+  martial(id: string): MartialEntry;
   /**
    * The inverted tag index: every entity carrying `tags: { dimension: [key] }`
    * is reachable from each of its (dimension, key) pairs, id-ascending and
@@ -579,6 +618,12 @@ const EFFECTS: CollectionDecl = Object.freeze({
   placeable: false,
   expose: "effects",
 });
+const MARTIALS: CollectionDecl = Object.freeze({
+  what: "martial",
+  flatten: true,
+  placeable: false,
+  expose: "martials",
+});
 const EXITS: CollectionDecl = Object.freeze({
   what: "exit",
   flatten: false,
@@ -587,7 +632,7 @@ const EXITS: CollectionDecl = Object.freeze({
 });
 
 /**
- * The declaration table (issue #39): six rows — the five host-input
+ * The declaration table (issue #39): seven rows — the six host-input
  * collections in input order and the derived exits row — in LOAD ORDER, which
  * is load-bearing: the first taker of a shared id is whoever comes first here
  * (see addUnique). Not frozen into a narrower type and not consulted for
@@ -602,6 +647,7 @@ export const COLLECTIONS: readonly CollectionDecl[] = Object.freeze([
   NPCS,
   MONSTERS,
   EFFECTS,
+  MARTIALS,
   EXITS,
 ]);
 
@@ -666,7 +712,7 @@ interface CollectionTable {
    * be typed without a mapped type — the derivation route the C5 review
    * rejected — so the result is asserted to the interface it half-implements;
    * the typed face is the hand-written ContentRegistry interface (the thin
-   * sugar a new collection adds), and the six non-collection members are
+   * sugar a new collection adds), and the eight non-collection members are
    * added by the caller and type-checked there.
    *
    * Member ENUMERATION order follows the table (a plural/singular pair per
@@ -1041,6 +1087,32 @@ export function buildContentRegistry(
     }
   }
 
+  // A martial's effects are references the same way (#58 D15), and the
+  // character table's known/initialEquipped lists reference the martial
+  // collection (D13): the content-side half of the equipped-id integrity —
+  // the save-side half is the load point's loud validation
+  // (validateEquippedMartials, the resumeCombatSession precedent).
+  const martialsById = assembly.idMap<MartialEntry>(MARTIALS);
+  for (const martial of martialsById.values()) {
+    for (const effectId of martial.effects) {
+      if (!effectsById.has(effectId)) {
+        throw new Error(
+          `content registry: martial "${martial.id}" references unknown effect "${effectId}"`,
+        );
+      }
+    }
+  }
+  const declaredMartial = options.character?.martial;
+  if (declaredMartial !== undefined) {
+    for (const id of [...declaredMartial.known, ...declaredMartial.initialEquipped]) {
+      if (!martialsById.has(id)) {
+        throw new Error(
+          `content registry: character table references unknown martial "${id}" (martial.known/initialEquipped)`,
+        );
+      }
+    }
+  }
+
   // Tag indexing and the vocabulary closures come LAST: they must see the
   // finished, validated entity set, exits included, and they must come AFTER
   // prototype flattening — a tag (or a gate) can be INHERITED, and an
@@ -1084,7 +1156,7 @@ export function buildContentRegistry(
   assembly.freezeAll();
 
   // Obligations 5+6 — the read surface — generated from the table (plural +
-  // singular lookup per exposed row); the six non-collection members stay
+  // singular lookup per exposed row); the eight non-collection members stay
   // hand-written and type-checked against ContentRegistry right here.
   return {
     ...assembly.surface(),
@@ -1123,6 +1195,7 @@ export function createContentRegistry(
     npcs?: readonly NpcEntry[];
     monsters?: readonly MonsterRecord[];
     effects?: readonly EffectEntry[];
+    martials?: readonly MartialEntry[];
   },
   options: ContentRegistryOptions = {},
 ): ContentRegistry {

@@ -137,6 +137,8 @@ Evennia 在线上传输的是**已渲染的字符串**（`data_out.text`）。�
 伤害档位（轻/中/重/濒死）、剩余气血档、是否暴击/闪避、系别、作用方式、品阶。**后补会伤及存档与模拟器兼容性。**
 依据：ADR-0006、ADR-0011 §7
 
+**该红线的两次兑现记录**（#58／ADR-0044）：`rank?: string` 品阶占位自 #56 留空、#58 起带值（品阶维度 quality 的英文键，combat-tiers 品阶带读出——不是形状变化，占位本就说「后来者带值」）；`martialId?: string`（招式手带值、**基础攻击恒缺省**）是占位同律的**新后补可选位**——旧事件流重放不携它、新流只在招式手携它，对旧回放零破坏；兼容影响随 ADR-0044 记录（C1-D6 备选路径「C3 加字段时记兼容义务」就此兑现）。
+
 ## 6. 包与目录结构
 
 ```
@@ -159,12 +161,14 @@ packages/core/          引擎（可独立发布的库，零题材词）
     effects/            效果契约与注册（#56）：条目形状 entry.ts／修饰符最小核 modifiers.ts
                         （ADR-0005 两层空退化形）／primitive 注册表 registry.ts——
                         零机制 import；实现住消费侧（combat/primitives.ts 注册进本表）
-    combat/             战斗内核（#56 一击结算＋#57 会话与自动互打）：strike.ts 开战适配器
+    combat/             战斗内核（#56 一击结算＋#57 会话与自动互打＋#58 招式轮盘/手动释放/资源恢复）：strike.ts 开战适配器
                         （第一手）／blow.ts 一手共享编排（闪避掷上提＋效果链＋死即清）／
                         damage.ts（公式、档位、间隔缺省、clamp）／session.ts（会话节奏调度
-                        handler＋NPC 手＋读档重起＋角色种子）／primitives.ts（首批两实现）／
-                        traversal.ts（战斗面穿行：逃逸掷＋proactive 进房边沿）／
-                        guard.ts（notInCombat 声明式门禁包装器）
+                        handler＋NPC 手＋读档重起＋角色种子＋资源恢复段）／
+                        primitives.ts（首批两实现）／traversal.ts（战斗面穿行：逃逸掷＋
+                        proactive 进房边沿）／guard.ts（notInCombat 声明式门禁包装器）／
+                        #58：martial.ts（轮盘择式＋品阶读数＋读档点槽位校验）／
+                        perform.ts（施展：插队手＋单调重排）／equip.ts（激发/收招两适配器）
     content/            ContentRegistry（读内容，永不 import 数据）
   tests/                ★ 必须脱离 apps/ 也能跑
 

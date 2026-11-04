@@ -67,6 +67,18 @@ export interface EntityState {
    */
   combat?: CombatSession;
   /**
+   * The EQUIPPED martial list (#58 D13): martial entry ids, order IS the
+   * wheel's priority (D6: assembly order picks the auto hand), capped at 4
+   * by the equip command — a cap is the equip law, not a save-shape law, so
+   * the slot's validator checks kind only. ABSENT means no equipped martial
+   * (every hand the basic strike — the `combat` slot's "unfilled" family);
+   * unequipping the last one DELETES the slot, so "equipped nothing" and
+   * "never had the slot" stay byte-identical. A new game seeds the
+   * character table's `initialEquipped` into it; reference integrity is the
+   * load point's loud check (validateEquippedMartials).
+   */
+  martial?: string[];
+  /**
    * The tick this entity was last settled TO (spec/04 §4.3, ADR-0034 §2) —
    * the start of the entity layer's next advance, and the reason an offline
    * span is ever non-zero. The entity layer advances the ACTOR only, so an

@@ -150,6 +150,19 @@ const isTagMap: SlotValidator = (value, what) => {
 };
 
 /**
+ * The equipped-martial slot's kind check (#58 D13): a list of NON-EMPTY
+ * strings. The cap of 4 is deliberately NOT here — it is the equip
+ * command's law, not a save-shape law (the ticket's own validator spec:
+ * "a list, each item a non-empty string"); the slot's ORDER is priority and
+ * travels as written, never sorted.
+ */
+const isMartialList: SlotValidator = (value, what) => {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== "string" || id === "")) {
+    throw new Error(`snapshot: ${what} is not a list of non-empty martial ids`);
+  }
+};
+
+/**
  * An attrs map's kind check (#56): attr key → FINITE number. A NaN or
  * Infinity would poison every formula that reads the slot silently — the
  * same corruption class a non-tick cooldown represents.
@@ -299,6 +312,11 @@ export const SLOT_RULES: {
     // own default word); a present value must be a non-empty string, for the
     // empty string is a written claim, not namelessness.
     name: { absent: "unfilled", validate: isNonEmptyString },
+    // The equipped-martial slot (#58 D13): the combat slot's unfilled family
+    // — absence is the reading (no equipped martial, every hand the basic
+    // strike), present means an id list whose references the load point
+    // validates loudly (validateEquippedMartials, content drift's answer).
+    martial: { absent: "unfilled", validate: isMartialList },
   },
   world: {
     // The scalars a v1 save predates entirely: the migration records "never

@@ -66,6 +66,17 @@ export interface RenderCopy {
    * into content). Placeholders (markupKey): attacker, defender, damage.
    */
   readonly strikeHit: string;
+  /**
+   * A martial hand landing (#58 D16①/C3-T3): the base hit line's martial
+   * twin — a SEPARATE key, not an optional slot, because the two lines read
+   * differently (a named technique's strike vs a bare fist) and a
+   * blank-slot template cannot word both. The martial NAME reaches the
+   * placeholder through the injected names table (the host builds
+   * martialId → name beside every other id; the renderer reads no registry
+   * — the #50 Q6 red line). Placeholders: attacker, defender, damage,
+   * martial.
+   */
+  readonly strikeHitMartial: string;
   /** A dodged strike (the defender slipped it). Placeholders: attacker, defender. */
   readonly strikeDodge: string;
   /** The retaliation landing on the player. Placeholders: attacker, damage. */
@@ -333,11 +344,14 @@ function refusalLine(
 }
 
 /**
- * One strike, from the observer's stance (#56, T7's fixed templates): the
- * observer being hit reads strikeTake ("…you take N"), everyone else — the
- * attacker themselves AND any third party — reads strikeHit with names
- * substituted (the two-sided law of the movement lines; a bystander is a
- * name-reading party to BOTH sides, the same as moveLine's mover).
+ * One strike, from the observer's stance (#56, T7's fixed templates; #58
+ * D16① adds the martial twin): the observer being hit reads strikeTake
+ * ("…you take N"), everyone else — the attacker themselves AND any third
+ * party — reads strikeHit with names substituted (the two-sided law of the
+ * movement lines; a bystander is a name-reading party to BOTH sides, the
+ * same as moveLine's mover). A hand whose event carries a martialId reads
+ * the martial twin — the name arrives by id through the injected names
+ * table, the renderer never learning a registry.
  */
 function strikeLine(
   event: StrikeEvent,
@@ -360,6 +374,16 @@ function strikeLine(
       templateSpans(content.copy.strikeTake, {
         attacker: [{ text: attacker, style: "npcName" }],
         damage,
+      }),
+    );
+  }
+  if (event.martialId !== undefined) {
+    return lineOf(
+      templateSpans(content.copy.strikeHitMartial, {
+        attacker: [{ text: attacker, style: "npcName" }],
+        defender: [{ text: defender, style: "npcName" }],
+        damage,
+        martial: [{ text: nameOf(content, event.martialId), style: "plain" }],
       }),
     );
   }

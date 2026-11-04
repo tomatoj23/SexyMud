@@ -154,6 +154,7 @@ export function combatTraversalSpec(exit: ExitEntry): CommandSpec<WorldRuntime> 
         };
         npcStrike(runtime, state, npc.id, {
           nowTick,
+          rng: ctx.rng,
           emit: (to, draft) => ctx.emit(to, draft),
         });
         return;

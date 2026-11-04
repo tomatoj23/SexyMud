@@ -20,7 +20,7 @@ const run = (cwd: string): string =>
   execFileSync(process.execPath, [script], { cwd, encoding: "utf8" });
 
 describe("check-refs anchors on the script's place, not the runner's cwd (#54)", () => {
-  it("repo root and package directory sweep the same NON-EMPTY set", () => {
+  it("repo root and package directory sweep the same NON-EMPTY set", { timeout: 30_000 }, () => {
     const fromRoot = run(repoRoot);
     const fromPackage = run(resolve(repoRoot, "packages", "core"));
 

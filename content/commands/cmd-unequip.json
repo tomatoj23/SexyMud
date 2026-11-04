@@ -1,0 +1,14 @@
+{
+  "id": "cmd-unequip",
+  "verbs": [
+    "收招",
+    "卸下",
+    "unequip"
+  ],
+  "argForm": "text",
+  "cmdset": "character",
+  "priority": 0,
+  "notInCombat": true,
+  "err_notEquipped": "这一招本就不在你手上。",
+  "err_inCombat": "刀兵未歇，此刻不成。"
+}

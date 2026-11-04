@@ -1,0 +1,16 @@
+{
+  "id": "mrt-lq-003",
+  "kind": "招式",
+  "name": "腐骨毒爪",
+  "tier": 1,
+  "source": "external",
+  "element": "wood",
+  "cost": 10,
+  "cooldownTicks": 4,
+  "attackMultiplier": 1.1,
+  "effects": [
+    "eff-strike-fist",
+    "eff-poison-fist"
+  ],
+  "description": "五指成钩，爪风里淬着木系毒质。抓破皮肉是小事，沾上的毒才是后患。"
+}
