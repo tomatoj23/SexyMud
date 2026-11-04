@@ -420,10 +420,13 @@ export function createGameSession(options: GameSessionOptions): GameSession {
       // observation span, worded by the attr key this host's pack declares.
       if (message.event.type === RESOURCE_REGEN_EVENT) {
         const fields = message.event as { resource?: string; amount?: number };
+        // The engine's own event always carries both; an absent one is a
+        // wiring miss the copy line's own fallbacks surface — no silent
+        // "" / 0 stand-ins (the martialEquipped arm's law, same batch).
         lines.push(
           lineOf([
             {
-              text: copy.regenLine(fields.resource ?? "", fields.amount ?? 0),
+              text: copy.regenLine(fields.resource!, fields.amount!),
               style: "plain",
             },
           ]),
