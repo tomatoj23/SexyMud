@@ -81,8 +81,18 @@ export function rankOfMartial(registry: ContentRegistry, entry: MartialEntry): s
  */
 export function martialStrikePlan(registry: ContentRegistry, entry: MartialEntry): StrikePlan {
   const character = requireCharacterTable(registry);
+  // A hand needs a chain (#59 D9): a mental declares no effects — reaching
+  // here without one means a mental drifted into the wheel's slot, or a
+  // technique bypassed the schema without its chain. Either way it fails
+  // HERE, loudly, never as a hand that walks nothing.
+  const effects = entry.effects;
+  if (effects === undefined) {
+    throw new Error(
+      `combat: martial "${entry.id}" carries no effects — a hand needs an effect chain (a mental in the wheel's slot is content drift, #59 D9)`,
+    );
+  }
   return {
-    effects: entry.effects,
+    effects,
     source: entry.source ?? character.strike.source,
     element: entry.element ?? character.strike.element,
     martialId: entry.id,

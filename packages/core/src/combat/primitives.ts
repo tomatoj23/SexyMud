@@ -15,6 +15,7 @@ import {
   requireCharacterTable,
   strikeDamage,
 } from "./damage.js";
+import { mentalModifiersFor } from "./mental.js";
 
 /**
  * The first two primitive implementations (#56 D9, #57 F2): `instant-damage`
@@ -66,8 +67,8 @@ export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
   }
   const face = monsterCombatFace(registry.monster(npc.monsterId));
   const character = requireCharacterTable(registry);
-  const attack = state.attrs[character.strike.attackAttr];
-  if (typeof attack !== "number" || !Number.isFinite(attack)) {
+  const attackRaw = state.attrs[character.strike.attackAttr];
+  if (typeof attackRaw !== "number" || !Number.isFinite(attackRaw)) {
     throw new Error(
       `combat: the player's attrs carry no usable attack value (key "${character.strike.attackAttr}") — seed the character table at startNewGame`,
     );
@@ -78,7 +79,15 @@ export const instantDamage: EffectPrimitiveHandler = (primitive, ctx) => {
     throw new Error("combat: a strike face carries a non-positive attack multiplier");
   }
   const defense = faceDefenseOf(face, hand?.source ?? character.strike.source);
-  const damage = strikeDamage(attack * multiplier, defense, readDefenseK(registry.settings));
+  // #59 D11: the attack operand walks the modifier pipeline (consumer point
+  // ①, the pre-existing call site) — the equipped mentals' declared members
+  // on the attack stat key, the pipe's first real members.
+  const damage = strikeDamage(
+    attackRaw * multiplier,
+    defense,
+    readDefenseK(registry.settings),
+    mentalModifiersFor(registry, state, character.strike.attackAttr),
+  );
   // F6: one clamped write — a save's HP above a content-revised ceiling
   // heals itself on the very next settlement.
   session.targetHp = clampedHp(session.targetHp - damage, face.maxHp);

@@ -91,12 +91,13 @@ import type { DueItem } from "../time/due.js";
  */
 export type EntityRecord = Omit<
   EntityState,
-  DerivedEntityKey | "tags" | "attrs" | "combat" | "martial" | "lastSeenTick" | "cooldowns"
+  DerivedEntityKey | "tags" | "attrs" | "combat" | "martial" | "mental" | "lastSeenTick" | "cooldowns"
 > & {
   tags?: TagMap;
   attrs?: Record<string, number>;
   combat?: CombatSession;
   martial?: string[];
+  mental?: string[];
   lastSeenTick?: number;
   cooldowns?: Record<string, number>;
 };
@@ -244,7 +245,7 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
     // JS host's garbage) — writing either would be the engine handing its
     // own load path a key it rejects outright (owner ruling 2026-10-25, #52
     // audit N-1: write-side elision, read-side refusal).
-    const { name, combat, martial, ...persistent } = state;
+    const { name, combat, martial, mental, ...persistent } = state;
     // Canonicalize FIRST, strip LAST: the live arrays' order is untouched,
     // and a field cannot be resurrected by a later step — the strip is the
     // last thing that happens to a record, so the table stays authoritative
@@ -298,6 +299,13 @@ export function serializeWorld(world: WorldState, meta: WorldMeta): Snapshot<Sav
         // meaning rather than canonicalizable noise — the deliberate
         // counter-example to `flags`/`cooldowns` above.
         ...(martial !== undefined && martial.length > 0 ? { martial: [...martial] } : {}),
+        // The equipped-mental list rides only when one exists (#59): the
+        // martial slot's own elision law — unequipping the last mental
+        // DELETES the slot. Unlike `martial` the copy IS sorted: every
+        // member is always on, the order carries no meaning (D8), so
+        // canonicalization is free — the `attrs` ascending precedent, the
+        // deliberate contrast with the priority-ordered `martial` above.
+        ...(mental !== undefined && mental.length > 0 ? { mental: [...mental].sort() } : {}),
         flags: [...state.flags].sort(),
         tags: canonicalTags(state.tags),
         attrs: canonicalAttrs(state.attrs),

@@ -126,7 +126,7 @@ describe("the hand-played combat chains over the shipped pack (#56/#57)", () => 
       entities: Record<string, { combat?: { targetHp?: number; targetDead?: boolean } }>;
     }).entities["player"]!.combat!;
     expect(session.targetDead).toBe(false);
-    expect(session.targetHp).toBe(121); // the fresh 140-HP fight, 19 in.
+    expect(session.targetHp).toBe(118); // the fresh 140-HP fight, 22 in (the pre-equipped mental flat rides every hand, #59).
   });
 
   it("pins the FIRST-hand timing: no retaliation on the strike itself, both hands on the next beat", async () => {
@@ -245,7 +245,7 @@ describe("the hand-played combat chains over the shipped pack (#56/#57)", () => 
     // 30 × 1.5 × (1 − 0/10) → 45: the number only D9's routing produces
     // (an external hand reads his 6 defense and lands 23).
     expect(produced).toContain("一招「透骨指」打向孙彪");
-    expect(produced).toContain("孙彪受创45点");
+    expect(produced).toContain("孙彪受创50点");
     // The guard's hand landed NOTHING this beat — the player's dodge roll
     // won this fixed draw (#58 D8: a won roll is the WHOLE hand missing,
     // F2's symmetry on the receiving side).
@@ -279,9 +279,12 @@ describe("AC12 — the full line: open, exchange, escape, ambush, kill, clear, r
 
     // ESCAPE: mid-fight moves roll until one lands — each miss spends a
     // hand's time and says so; the hit clears the fight and moves out.
+    // One tick per attempt (#59): the pre-equipped mental's flat lifted every
+    // hand, and Sun Biao no longer outlives a 3-tick attempt span — a shorter
+    // step keeps the roll alive without touching the fight's arithmetic.
     let escapes = 0;
     while (escapes < 30) {
-      await rig.play("南", 3);
+      await rig.play("南", 1);
       escapes += 1;
       const produced = rig.lines.join("");
       if (produced.includes("你且战且退，脱身而去。")) break;
@@ -320,6 +323,6 @@ describe("AC12 — the full line: open, exchange, escape, ambush, kill, clear, r
     const session = (reopened.data as {
       entities: Record<string, { combat?: { targetHp?: number } }>;
     }).entities["player"]!.combat!;
-    expect(session.targetHp).toBe(35); // the fresh 60-HP fight, 25 in.
+    expect(session.targetHp).toBe(31); // the fresh 60-HP fight, 29 in (the pre-equipped mental's flat rides the opening fist too, #59).
   });
 });

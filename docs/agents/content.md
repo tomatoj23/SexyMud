@@ -90,7 +90,7 @@ assets/               # 美术资产（MVP 允许为空）
 
 每个招式一个 JSON 文件（文件名 = id，`mrt-<门派/区域>-<序号>`），**招式 = 节奏轮盘的择式来源与「施展」的对象**（`schemas/martial.schema.json` ／ 引擎 `MartialEntry`（`packages/core/src/content/registry.ts`）与本节三处同步）。字段：
 
-- `kind`：条目种类（`招式`；心法挂修饰符票——字段位保留可扩，schema 不写死枚举）。
+- `kind`：条目种类（enum 两词：`招式`｜`心法`，#59 实装——心法走 `modifiers` 被动修饰符面；引擎按形状分流〔effects/modifiers 存在性〕、schema 按 kind 词分 required）。
 - `name`：招式名（四字格意象；`施展`／`激发`／`收招` 按此名**精确匹配**——`argForm: text` 复用，不扩引擎枚举）。
 - `tier`：品阶序号 1-4（strike 事件 `rank` 值经 `combat-tiers.json` 的 `quality` 带映射——下乘/中乘/上乘/绝学的英文键 low/mid/high/ultimate）。
 - `source`／`element`：作用方式／系别（dimensions 同名维度取值；`source` 决定本招式手吃对头 `stats.externalDefense` 还是 `stats.internalDefense`；缺省回落 character 表 `strike.source`／`strike.element`）。
@@ -99,7 +99,17 @@ assets/               # 美术资产（MVP 允许为空）
 - `attackMultiplier`：攻击乘数（进公式 `baseAttack = 攻击属性 × 本值`；缺省 1＝与基础攻击同威；效果条目 amount 继续闲置——数值面归招式层）。
 - `effects`：效果引用列表（本招式一手走的完整效果链；注册表加载期校验悬空引用——command.effects 先例）。
 - 已学/装配**不在条目里**：`character.json` 的 `martial.known/initialEquipped` 承载（已学＝内容声明，无运行时学习途径）；装配进存档 `martial` 槽（上限 4、序即优先级）。
-- ⚠️ #58 重设计移除的字段勿再写：`prerequisites`（等级票回来再回）、`sectId`／`lineageId`（门派无票不预承诺）、`textVariants`（C4 战斗文本票才有集合）、`costs.internalForce`（改纯 `cost`）、`cooldownMs`（改 `cooldownTicks`）。
+- ⚠️ #58 重设计移除的字段勿再写：`prerequisites`（等级票回来再回）、`sectId`／`lineageId`（门派无票不预承诺）、`textVariants`（C6 战斗文本票才有集合）、`costs.internalForce`（改纯 `cost`）、`cooldownMs`（改 `cooldownTicks`）。
+
+### 心法条目（同集合 kind 区分，#59 实装）
+
+心法与招式同住 `content/martial/`（**不另立集合**——心法是武功的被动半边），id 前缀 **`mnt-`**（如 `mnt-lq-001`——与存档槽 mental／character 表 mental 块同根）。与招式的差异面：
+
+- `kind` 必为 **`心法`**；**不写 `effects`**（心法不产手——schema if/then 双向禁携）。
+- `modifiers[]`（≥1，心法必填）：每条 `{ stat, flat?, percent? }`——`stat` 取 `character.json` 的 attrs **键名**（如 `attack`／`maxInternalForce`）；`flat` 固定值层、`percent` 小数（0.1＝+10%）；两层算式 `(base+Σflat)×(1+Σpercent)` 下限 0。同 stat 多条目跨条目叠层。
+- `source`／`element`／`cost`／`cooldownTicks`／`attackMultiplier` 是招式面字段——心法**不携带**（无事件消费面）。
+- 已学/装配在 `character.json` 的 `mental.known/initialEquipped`（照 martial 块形；装配进存档 `mental` 槽、上限 3、序无语义）。
+- 命名：**「××心法」四字格**（白云/玉女/葵花/禅宗等系语料通例——写前查 `.scratch/mud-corpus/` 跨系，不照抄）；品阶 `tier` 同招式必填（纯叙事位，无事件消费）。
 
 ## 效果集合（content/effects/，#56 已激活）
 

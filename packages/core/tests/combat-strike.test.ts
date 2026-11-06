@@ -744,7 +744,9 @@ describe("the effect contract (#56 AC3/AC8)", () => {
   it("aggregates through the minimal core — the empty degenerate form answers the base (T9)", () => {
     expect(aggregateModifiers(30)).toBe(30);
     expect(aggregateModifiers(30, [])).toBe(30);
-    // The two-layer shape itself (C4 fills the lists; the arithmetic is pinned now).
+    // The two-layer shape itself (C4/#59 filled the lists off the equipped
+    // mentals — the production chain is pinned in combat-mental.test.ts; the
+    // arithmetic stays pinned here).
     expect(aggregateModifiers(10, [{ kind: "flat", value: 5 }, { kind: "percent", value: 0.2 }])).toBe(18);
     expect(aggregateModifiers(10, [{ kind: "flat", value: -40 }])).toBe(0);
   });

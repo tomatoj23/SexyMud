@@ -79,6 +79,20 @@ export interface EntityState {
    */
   martial?: string[];
   /**
+   * The EQUIPPED mental list (#59 D8/D13): mental-kind martial entry ids —
+   * passive, unconditional modifiers on the player's stat reads, the
+   * modifier pipeline's first real members. Unlike `martial` the slot's
+   * ORDER carries no meaning (every member is always on), so serializeWorld
+   * canonicalizes it ascending — the deliberate contrast with the wheel's
+   * priority-ordered `martial` above. ABSENT means no equipped mental (the
+   * same "unfilled" family); unequipping the last one DELETES the slot, and
+   * a new game seeds the character table's `mental.initialEquipped` into
+   * it. Capped at 3 by the equip command (the cap is the equip law, not a
+   * save-shape law); reference integrity is the load point's loud check
+   * (validateEquippedMentals).
+   */
+  mental?: string[];
+  /**
    * The tick this entity was last settled TO (spec/04 §4.3, ADR-0034 §2) —
    * the start of the entity layer's next advance, and the reason an offline
    * span is ever non-zero. The entity layer advances the ACTOR only, so an

@@ -9,6 +9,6 @@
   "cmdset": "character",
   "priority": 0,
   "notInCombat": true,
-  "err_notEquipped": "这一招本就不在你手上。",
+  "err_notEquipped": "这门功夫本就不在你身上。",
   "err_inCombat": "刀兵未歇，此刻不成。"
 }

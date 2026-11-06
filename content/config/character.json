@@ -34,6 +34,16 @@
       "mrt-lq-004"
     ]
   },
+  "mental": {
+    "known": [
+      "mnt-lq-001",
+      "mnt-lq-002",
+      "mnt-lq-003"
+    ],
+    "initialEquipped": [
+      "mnt-lq-001"
+    ]
+  },
   "strike": {
     "attackAttr": "attack",
     "defenseAttrs": {

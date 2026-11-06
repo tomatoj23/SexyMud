@@ -163,6 +163,18 @@ const isMartialList: SlotValidator = (value, what) => {
 };
 
 /**
+ * The equipped-mental slot's kind check (#59 D8): the martial row's own
+ * shape — a list of non-empty ids, the cap of 3 the equip command's law,
+ * not a save-shape law. The slot's order carries no meaning (every member
+ * is always on), which is the serializer's business, not this row's.
+ */
+const isMentalList: SlotValidator = (value, what) => {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== "string" || id === "")) {
+    throw new Error(`snapshot: ${what} is not a list of non-empty mental ids`);
+  }
+};
+
+/**
  * An attrs map's kind check (#56): attr key → FINITE number. A NaN or
  * Infinity would poison every formula that reads the slot silently — the
  * same corruption class a non-tick cooldown represents.
@@ -317,6 +329,11 @@ export const SLOT_RULES: {
     // strike), present means an id list whose references the load point
     // validates loudly (validateEquippedMartials, content drift's answer).
     martial: { absent: "unfilled", validate: isMartialList },
+    // The equipped-mental slot (#59 D8): the martial row's unfilled family —
+    // absence is the reading (no equipped mental, every stat read the bare
+    // base), present means a mental-id list whose references the load point
+    // validates loudly (validateEquippedMentals).
+    mental: { absent: "unfilled", validate: isMentalList },
   },
   world: {
     // The scalars a v1 save predates entirely: the migration records "never

@@ -353,24 +353,27 @@ if (!files.includes(worldFile)) {
   }
 }
 
-// Cross-field rule (#58 D13, AC11): the character table's initialEquipped
-// must be a SUBSET of its known list — draft-07 cannot express containment,
-// so the offline gate owns it (the schema can only pin each list's own
-// shape). Whether either list's ids RESOLVE is the registry's load-time
-// check (the npc→monsterId division: offline owns relations inside one
-// file, load owns references across files).
+// Cross-field rule (#58 D13, AC11; #59 D10/AC10 adds the mental half): the
+// character table's initialEquipped must be a SUBSET of its known list — for
+// BOTH blocks, martial and mental — draft-07 cannot express containment, so
+// the offline gate owns it (the schema can only pin each list's own shape).
+// Whether either list's ids RESOLVE is the registry's load-time check (the
+// npc→monsterId division: offline owns relations inside one file, load owns
+// references across files).
 const characterFile = join(root, "content", "config", "character.json");
 const characterData = prototypeEntries.find(({ file }) => file === characterFile)?.data;
 if (characterData !== undefined && characterData !== null) {
-  const martialDecl = characterData.martial;
-  if (martialDecl !== undefined && Array.isArray(martialDecl.known)) {
-    const known = new Set(martialDecl.known);
-    for (const id of martialDecl.initialEquipped ?? []) {
-      if (!known.has(id)) {
-        failed = true;
-        console.error(
-          `INVALID content/config/character.json — martial.initialEquipped carries "${id}", which martial.known does not include (#58 D13: the opening loadout must be learned)`,
-        );
+  for (const block of ["martial", "mental"]) {
+    const decl = characterData[block];
+    if (decl !== undefined && Array.isArray(decl.known)) {
+      const known = new Set(decl.known);
+      for (const id of decl.initialEquipped ?? []) {
+        if (!known.has(id)) {
+          failed = true;
+          console.error(
+            `INVALID content/config/character.json — ${block}.initialEquipped carries "${id}", which ${block}.known does not include (#58 D13/#59: the opening loadout must be learned)`,
+          );
+        }
       }
     }
   }

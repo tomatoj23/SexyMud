@@ -137,18 +137,43 @@ export interface MonsterRecord extends EntryCommon {
 }
 
 /**
- * A martial-arts entry (#58 D10): the content the combat wheel reads — the
- * effect chain a hand of it walks, the delivery/element words its strike
- * carries, the cost charged against the secondary resource (a plain number —
- * WHICH attr key it deducts is the character table's secondaryResource pair,
- * the entry never names a resource key), the cooldown the hand arms, the
- * tier whose quality word rides the strike event, and the attack multiplier
- * into the formula. Kind stays an open word (D1: the passive half is a later
- * ticket's, the field is its seat).
+ * One declared stat modifier on a mental-kind entry (#59 D10): the stat key
+ * is a CHARACTER-TABLE attr key name (the engine knows no key — key lookup
+ * only, the dodgeAttr/defenseAttrs channel law), and flat/percent answer the
+ * minimal core's two layers (fixed value adds first, additive fraction
+ * multiplies the summed base). Either layer may sit alone; neither is
+ * negative in the shipped pack's content (the pipeline's own floor of 0
+ * answers a negative pile anyway).
+ */
+export interface ModifierDecl {
+  /** The character-table attr key this modifier widens (e.g. "attack"). */
+  readonly stat: string;
+  /** The flat-layer member: a fixed value added to the base. */
+  readonly flat?: number;
+  /** The percent-layer member: a FRACTION, 0.1 = +10%. */
+  readonly percent?: number;
+}
+
+/**
+ * A martial-arts entry (#58 D10, #59 D9): the content the combat wheel reads
+ * — the effect chain a hand of it walks, the delivery/element words its
+ * strike carries, the cost charged against the secondary resource (a plain
+ * number — WHICH attr key it deducts is the character table's
+ * secondaryResource pair, the entry never names a resource key), the cooldown
+ * the hand arms, the tier whose quality word rides the strike event, and the
+ * attack multiplier into the formula. The entry's own SHAPE routes it to its
+ * slot (#59 D12 — slotKindOf reads the face, never the kind word): an effect
+ * chain feeds the wheel's `martial` slot, a `modifiers` list (which never
+ * carries `effects` — the schema's if/then pins the same exclusivity by the
+ * kind word, content-side) feeds the passive `mental` slot.
  */
 export interface MartialEntry extends EntryCommon {
   readonly id: string;
-  /** The entry's kind word — "technique" today, the passive kind is a later ticket's (D1). */
+  /**
+   * The entry's kind word — content vocabulary (the schema's enum closes it
+   * to the CONTEXT pair); the ENGINE never reads it — slotKindOf routes by
+   * the entry's face (effects vs modifiers), the shape that word promises.
+   */
   readonly kind: string;
   /** Display name (the host's name table reads it; the engine never words it). */
   readonly name: string;
@@ -164,8 +189,19 @@ export interface MartialEntry extends EntryCommon {
   readonly cooldownTicks?: number;
   /** The attack multiplier into the strike formula; absent reads 1 (D11). */
   readonly attackMultiplier?: number;
-  /** The effect entries one hand walks — reference-checked like a command's (#56 precedent). */
-  readonly effects: readonly string[];
+  /**
+   * The effect entries one hand walks — reference-checked like a command's
+   * (#56 precedent). A TECHNIQUE's own (the schema requires it); a mental's
+   * declares none — a mental never produces a hand.
+   */
+  readonly effects?: readonly string[];
+  /**
+   * The stat modifiers a MENTAL declares (#59 D10): unconditional, passive,
+   * grouped by stat at the equip point and piped into the five consumer
+   * reads. A technique declares none — the schema's if/then keeps the two
+   * faces exclusive.
+   */
+  readonly modifiers?: readonly ModifierDecl[];
 }
 
 /**
@@ -1091,10 +1127,12 @@ export function buildContentRegistry(
   // character table's known/initialEquipped lists reference the martial
   // collection (D13): the content-side half of the equipped-id integrity —
   // the save-side half is the load point's loud validation
-  // (validateEquippedMartials, the resumeCombatSession precedent).
+  // (validateEquippedMartials, the resumeCombatSession precedent). #59 D13:
+  // the mental block references the SAME collection (one id space — a mental
+  // is a martial-kind entry), so both blocks close here.
   const martialsById = assembly.idMap<MartialEntry>(MARTIALS);
   for (const martial of martialsById.values()) {
-    for (const effectId of martial.effects) {
+    for (const effectId of martial.effects ?? []) {
       if (!effectsById.has(effectId)) {
         throw new Error(
           `content registry: martial "${martial.id}" references unknown effect "${effectId}"`,
@@ -1108,6 +1146,16 @@ export function buildContentRegistry(
       if (!martialsById.has(id)) {
         throw new Error(
           `content registry: character table references unknown martial "${id}" (martial.known/initialEquipped)`,
+        );
+      }
+    }
+  }
+  const declaredMental = options.character?.mental;
+  if (declaredMental !== undefined) {
+    for (const id of [...declaredMental.known, ...declaredMental.initialEquipped]) {
+      if (!martialsById.has(id)) {
+        throw new Error(
+          `content registry: character table references unknown martial "${id}" (mental.known/initialEquipped)`,
         );
       }
     }

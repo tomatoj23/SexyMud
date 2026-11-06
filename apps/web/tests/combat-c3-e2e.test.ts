@@ -82,14 +82,14 @@ describe("the C3 hand-played chains over the shipped pack (#58)", () => {
 
     // PERFORM out of turn: the big one, by name, before the first rhythm
     // hand — the queue-jump's own line with the multiplier's damage
-    // (30 × 2.0 × (1 − 6/16) = 37.5 → 38) and the reschedule it costs.
+    // ((30 × 2.0 + 5) × (1 − 6/16) = 40.625 → 41 — the flat rides the post-multiplier base, the equipped mental) and the reschedule it costs.
     await rig.play("施展 开碑劲");
     expect(rig.lines.join("")).toContain("一招「开碑劲」打向孙彪");
-    expect(rig.lines.join("")).toContain("受创38点");
+    expect(rig.lines.join("")).toContain("受创41点");
 
     // THE WHEEL on rhythm: the loadout's order [透骨指, 腐骨毒爪, 劈风掌,
     // 开碑劲] — the first beat's hand is 透骨指 (internal, against Sun
-    // Biao's 0 internal defense: 45), the cooldown rotation brings the
+    // Biao's 0 internal defense: (30 × 1.5 + 5) = 50), the cooldown rotation brings the
     // poison claw and the palm in behind her.
     let beats = 0;
     while (beats < 40) {
@@ -99,7 +99,7 @@ describe("the C3 hand-played chains over the shipped pack (#58)", () => {
     }
     const text = rig.lines.join("");
     expect(text).toContain("一招「透骨指」打向孙彪");
-    expect(text).toContain("受创45点");
+    expect(text).toContain("受创50点");
     expect(text).toContain("一招「腐骨毒爪」打向孙彪");
     // (劈风掌 — third in the loadout — never got her turn: the poison and
     // the direct hands finished Sun Biao first; the rotation the first two
@@ -156,10 +156,10 @@ describe("the C3 hand-played chains over the shipped pack (#58)", () => {
     wallMs += 3000;
     await resumed.heartbeat();
     const produced = lines.slice(before).join("");
-    // 30 × 0.5 × (1 − 6/16) = 9.375 → 9: the drained number, by name-less
+    // ((30 × 0.5 + 5) × (1 − 6/16) = 12.5 → 13: the drained number carries the flat too, by name-less
     // fist — the ratio is the ONLY thing that changed.
     expect(produced).toContain("一拳打向孙彪");
-    expect(produced).toContain("受创9点");
+    expect(produced).toContain("受创13点");
     expect(produced).not.toContain("一招「");
   });
 
@@ -175,9 +175,9 @@ describe("the C3 hand-played chains over the shipped pack (#58)", () => {
     // The new game's opening loadout is FULL — a fresh equip of anything
     // known answers alreadyEquipped (D13's no-silent-reorder face).
     await rig.play("激发 劈风掌");
-    expect(rig.lines.join("")).toContain("这一招已在手上。");
+    expect(rig.lines.join("")).toContain("这门功夫已在身上。");
     await rig.play("激发 无名神功");
-    expect(rig.lines.join("")).toContain("你并未学过这一招。");
+    expect(rig.lines.join("")).toContain("你并未学过这门功夫。");
 
     // The reorder path IS the pair: unequip, then equip again — the
     // confirmation line is the session's own, and the slot's TAIL is where

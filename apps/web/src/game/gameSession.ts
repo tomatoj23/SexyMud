@@ -20,6 +20,8 @@ import {
   lookSpec,
   MARTIAL_EQUIPPED_EVENT,
   MARTIAL_UNEQUIPPED_EVENT,
+  MENTAL_EQUIPPED_EVENT,
+  MENTAL_UNEQUIPPED_EVENT,
   performSpec,
   renderEvent,
   RESOURCE_REGEN_EVENT,
@@ -33,6 +35,7 @@ import {
   testClockOver,
   unequipSpec,
   validateEquippedMartials,
+  validateEquippedMentals,
   verbTableFrom,
 } from "@sexymud/core";
 import type {
@@ -392,26 +395,31 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         );
         continue;
       }
-      // The equip/unequip confirmations (#58 D13): the id rides the event,
-      // the name comes out of the registry — the SESSION words both, the
-      // flagGranted family.
+      // The equip/unequip confirmations (#58 D13, #59 D12 adds the mental
+      // twin pair): the id rides the event, the name comes out of the
+      // registry — the SESSION words all four, the flagGranted family. The
+      // kind already routed the slot; the copy face follows the event type.
       if (
         message.event.type === MARTIAL_EQUIPPED_EVENT ||
-        message.event.type === MARTIAL_UNEQUIPPED_EVENT
+        message.event.type === MARTIAL_UNEQUIPPED_EVENT ||
+        message.event.type === MENTAL_EQUIPPED_EVENT ||
+        message.event.type === MENTAL_UNEQUIPPED_EVENT
       ) {
         const martialId = (message.event as { martialId?: string }).martialId;
         // The engine's own event always carries the id; an absent one is a
         // wiring miss the throwing getter names — no silent "" fallback.
         const name = pack.registry.martial(martialId!).name;
+        const text =
+          message.event.type === MARTIAL_EQUIPPED_EVENT
+            ? copy.martialEquippedLine(name)
+            : message.event.type === MARTIAL_UNEQUIPPED_EVENT
+              ? copy.martialUnequippedLine(name)
+              : message.event.type === MENTAL_EQUIPPED_EVENT
+                ? copy.mentalEquippedLine(name)
+                : copy.mentalUnequippedLine(name);
         lines.push(
           lineOf([
-            {
-              text:
-                message.event.type === MARTIAL_EQUIPPED_EVENT
-                  ? copy.martialEquippedLine(name)
-                  : copy.martialUnequippedLine(name),
-              style: "plain",
-            },
+            { text, style: "plain" },
           ]),
         );
         continue;
@@ -630,11 +638,13 @@ export function createGameSession(options: GameSessionOptions): GameSession {
         pack.registry,
         options.hostClock?.nowTick() ?? assembled.runtime.clock.nowTick(),
       );
-      // The equipped slot's load-point reference check (#58 D13): a save's
-      // equipped ids must resolve against the CURRENT pack's martial
-      // collection and known list — content drift answers here, loudly,
-      // never as a silently uncastable hand mid-fight.
+      // The equipped slots' load-point reference checks (#58 D13, #59 D8):
+      // a save's equipped ids must resolve against the CURRENT pack's
+      // martial collection and known lists — both slots, one law each —
+      // content drift answers here, loudly, never as a silently uncastable
+      // hand or a silently dead modifier mid-fight.
       validateEquippedMartials(assembled.runtime.state, pack.registry);
+      validateEquippedMentals(assembled.runtime.state, pack.registry);
       wireHarness(assembled);
 
       if (fellBack) {

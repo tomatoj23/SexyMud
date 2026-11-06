@@ -65,6 +65,16 @@ export interface HostCopy {
   martialEquippedLine(name: string): string;
   martialUnequippedLine(name: string): string;
   /**
+   * The mental equip pair's confirmations (#59 D12): the mentalEquipped and
+   * mentalUnequipped extension arms — TWIN keys of the martial pair above
+   * (an independent key each, not an optional slot on one shared face), the
+   * same session-words-it law. The verbs differ where the acts do: a mental
+   * is RAISED (运起, the corpus's own verb for working a mental method),
+   * not taken in hand.
+   */
+  mentalEquippedLine(name: string): string;
+  mentalUnequippedLine(name: string): string;
+  /**
    * The regeneration line (#58 D16②/C3-T4): one resourceRegen event per
    * resource per observation span, worded by the ATTR KEY this host's pack
    * declares (the keys are the pack's; only this host knows which words
@@ -177,6 +187,12 @@ export const WEB_HOST_COPY: HostCopy = {
   },
   martialUnequippedLine(name) {
     return `你收了「${name}」，喘匀了气息。`;
+  },
+  mentalEquippedLine(name) {
+    return `你运起「${name}」，内息暗自流转。`;
+  },
+  mentalUnequippedLine(name) {
+    return `你收了「${name}」，内息归于丹田。`;
   },
   regenLine(resource, amount) {
     const rounded = Math.round(amount * 10) / 10;

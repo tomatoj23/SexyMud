@@ -1,0 +1,13 @@
+{
+  "id": "mnt-lq-003",
+  "kind": "心法",
+  "name": "吐纳心法",
+  "tier": 1,
+  "modifiers": [
+    {
+      "stat": "maxInternalForce",
+      "flat": 20
+    }
+  ],
+  "description": "最朴素的吐故纳新之功，清晨面水而行，一呼一吸间气海渐宽。练它不添拳脚之威，却把一身内力养得更厚。"
+}

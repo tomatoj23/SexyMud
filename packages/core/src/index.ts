@@ -94,6 +94,7 @@ export type {
   ContentRegistryOptions,
   DimensionTable,
   MartialEntry,
+  ModifierDecl,
   MonsterRecord,
   MonsterStats,
 } from "./content/registry.js";
@@ -165,11 +166,20 @@ export {
 } from "./combat/martial.js";
 export { performSpec } from "./combat/perform.js";
 export {
+  equippedMentalModifiers,
+  mentalModifiersFor,
+  slotKindOf,
+  validateEquippedMentals,
+} from "./combat/mental.js";
+export {
   equipSpec,
   unequipSpec,
   MARTIAL_EQUIPPED_EVENT,
   MARTIAL_UNEQUIPPED_EVENT,
   MARTIAL_SLOT_CAP,
+  MENTAL_EQUIPPED_EVENT,
+  MENTAL_UNEQUIPPED_EVENT,
+  MENTAL_SLOT_CAP,
 } from "./combat/equip.js";
 export { combatTraversalSpec, COMBAT_ESCAPE_EVENT } from "./combat/traversal.js";
 export { guardNotInCombat, IN_COMBAT } from "./combat/guard.js";

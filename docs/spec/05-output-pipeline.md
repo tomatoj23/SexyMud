@@ -1,6 +1,6 @@
 # 05 · 输出管线
 
-> **状态**：**文本面已随引擎出厂**（#50：`packages/core/src/text/`——渲染纯函数、显示宽度、避头尾折行、切块与 span 重放；**#56 渲染缝收口**：战斗三臂 strike／dotTick／death 进渲染分派——事件型从五扩为八，战斗固定模板键进 `RenderCopy`、词面住宿主〔T7〕，C4 战斗文本票迁内容侧）；**web 基准端已落**（#51：`apps/web/src/ui/terminalView.ts`——纯 TS 状态机〔追加式输出＋500 行缓冲丢最早＋命令通道〕＋ React 呈现 `GameTerminal.tsx`；标题屏/世界引导/走看说/自动存在 `apps/web/src/game/`）。
+> **状态**：**文本面已随引擎出厂**（#50：`packages/core/src/text/`——渲染纯函数、显示宽度、避头尾折行、切块与 span 重放；**#56 渲染缝收口**：战斗三臂 strike／dotTick／death 进渲染分派——事件型从五扩为八，战斗固定模板键进 `RenderCopy`、词面住宿主〔T7〕，C6 战斗文本票迁内容侧）；**web 基准端已落**（#51：`apps/web/src/ui/terminalView.ts`——纯 TS 状态机〔追加式输出＋500 行缓冲丢最早＋命令通道〕＋ React 呈现 `GameTerminal.tsx`；标题屏/世界引导/走看说/自动存在 `apps/web/src/game/`）。
 > **依据**：ADR-0006、ADR-0018、ADR-0021 §3、ADR-0023 §2/§4/§5/§7、ADR-0024 §4/§5、ADR-0025 §五/§八。
 
 ## 1. 管线总览
@@ -23,7 +23,7 @@ TerminalView.appendOutput()  ← 各端自己实现（呈现与喂参）
 renderEvent(event: GameEvent, observer: ObserverState, content: RenderContent): OutputLine[]
 ```
 
-- **事件形状**（spec/01 §5，#47；战斗三臂随 #56）：`GameEvent` 是封闭联合 `EngineEvent | CustomEvent`——渲染层按 `type` 分派各臂的渲染函数、读该臂的语义字段（引擎臂字段已分型；判别只在引擎**八型**之间收窄——扩展臂 `type` 是开放串，经 `isEngineEvent` 守卫显式分流）。扩展臂（合成／宿主事件）**显式不渲染**（注释点名，测试钉跳过语义；#56 起由宿主在会话层按需消费——`flagGranted` 事件的宿主行是首个实例，T1）。**战斗三臂的渲染分派已随 #56 落地**（「渲染缝随机制模块票」兑现）：`strike` 双向（出手读 `strikeHit`／被闪读 `strikeDodge`，被击读 `strikeTake`）、`dotTick`（`dotTickLine`）、`death` 双侧（`deathNpcLine`／`deathPlayerLine`）——模板键进 `RenderCopy`（机制词键名、词面宿主注入，T7 的 C1 极简面；C4 战斗文本票迁内容侧）。事件零已渲染文本（spec/01 §5.1）：拒绝文案一律经语义码＋`errKey` 回内容数据取。
+- **事件形状**（spec/01 §5，#47；战斗三臂随 #56）：`GameEvent` 是封闭联合 `EngineEvent | CustomEvent`——渲染层按 `type` 分派各臂的渲染函数、读该臂的语义字段（引擎臂字段已分型；判别只在引擎**八型**之间收窄——扩展臂 `type` 是开放串，经 `isEngineEvent` 守卫显式分流）。扩展臂（合成／宿主事件）**显式不渲染**（注释点名，测试钉跳过语义；#56 起由宿主在会话层按需消费——`flagGranted` 事件的宿主行是首个实例，T1）。**战斗三臂的渲染分派已随 #56 落地**（「渲染缝随机制模块票」兑现）：`strike` 双向（出手读 `strikeHit`／被闪读 `strikeDodge`，被击读 `strikeTake`）、`dotTick`（`dotTickLine`）、`death` 双侧（`deathNpcLine`／`deathPlayerLine`）——模板键进 `RenderCopy`（机制词键名、词面宿主注入，T7 的 C1 极简面；C6 战斗文本票迁内容侧）。事件零已渲染文本（spec/01 §5.1）：拒绝文案一律经语义码＋`errKey` 回内容数据取。
 - **取字表随渲染器入参注入**（Q6/Q7，#48 裁决）：`RenderContent` 携取字表（模板＋第二人称代词）、名字表、房间描述/enterText、拒绝取字（`commandKey→errKey→文案` 与语义码面）——纯函数零 IO、零注册表读；名字缺表回退裸 id、描述/enterText 缺表跳行、拒绝取字两面皆缺大声抛错（接线失配看得见）。
 - **同样事件 + 同样观察者状态 + 同样取字表 ⇒ 同样输出**（契合 ADR-0017 确定性）
 - **必须按接收者逐一遍历**。若做成「先渲染成字符串再群发」，中文的人称代词与按观者的可见性差异**永远补不回来**

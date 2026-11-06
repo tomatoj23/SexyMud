@@ -137,6 +137,19 @@ export interface CharacterTable {
     readonly initialEquipped: readonly string[];
   };
   /**
+   * The mental declaration (#59 D13): the martial block's twin — the KNOWN
+   * mental list (content-declared, no runtime learning) and the ids a NEW
+   * GAME equips into the save's `mental` slot (cap 3 at the equip command,
+   * the schema's own maxItems). `initialEquipped ⊆ known` is the offline
+   * gate's cross-field rule (check-content's sixth rule); reference
+   * resolution is the registry's load-time check against the SAME martial
+   * collection (one id space, the mnt- prefix keys it apart).
+   */
+  readonly mental?: {
+    readonly known: readonly string[];
+    readonly initialEquipped: readonly string[];
+  };
+  /**
    * The strike operand channels (T4/T10's mandatory field face, #58 D17/D8
    * widened it): which attr key feeds the player→npc formula's attack
    * operand; the DELIVERY-WORD-KEYED defense pair the NPC→player formula
@@ -384,6 +397,16 @@ export function assertCharacterTable(character: CharacterTable | undefined): voi
     if (!isPlainObject(martial) || !isIdList(martial.known) || !isIdList(martial.initialEquipped)) {
       throw new Error(
         "content registry: character table must declare martial as { known, initialEquipped } id lists (#58)",
+      );
+    }
+  }
+  const mental = character.mental;
+  if (mental !== undefined) {
+    const isIdList = (value: unknown): value is readonly string[] =>
+      Array.isArray(value) && value.every((id) => typeof id === "string" && id !== "");
+    if (!isPlainObject(mental) || !isIdList(mental.known) || !isIdList(mental.initialEquipped)) {
+      throw new Error(
+        "content registry: character table must declare mental as { known, initialEquipped } id lists (#59)",
       );
     }
   }

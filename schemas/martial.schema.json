@@ -1,36 +1,36 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "martial.schema.json",
-  "title": "武功招式（content/martial/，每条目一文件）",
-  "description": "武功条目＝主动招式（#58 D10 字段面定稿）。kind 字段保留可扩（心法＝被动常驻修饰符，挂修饰符票——#58 非目标）；已学集合由 config/character.json 的 martial.known 内容声明（无运行时学习途径）；装配进存档 martial 槽（上限 4、序即轮盘优先级）。三处同步：本文件／packages/core/src/content/registry.ts 的 MartialEntry／docs/agents/content.md。",
+  "title": "武功（content/martial/，每条目一文件——招式与心法同集合）",
+  "description": "武功条目＝招式（主动出手，#58 D10 字段面）与心法（被动常驻修饰符，#59 D9）两 kind 同集合、id 前缀区分（mrt- 招式／mnt- 心法）。kind 按词分 required（if/then 两支）：招式必填 effects、不得带 modifiers；心法必填 modifiers、不得带 effects（心法不产手）。已学集合由 config/character.json 的 martial.known（招式）与 mental.known（心法）内容声明（无运行时学习途径）；装配进存档 martial 槽（上限 4、序即轮盘优先级）与 mental 槽（上限 3、序无语义）。三处同步：本文件／packages/core/src/content/registry.ts 的 MartialEntry／docs/agents/content.md。",
   "type": "object",
-  "required": ["id", "kind", "name", "tier", "effects"],
+  "required": ["id", "kind", "name", "tier"],
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^mrt-[a-z0-9]+-[0-9]{3}$",
-      "description": "如 mrt-lq-001（柳青镇招式 1）。id 一经发布不可变更（content.md）；亦即 cooldowns 槽的裸键（mrt- 前缀天然防撞，#58 D12）。"
+      "pattern": "^(mrt|mnt)-[a-z0-9]+-[0-9]{3}$",
+      "description": "如 mrt-lq-001（柳青镇招式 1）／mnt-lq-001（柳青镇心法 1）。前缀区分 kind：mrt- 招式、mnt- 心法（与存档槽名 mental 同根，#59 C4-T1）。id 一经发布不可变更（content.md）；亦即 cooldowns 槽的裸键（前缀天然防撞，#58 D12）。"
     },
     "kind": {
       "type": "string",
-      "minLength": 1,
-      "description": "条目种类：招式｜心法（CONTEXT.md）。心法挂修饰符票；取值可扩充，schema 不写死枚举（引擎零写死）。"
+      "enum": ["招式", "心法"],
+      "description": "条目种类（CONTEXT.md 词条）：「招式」＝主动出手、走轮盘与 perform；「心法」＝被动常驻修饰符、装配即生效不产手。引擎装配命令按本词分流到 martial／mental 槽（#59 D12）；未知词＝无槽可归、装配点大声失败。"
     },
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "招式名（四字格意象，同门风格统一）；叙事中出现时用「」括起（style-guide.md）。cmd-perform／装配／卸下按此名精确匹配（#58 C3-T5）。"
+      "description": "招式／心法名（四字格意象，同门风格统一；心法系「××心法」格——语料五系通例）；叙事中出现时用「」括起（style-guide.md）。cmd-perform／装配／卸下按此名精确匹配（#58 C3-T5，招式与心法同名空间共享）。"
     },
     "tier": {
       "type": "integer",
       "minimum": 1,
       "maximum": 4,
-      "description": "品阶序号（1-4）。中文品阶名＝combat-tiers.json 的 quality 维度带（low/mid/high/ultimate ↔ 下乘/中乘/上乘/绝学，#58 C3-T2）；strike 事件的 rank 值取该带名。"
+      "description": "品阶序号（1-4），招式与心法同必填（#59 D9③）。招式的中文品阶名＝combat-tiers.json 的 quality 维度带（low/mid/high/ultimate ↔ 下乘/中乘/上乘/绝学，#58 C3-T2；strike 事件的 rank 值取该带名）；心法纯内容品阶叙事、无事件消费（心法不产手、无 rank）。"
     },
     "source": {
       "type": "string",
       "minLength": 1,
-      "description": "作用方式：内功｜外功。取值来自 content/config/dimensions.json 的 source 维度；决定本招式手吃对头 stats.externalDefense 还是 stats.internalDefense（#58 D17 分路）。缺省读 character 声明表的 strike.source。"
+      "description": "作用方式：内功｜外功。取值来自 content/config/dimensions.json 的 source 维度；决定本招式手吃对头 stats.externalDefense 还是 stats.internalDefense（#58 D17 分路）。缺省读 character 声明表的 strike.source。心法不适用（无事件消费面）但 schema 不禁（携带无害）。"
     },
     "element": {
       "type": "string",
@@ -40,7 +40,7 @@
     "cost": {
       "type": "number",
       "minimum": 0,
-      "description": "出手消耗（#58 D10）：纯数值，扣哪个 attrs 键由玩家声明表（config/character.json 的 secondaryResource 键对）决定，条目不写死资源键名。缺省 0＝无消耗。"
+      "description": "出手消耗（#58 D10）：纯数值，扣哪个 attrs 键由玩家声明表（config/character.json 的 secondaryResource 键对）决定，条目不写死资源键名。缺省 0＝无消耗。心法不适用但 schema 不禁。"
     },
     "cooldownTicks": {
       "type": "integer",
@@ -59,7 +59,32 @@
         "type": "string",
         "pattern": "^eff-[a-z0-9-]+$"
       },
-      "description": "效果引用列表，指向 content/effects/ 的定义条目——本招式一手走的完整效果链（直伤／上毒等）；注册表加载期校验悬空引用（command.effects 先例）。"
+      "description": "效果引用列表，指向 content/effects/ 的定义条目——本招式一手走的完整效果链（直伤／上毒等）；注册表加载期校验悬空引用（command.effects 先例）。招式必填（if/then）；心法不得携带（心法不产手）。"
+    },
+    "modifiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["stat"],
+        "properties": {
+          "stat": {
+            "type": "string",
+            "minLength": 1,
+            "description": "修饰的属性键名——取角色声明表（config/character.json）的 attrs 键（如 attack／maxInternalForce）；引擎零认识具体键、只做键取值（dodgeAttr／defenseAttrs 声明通道同律，#59 D10）。"
+          },
+          "flat": {
+            "type": "number",
+            "description": "固定值层成员：先加法进基数（(base+Σflats)，ADR-0005 最小核第一层）。"
+          },
+          "percent": {
+            "type": "number",
+            "description": "百分比层成员：小数（0.1＝+10%），后乘法 (×(1+Σpercents))，ADR-0005 最小核第二层。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "心法的常驻修饰符声明（#59 D10）：无条件、装配即生效；同 stat 多条目叠层、两层各聚后按最小核算式合成（下限 0）。心法必填（if/then）；招式不得携带。"
     },
     "tags": { "$ref": "common.schema.json#/definitions/tags" },
     "flags": { "$ref": "common.schema.json#/definitions/flags" },
@@ -74,5 +99,27 @@
       "description": "叙事文本（1~3 句），须遵守 content/style-guide.md。"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "招式" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["effects"],
+        "not": { "required": ["modifiers"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "心法" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["modifiers"],
+        "not": { "required": ["effects"] }
+      }
+    }
+  ]
 }

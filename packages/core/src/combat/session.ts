@@ -22,6 +22,9 @@ import {
 import { playerBlow } from "./blow.js";
 import type { BlowPorts, StrikePlan, StrikeSpecOptions } from "./blow.js";
 import { selectStrikePlan } from "./martial.js";
+import { equippedMentalModifiers } from "./mental.js";
+import { aggregateModifiers } from "../effects/modifiers.js";
+import type { Modifier } from "../effects/modifiers.js";
 
 /**
  * The combat session's engine-side half (#56, #57): the character-model
@@ -59,12 +62,26 @@ export function seedCharacterAttrs(state: EntityState, table: CharacterTable): v
   if (table.martial !== undefined && table.martial.initialEquipped.length > 0) {
     state.martial = [...table.martial.initialEquipped];
   }
+  // #59 D13: the mental block's opening loadout rides the same seeding —
+  // the martial precedent, one table two slots.
+  if (table.mental !== undefined && table.mental.initialEquipped.length > 0) {
+    state.mental = [...table.mental.initialEquipped];
+  }
 }
 
-/** The player's primary-resource pair as numbers, or the loud wiring failure. */
+/**
+ * The player's primary-resource pair as numbers, or the loud wiring failure.
+ * #59 D11: the MAX walks the modifier pipeline (the five consumer points'
+ * fourth) — every ceiling, band denominator and refill reads the mentals'
+ * widened ceiling, while the CURRENT stays the bare stored value (the death
+ * check reads it raw; what a save wrote is what a save meant). An empty
+ * member list answers `max(0, base)` — identical on the non-negative domain,
+ * the C1–C3 arithmetic unchanged.
+ */
 export function primaryResourceOf(
   state: EntityState,
   table: CharacterTable,
+  mental?: ReadonlyMap<string, readonly Modifier[]>,
 ): { current: number; max: number } {
   const currentKey = table.primaryResource.current;
   const maxKey = table.primaryResource.max;
@@ -81,7 +98,7 @@ export function primaryResourceOf(
       `combat: the player's attrs carry no usable primary resource (keys "${currentKey}"/"${maxKey}") — seed the character table at startNewGame`,
     );
   }
-  return { current: currentValue, max: maxValue };
+  return { current: currentValue, max: aggregateModifiers(maxValue, mental?.get(maxKey)) };
 }
 
 /** Reads a positive integer a DoT primitive declares, loudly (0 or garbage is a pack bug). */
@@ -131,19 +148,27 @@ export function npcStrike(
   const registry = runtime.registry;
   const { face } = faceOfTarget(runtime.registry, npcId);
   const character = requireCharacterTable(registry);
+  // #59 D11: the player-side operands of the npc's hand — defense, dodge and
+  // the primary max — walk the modifier pipeline (consumer points ②③④); the
+  // monster's own attack stays bare (D5: the monster side's numbers and
+  // formula shape are untouched). The map is computed once per hand; an
+  // unequipped or undeclared stat answers the empty list, the pipe's own
+  // identity degenerate.
+  const mental = equippedMentalModifiers(registry, state);
   const defenseKey = character.strike.defenseAttrs[face.source];
   if (typeof defenseKey !== "string" || defenseKey === "") {
     throw new Error(
       `combat: the character table's defenseAttrs carries no key for delivery word "${face.source}" — the pack's defense pair and the dimensions source dimension disagree (D17)`,
     );
   }
-  const defense = state.attrs[defenseKey];
-  if (typeof defense !== "number" || !Number.isFinite(defense)) {
+  const defenseRaw = state.attrs[defenseKey];
+  if (typeof defenseRaw !== "number" || !Number.isFinite(defenseRaw)) {
     throw new Error(
       `combat: the player's attrs carry no usable defense value (key "${defenseKey}") — seed the character table at startNewGame`,
     );
   }
-  const resource = primaryResourceOf(state, character);
+  const defense = aggregateModifiers(defenseRaw, mental.get(defenseKey));
+  const resource = primaryResourceOf(state, character, mental);
   const bands = () =>
     bandPairOf(registry.combatTiers, 0, resource.max, resource.current);
 
@@ -151,13 +176,16 @@ export function npcStrike(
   // nothing, damage and any future effects sharing one fate (F2's law, this
   // side's symmetry). A zero-probability roll is skipped entirely so the
   // dice stream stands still for packs that fight without dodging.
-  const dodgeStat = state.attrs[character.strike.dodgeAttr];
-  if (typeof dodgeStat !== "number" || !Number.isFinite(dodgeStat)) {
+  const dodgeRaw = state.attrs[character.strike.dodgeAttr];
+  if (typeof dodgeRaw !== "number" || !Number.isFinite(dodgeRaw)) {
     throw new Error(
       `combat: the player's attrs carry no usable dodge stat (key "${character.strike.dodgeAttr}") — seed the character table at startNewGame (#58 D8)`,
     );
   }
-  const dodgeChance = playerDodgeChance(dodgeStat, readDodgeTuning(registry.settings));
+  const dodgeChance = playerDodgeChance(
+    aggregateModifiers(dodgeRaw, mental.get(character.strike.dodgeAttr)),
+    readDodgeTuning(registry.settings),
+  );
   if (dodgeChance > 0 && ports.rng.next() < dodgeChance) {
     ports.emit(state.id, strikeEvent({
       attackerId: npcId,
@@ -464,30 +492,43 @@ export function regenResources(
     return;
   }
   const primaryRate = readPrimaryRegenPerTick(registry.settings);
-  applyRegen(state, character.primaryResource.current, character.primaryResource.max, primaryRate);
+  // #59 D11: both ceilings read the PIPELINED max (consumer points ④⑤) —
+  // the cap is the mentals' widened ceiling, and an over-ceiling current
+  // (a mental since unequipped) heals itself the F6 way: the cap binds at
+  // the read, the stored value is never rewritten down.
+  const mental = equippedMentalModifiers(registry, state);
+  applyRegen(state, character.primaryResource.current, character.primaryResource.max, primaryRate, mental);
   if (character.secondaryResource !== undefined) {
     applyRegen(
       state,
       character.secondaryResource.current,
       character.secondaryResource.max,
       readInternalForceTuning(registry.settings).regenPerTick,
+      mental,
     );
   }
 
   /** One resource's compensation: rate × span, capped at the max, announced when owed. */
-  function applyRegen(entity: EntityState, currentKey: string, maxKey: string, rate: number): void {
+  function applyRegen(
+    entity: EntityState,
+    currentKey: string,
+    maxKey: string,
+    rate: number,
+    mental: ReadonlyMap<string, readonly Modifier[]>,
+  ): void {
     const current = entity.attrs[currentKey];
-    const max = entity.attrs[maxKey];
+    const maxRaw = entity.attrs[maxKey];
     if (
       typeof current !== "number" ||
       !Number.isFinite(current) ||
-      typeof max !== "number" ||
-      !Number.isFinite(max)
+      typeof maxRaw !== "number" ||
+      !Number.isFinite(maxRaw)
     ) {
       throw new Error(
         `combat: the player's attrs carry no usable resource pair (keys "${currentKey}"/"${maxKey}") — seed the character table at startNewGame`,
       );
     }
+    const max = aggregateModifiers(maxRaw, mental.get(maxKey));
     if (rate <= 0 || current >= max) {
       return;
     }

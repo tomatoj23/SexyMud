@@ -10,8 +10,8 @@
   "cmdset": "character",
   "priority": 0,
   "notInCombat": true,
-  "err_notLearned": "你并未学过这一招。",
-  "err_alreadyEquipped": "这一招已在手上。",
-  "err_martialSlotFull": "你手上已满了四招，先收一招再来。",
+  "err_notLearned": "你并未学过这门功夫。",
+  "err_alreadyEquipped": "这门功夫已在身上。",
+  "err_martialSlotFull": "你身上功夫已满，先收一门再来。",
   "err_inCombat": "刀兵未歇，此刻不成。"
 }
