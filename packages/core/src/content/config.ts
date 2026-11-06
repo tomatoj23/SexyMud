@@ -143,7 +143,9 @@ export interface CharacterTable {
    * the schema's own maxItems). `initialEquipped ⊆ known` is the offline
    * gate's cross-field rule (check-content's sixth rule); reference
    * resolution is the registry's load-time check against the SAME martial
-   * collection (one id space, the mnt- prefix keys it apart).
+   * collection — one id space, keyed apart content-side by the schema's
+   * mnt- pattern (the engine itself reads no prefix; the entry's face does
+   * the routing).
    */
   readonly mental?: {
     readonly known: readonly string[];

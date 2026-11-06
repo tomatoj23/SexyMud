@@ -23,10 +23,10 @@ import { slotKindOf } from "./mental.js";
  *
  * #59 D12: ONE verb pair routes BOTH kinds — `jifa` equips a technique to
  * the hand or a mental to the breath, exactly as the xkx corpus's own jifa
- * does (a verb that never distinguished the two). The ENTRY's kind word
- * decides the slot; the error faces are shared verbatim (err_* for
- * not-learned, already-on, slot-full — the codes one family, the wording
- * kind-neutral).
+ * does (a verb that never distinguished the two). The entry's FACE decides
+ * the slot (slotKindOf reads the shape the kind word promises, never the
+ * word); the error faces are shared verbatim (err_* for not-learned,
+ * already-on, slot-full — the codes one family, the wording kind-neutral).
  *
  * Success rides the customEvent precedent (combatEscape, flagGranted): the
  * event is semantic (the id), the words are the host's. The mental pair
