@@ -578,7 +578,7 @@ describe("consumer points ④ and ⑤ — the ceilings walk the pipe (AC2, C4-T2
       emit: () => {},
     });
     // The death refill reads the CURRENT effective ceiling — 300 piped, not
-    // the bare 200 (ADR-0045: "refilled to the ceiling in force").
+    // the bare 200 (ADR-0045, decision 3: the death refill reads the piped max).
     expect(doomed.attrs.hp!).toBe(300);
 
     const hurt = rig({ settings: settingsOf(0), mental: ["mnt-x-003"] });
