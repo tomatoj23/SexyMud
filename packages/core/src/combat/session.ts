@@ -540,6 +540,16 @@ export function regenResources(
       );
     }
     const max = aggregateModifiers(maxRaw, mental.get(maxKey));
+    if (max <= 0) {
+      // primaryResourceOf's symmetry, the regeneration half: out of a fight
+      // this pass is the ONLY reader of the widened ceiling, and a floored
+      // one would slip through SILENTLY here (current >= 0 >= max reads
+      // "already full") — the same drift must answer the same way whether
+      // the player is fighting or resting.
+      throw new Error(
+        `combat: the equipped mentals floor the ${maxKey} ceiling at ${max} — a widened ceiling of 0 or less is content drift (#59)`,
+      );
+    }
     if (rate <= 0 || current >= max) {
       return;
     }

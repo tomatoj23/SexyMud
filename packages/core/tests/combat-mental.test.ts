@@ -577,6 +577,28 @@ describe("consumer points ④ and ⑤ — the ceilings walk the pipe (AC2, C4-T2
     expect(player.attrs.internalForce).toBe(60);
   });
 
+  it("refuses a floored ceiling on the regeneration pass too — the out-of-fight half (C4 deep)", () => {
+    const crushed = {
+      ...MENTALS[3]!,
+      modifiers: [{ stat: "maxInternalForce", percent: -1 }],
+    } as MartialEntry;
+    const registry = createContentRegistry(
+      {
+        commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS, effects: EFFECTS,
+        martials: [...MENTALS.slice(0, 3), crushed],
+      },
+      { character: { ...CHARACTER, martial: { known: [], initialEquipped: [] }, mental: { known: [crushed.id], initialEquipped: [] } }, combatTiers: TIERS, settings: settingsOf(0, 0.5) },
+    );
+    const runtime = createWorldRuntime({ registry });
+    runtime.addEntity(createEntity("player"), "room-yard");
+    const player = runtime.state.entities["player"]!;
+    seedCharacterAttrs(player, CHARACTER);
+    player.mental = [crushed.id];
+    expect(() =>
+      regenResources(runtime, player, { fromTick: 0, toTick: 10 }, () => {}),
+    ).toThrow(/floor the maxInternalForce ceiling/);
+  });
+
   it("an unequipped ceiling heals at the next read, never by a write-down (F6's law, C4-T2)", () => {
     const test = rig({ mental: ["mnt-x-004"] });
     const player = test.runtime.state.entities["player"]!;
