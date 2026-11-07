@@ -260,6 +260,7 @@ function rig(options: { settings?: SettingsTable; mental?: readonly string[] } =
       settings: options.settings ?? settingsOf(0),
       character: CHARACTER,
       combatTiers: TIERS,
+      world: { startRoomId: "room-yard" },
       dimensions: {
         source: ["external", "internal"],
         element: ["none", "wood"],
@@ -559,6 +560,38 @@ describe("consumer points ④ and ⑤ — the ceilings walk the pipe (AC2, C4-T2
     expect(
       primaryResourceOf(player, CHARACTER, equippedMentalModifiers(test.runtime.registry, player)).max,
     ).toBe(300);
+  });
+
+  it("maxHp: the battle chain reads the piped ceiling — the death refill lands on 300, the write-point clamp keeps 238 (AC2④)", () => {
+    // AC2④ names the in-fight consumers (write-point clamp / death refill /
+    // band denominator) — all three read the SAME piped max inside npcStrike.
+    // The unit read above passes its own third argument, so it cannot pin the
+    // wiring: pull the argument off primaryResourceOf's call site in
+    // npcStrike and every assertion below goes red.
+    const killed = rig({ settings: settingsOf(0), mental: ["mnt-x-003"] });
+    killed.openFight(100);
+    const doomed = killed.runtime.state.entities["player"]!;
+    doomed.attrs.hp = 5; // one guard hand (12) kills from here.
+    npcStrike(killed.runtime, doomed, "npc-guard", {
+      nowTick: 102,
+      rng: scriptedRng([]),
+      emit: () => {},
+    });
+    // The death refill reads the CURRENT effective ceiling — 300 piped, not
+    // the bare 200 (ADR-0045: "refilled to the ceiling in force").
+    expect(doomed.attrs.hp!).toBe(300);
+
+    const hurt = rig({ settings: settingsOf(0), mental: ["mnt-x-003"] });
+    hurt.openFight(100);
+    const holder = hurt.runtime.state.entities["player"]!;
+    holder.attrs.hp = 250; // above the bare ceiling (200), inside the widened one.
+    npcStrike(hurt.runtime, holder, "npc-guard", {
+      nowTick: 102,
+      rng: scriptedRng([]),
+      emit: () => {},
+    });
+    // 250 − 12 = 238 clamped against 300 — a bare-read ceiling would clamp to 200.
+    expect(holder.attrs.hp!).toBe(238);
   });
 
   it("maxInternalForce: the regeneration pass refills to the widened ceiling (AC2⑤)", () => {
