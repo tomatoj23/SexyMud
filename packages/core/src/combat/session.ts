@@ -98,7 +98,19 @@ export function primaryResourceOf(
       `combat: the player's attrs carry no usable primary resource (keys "${currentKey}"/"${maxKey}") — seed the character table at startNewGame`,
     );
   }
-  return { current: currentValue, max: aggregateModifiers(maxValue, mental?.get(maxKey)) };
+  const max = aggregateModifiers(maxValue, mental?.get(maxKey));
+  if (max <= 0) {
+    // The monster side's symmetry (monsterCombatFace refuses maxHp ≤ 0): a
+    // negative modifier pile may floor the WIDENED ceiling at 0 — the pipe's
+    // own floor is a death line here, not a safe bound (an hp clamped to 0
+    // dies against deathAtOrBelow 0, and a zero ceiling would feed the band
+    // reads a 0/0). Content that means to shrink a life bar says so within
+    // the living range.
+    throw new Error(
+      `combat: the equipped mentals floor the primary max (key "${maxKey}") at ${max} — a widened ceiling of 0 or less is content drift (#59)`,
+    );
+  }
+  return { current: currentValue, max };
 }
 
 /** Reads a positive integer a DoT primitive declares, loudly (0 or garbage is a pack bug). */

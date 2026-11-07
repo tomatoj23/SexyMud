@@ -183,6 +183,11 @@ describe("the hand-played combat chains over the shipped pack (#56/#57)", () => 
     await resumed.submit("打 孙彪");
     const text = lines.join("");
     expect(text).toContain("孙彪受创");
+    // The re-seed path plants the mental loadout with the attrs (#59 — the
+    // same overwrite the martial slot has taken since #58): a C1 save
+    // resumes with the pre-equipped FLAT at work, the opening fist reads
+    // (30 + 5) × (1 − 6/16) = 21.875 → 22 — not the bare 19.
+    expect(text).toContain("受创22点");
     // The rhythm was seeded at the OPENING (a C1 save has no rhythm pair):
     // no retaliation on the strike itself —
     expect(text).not.toContain("还了一手");

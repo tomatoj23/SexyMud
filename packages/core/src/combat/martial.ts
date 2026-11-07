@@ -198,8 +198,18 @@ export function validateEquippedMartials(
   for (const entity of Object.values(state.entities)) {
     for (const id of entity.martial ?? []) {
       // The getter's own throw names an unknown id; the known-list check
-      // names a drifted one — two different content troubles, two messages.
-      registry.martial(id);
+      // names a drifted one; the face check names a MENTAL parked in the
+      // wheel's slot (a hand-edited save, a host-assembled loadout) — three
+      // different content troubles, three messages. The face check is the
+      // validateEquippedMentals twin: both slots answer at the load point,
+      // never at the first auto-hand (martialStrikePlan's throw is the late
+      // assertion, not the gate).
+      const entry = registry.martial(id);
+      if (entry.modifiers !== undefined) {
+        throw new Error(
+          `combat: entity "${entity.id}" has mental "${id}" in the martial slot — the wheel takes technique faces only (content drift, #59)`,
+        );
+      }
       if (known !== undefined && !known.includes(id)) {
         throw new Error(
           `combat: entity "${entity.id}" has martial "${id}" equipped, which the character table's known list no longer carries (content drift)`,

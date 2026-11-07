@@ -37,6 +37,7 @@ import {
   slotKindOf,
   validateEquippedMentals,
 } from "../src/combat/mental.js";
+import { validateEquippedMartials } from "../src/combat/martial.js";
 import { restoreWorld, serializeWorld } from "../src/state/snapshot.js";
 import { commandSetSources } from "../src/command/entry.js";
 import type { Rng } from "../src/types.js";
@@ -254,7 +255,7 @@ interface Rig {
 
 function rig(options: { settings?: SettingsTable; mental?: readonly string[] } = {}): Rig {
   const registry = createContentRegistry(
-    { commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS, effects: EFFECTS, martials: [...MARTIALS, ...MENTALS, ...DRIFT_FIXTURES] },
+    { commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS, effects: EFFECTS, martials: [...MARTIALS, ...MENTALS] },
     {
       settings: options.settings ?? settingsOf(0),
       character: CHARACTER,
@@ -373,6 +374,27 @@ describe("the mental supply — the pipeline's first real members (D10, AC1/AC3/
     ]);
   });
 
+  it("refuses a widened ceiling of 0 or less — the monster side's symmetry (C4 deep)", () => {
+    const crushed = {
+      ...MENTALS[0]!,
+      modifiers: [{ stat: "maxHp", percent: -1 }],
+    } as MartialEntry;
+    const registry = createContentRegistry(
+      {
+        commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS, effects: EFFECTS,
+        martials: [crushed, ...MENTALS.slice(1)],
+      },
+      { character: { ...CHARACTER, martial: { known: [], initialEquipped: [] }, mental: { known: [crushed.id], initialEquipped: [] } }, combatTiers: TIERS },
+    );
+    const runtime = createWorldRuntime({ registry });
+    runtime.addEntity(createEntity("player"), "room-yard");
+    const player = runtime.state.entities["player"]!;
+    seedCharacterAttrs(player, CHARACTER);
+    player.mental = [crushed.id];
+    expect(() => primaryResourceOf(player, CHARACTER, equippedMentalModifiers(registry, player)))
+      .toThrow(/floor the primary max/);
+  });
+
   it("refuses a stat the character table never declares — the registry's cross-file half (D10)", () => {
     const drifted = {
       ...MENTALS[0]!,
@@ -390,6 +412,26 @@ describe("the mental supply — the pipeline's first real members (D10, AC1/AC3/
         },
       ),
     ).toThrow(/never name/);
+  });
+
+  it("refuses a technique face listed under mental.known — the prefix promise is not mechanical (D9)", () => {
+    const trojan = {
+      ...MARTIALS[0]!,
+      id: "mnt-x-008",
+      name: "TrojanFist",
+    } as MartialEntry;
+    expect(() =>
+      createContentRegistry(
+        {
+          commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS,
+          effects: EFFECTS, martials: [...MARTIALS, ...MENTALS, trojan],
+        },
+        {
+          character: { ...CHARACTER, martial: { known: [], initialEquipped: [] }, mental: { known: [trojan.id], initialEquipped: [] } },
+          combatTiers: TIERS,
+        },
+      ),
+    ).toThrow(/breath.s list takes mental faces only/);
   });
 
   it("refuses a declared row with neither layer, loudly (D10)", () => {
@@ -596,6 +638,15 @@ describe("the equip pair routes both kinds — one verb, two slots, two caps (D1
     expect(event.type).toBe(MENTAL_UNEQUIPPED_EVENT);
   });
 
+  it("the in-combat gate holds for UNEQUIP too — the pair's other half (C4-T3)", () => {
+    const test = rig({ mental: ["mnt-x-001"] });
+    test.openFight();
+    const out = test.call("unequip FlatMind");
+    expect(out.result.ok).toBe(false);
+    expect(out.messages[0]!.event).toMatchObject({ errKey: "err_inCombat" });
+    expect(test.runtime.state.entities["player"]!.mental).toEqual(["mnt-x-001"]);
+  });
+
   it("the in-combat gate holds for the mental half too (C4-T3)", () => {
     const test = rig();
     test.openFight();
@@ -654,7 +705,58 @@ describe("the mental slot's save shape (D8, AC5/AC12)", () => {
     ).toThrow(/mental/);
   });
 
-  it("the load-point check names the three drifts: unknown id, wrong face, wheel-slot entry (D8/D13)", () => {
+  it("the registry refuses a both-face or faceless entry outright — the flattened world's gate (D9)", () => {
+    // Prototype inheritance is the escape hatch the file-level if/then cannot
+    // see: a mental declaring prototypeParent at a technique inherits its
+    // effects WHOLE (the flattener replaces absent own keys with the
+    // parent's), and the both-face graft detonates here at load — never at
+    // the first equip.
+    // Inheritance targets a TEMPLATE (an entry declaring prototypeKey) —
+    // the prototype pair's own law; the template technique is the graft's
+    // parent, the mental never writes an own modifiers list, so the
+    // flattened entry carries the parent's effects beside its kind word.
+    const template = {
+      ...MARTIALS[0]!,
+      id: "mrt-a-tpl",
+      name: "TemplateFist",
+      prototypeKey: "mrt-a-tpl",
+    } as MartialEntry;
+    // The escape needs BOTH faces present in the FLATTENED entry: the
+    // mental keeps its own modifiers (the file passes if/then) and inherits
+    // the technique template's effects — neither layer sees the other.
+    const grafted = {
+      ...MENTALS[0]!,
+      id: "mnt-x-009",
+      name: "GraftedMind",
+      prototypeParent: [template.id],
+    } as MartialEntry;
+    expect(() =>
+      createContentRegistry(
+        {
+          commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS,
+          effects: EFFECTS, martials: [...MARTIALS, ...MENTALS, template, grafted],
+        },
+        {
+          character: { ...CHARACTER, martial: { known: [], initialEquipped: [] }, mental: { known: [], initialEquipped: [] } },
+          combatTiers: TIERS,
+        },
+      ),
+    ).toThrow(/exactly one face, and prototype inheritance/);
+    expect(() =>
+      createContentRegistry(
+        {
+          commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS,
+          effects: EFFECTS, martials: [...MARTIALS, ...MENTALS, DRIFT_FIXTURES[1]!],
+        },
+        {
+          character: { ...CHARACTER, martial: { known: [], initialEquipped: [] }, mental: { known: [], initialEquipped: [] } },
+          combatTiers: TIERS,
+        },
+      ),
+    ).toThrow(/neither an effect chain nor stat modifiers/);
+  });
+
+  it("the load-point check names the drifts an assembled save can still carry: unknown id, wheel-slot entry (D8/D13)", () => {
     const test = rig({ mental: ["mnt-x-001"] });
     const player = test.runtime.state.entities["player"]!;
     validateEquippedMentals(test.runtime.state, test.runtime.registry);
@@ -662,11 +764,16 @@ describe("the mental slot's save shape (D8, AC5/AC12)", () => {
     player.mental = ["mnt-x-nope"];
     expect(() => validateEquippedMentals(test.runtime.state, test.runtime.registry)).toThrow(/unknown martial/);
 
-    player.mental = ["mnt-x-drift-none"];
-    expect(() => validateEquippedMentals(test.runtime.state, test.runtime.registry)).toThrow(/exactly one face/);
-
     player.mental = ["mrt-a-001"];
     expect(() => validateEquippedMentals(test.runtime.state, test.runtime.registry)).toThrow(/technique/);
+
+    // The twin slot's own drift: a MENTAL parked in the wheel's slot
+    // answers at the load point too (martialStrikePlan's throw is the late
+    // assertion, not the gate).
+    player.mental = undefined;
+    player.martial = ["mnt-x-001"];
+    expect(() => validateEquippedMartials(test.runtime.state, test.runtime.registry)).toThrow(/wheel takes technique faces only/);
+    player.martial = undefined;
   });
 
   it("a round trip keeps the supply — save, reload, the pipe still answers (AC12)", () => {
@@ -692,7 +799,7 @@ function test0Registry() {
       npcs: NPCS,
       monsters: MONSTERS,
       effects: EFFECTS,
-      martials: [...MARTIALS, ...MENTALS, ...DRIFT_FIXTURES],
+      martials: [...MARTIALS, ...MENTALS],
     },
     {
       character: CHARACTER,

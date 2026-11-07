@@ -1160,6 +1160,56 @@ export function buildContentRegistry(
       }
     }
   }
+  // The two known lists are FACE-TYPED memberships (#59 D9): the schema's id
+  // pattern promises mnt- = mental, but pattern and kind never bind each
+  // other mechanically — an mnt- file declaring the technique kind (with
+  // effects) passes every file-level check, and listing it under
+  // mental.known defers the mismatch to the first fight. The registry sees
+  // the flattened faces; the lists' own halves close here, at load.
+  const faceOf = (id: string): "effects" | "modifiers" =>
+    martialsById.get(id)!.effects !== undefined ? "effects" : "modifiers";
+  if (declaredMartial !== undefined) {
+    for (const id of declaredMartial.known) {
+      if (faceOf(id) !== "effects") {
+        throw new Error(
+          `content registry: character table lists mental "${id}" under martial.known — the wheel's list takes technique faces only (content drift, #59 D9)`,
+        );
+      }
+    }
+  }
+  if (declaredMental !== undefined) {
+    for (const id of declaredMental.known) {
+      if (faceOf(id) !== "modifiers") {
+        throw new Error(
+          `content registry: character table lists technique "${id}" under mental.known — the breath's list takes mental faces only (content drift, #59 D9)`,
+        );
+      }
+    }
+  }
+
+  // The flattened entry's FACE must still be exactly one (#59 D9) — an
+  // entry's own file passing the schema's if/then says nothing about what
+  // PROTOTYPE INHERITANCE grafts onto it: a mental declaring prototypeParent
+  // at a technique inherits its `effects` whole (the flattener replaces
+  // non-tag keys wholesale, an absent own key loses to the parent's), and a
+  // both-face entry sails through content:check (which validates the file,
+  // not the flattened truth) to detonate only at the first equip. The
+  // registry sees the flattened world — the face check belongs HERE, in the
+  // content layer's own words (combat's slotKindOf keeps the runtime half).
+  for (const martial of martialsById.values()) {
+    const hasEffects = martial.effects !== undefined;
+    const hasModifiers = martial.modifiers !== undefined;
+    if (hasEffects && hasModifiers) {
+      throw new Error(
+        `content registry: martial "${martial.id}" carries both an effect chain and stat modifiers — an entry owns exactly one face, and prototype inheritance does not license both (#59 D9)`,
+      );
+    }
+    if (!hasEffects && !hasModifiers) {
+      throw new Error(
+        `content registry: martial "${martial.id}" carries neither an effect chain nor stat modifiers — an entry owns exactly one face (#59 D9)`,
+      );
+    }
+  }
 
   // A mental's modifier stats are references INTO the character table's attr
   // keys (#59 D10 — the cross-file half the schema cannot express): a stat
