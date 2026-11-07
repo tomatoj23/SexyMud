@@ -35,7 +35,7 @@
     "element": {
       "type": "string",
       "minLength": 1,
-      "description": "系别性质（七系 + 无属性）。取值来自 dimensions 的 element 维度；缺省读 character 声明表的 strike.element。引擎不按具体值分支。"
+      "description": "系别性质（七系 + 无属性）。取值来自 dimensions 的 element 维度；缺省读 character 声明表的 strike.element。引擎不按具体值分支。心法不适用但 schema 不禁。"
     },
     "cost": {
       "type": "number",
@@ -50,7 +50,7 @@
     "attackMultiplier": {
       "type": "number",
       "exclusiveMinimum": 0,
-      "description": "攻击乘数（#58 D11）：进公式 baseAttack＝攻击属性 × 本值；缺省 1＝与基础攻击同威。效果条目 amount 继续闲置（数值面归招式层，C1-T11 缝合先例）。"
+      "description": "攻击乘数（#58 D11）：进公式 baseAttack＝攻击属性 × 本值；缺省 1＝与基础攻击同威。效果条目 amount 继续闲置（数值面归招式层，C1-T11 缝合先例）。心法不适用但 schema 不禁。"
     },
     "effects": {
       "type": "array",

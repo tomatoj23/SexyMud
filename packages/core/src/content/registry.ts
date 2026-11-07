@@ -1161,6 +1161,26 @@ export function buildContentRegistry(
     }
   }
 
+  // A mental's modifier stats are references INTO the character table's attr
+  // keys (#59 D10 — the cross-file half the schema cannot express): a stat
+  // the table never declares widens NOTHING — the pipe reads an empty member
+  // list and answers the bare base, a silent no-op with no clue anywhere.
+  // The dangling effect and known-list references above fail HERE, loudly;
+  // a dangling stat joins them (only when the pack declares a character
+  // table — the same tolerance every character-side check keeps).
+  const declaredAttrs = options.character?.attrs;
+  if (declaredAttrs !== undefined) {
+    for (const martial of martialsById.values()) {
+      for (const decl of martial.modifiers ?? []) {
+        if (!Object.prototype.hasOwnProperty.call(declaredAttrs, decl.stat)) {
+          throw new Error(
+            `content registry: mental "${martial.id}" declares a modifier on stat "${decl.stat}", which the character table's attrs never name (#59 D10 — a widened key nobody reads is a silent no-op)`,
+          );
+        }
+      }
+    }
+  }
+
   // Tag indexing and the vocabulary closures come LAST: they must see the
   // finished, validated entity set, exits included, and they must come AFTER
   // prototype flattening — a tag (or a gate) can be INHERITED, and an

@@ -254,7 +254,7 @@ interface Rig {
 
 function rig(options: { settings?: SettingsTable; mental?: readonly string[] } = {}): Rig {
   const registry = createContentRegistry(
-    { commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS, effects: EFFECTS, martials: [...MARTIALS, ...MENTALS, ...MARTIALS_ENTRY] },
+    { commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS, effects: EFFECTS, martials: [...MARTIALS, ...MENTALS, ...DRIFT_FIXTURES] },
     {
       settings: options.settings ?? settingsOf(0),
       character: CHARACTER,
@@ -325,7 +325,7 @@ function rig(options: { settings?: SettingsTable; mental?: readonly string[] } =
 }
 
 /** The drift fixtures: entries whose faces break the one-face law (not in known). */
-const MARTIALS_ENTRY: readonly MartialEntry[] = [
+const DRIFT_FIXTURES: readonly MartialEntry[] = [
   {
     id: "mnt-x-drift-both",
     kind: "mental",
@@ -373,6 +373,25 @@ describe("the mental supply — the pipeline's first real members (D10, AC1/AC3/
     ]);
   });
 
+  it("refuses a stat the character table never declares — the registry's cross-file half (D10)", () => {
+    const drifted = {
+      ...MENTALS[0]!,
+      modifiers: [{ stat: "nonexistent-stat", flat: 5 }],
+    } as MartialEntry;
+    expect(() =>
+      createContentRegistry(
+        {
+          commands: COMMANDS, rooms: ROOMS, npcs: NPCS, monsters: MONSTERS,
+          effects: EFFECTS, martials: [drifted, ...MARTIALS.slice(1)],
+        },
+        {
+          character: { ...CHARACTER, martial: { known: [], initialEquipped: [] }, mental: { known: [], initialEquipped: [] } },
+          combatTiers: TIERS,
+        },
+      ),
+    ).toThrow(/never name/);
+  });
+
   it("refuses a declared row with neither layer, loudly (D10)", () => {
     const drifted = {
       ...MENTALS[0]!,
@@ -406,8 +425,8 @@ describe("slotKindOf — the entry's face routes the slot (D9)", () => {
   });
 
   it("refuses both faces and neither, loudly", () => {
-    expect(() => slotKindOf(MARTIALS_ENTRY[0]!)).toThrow(/exactly one face/);
-    expect(() => slotKindOf(MARTIALS_ENTRY[1]!)).toThrow(/exactly one face/);
+    expect(() => slotKindOf(DRIFT_FIXTURES[0]!)).toThrow(/exactly one face/);
+    expect(() => slotKindOf(DRIFT_FIXTURES[1]!)).toThrow(/exactly one face/);
   });
 });
 
@@ -624,7 +643,6 @@ describe("the mental slot's save shape (D8, AC5/AC12)", () => {
     expect(
       primaryResourceOf(restored.state.entities["player"]!, CHARACTER).max,
     ).toBe(200);
-    void test;
   });
 
   it("refuses a malformed slot at load — absence is tolerated, malformation is not", () => {
@@ -674,7 +692,7 @@ function test0Registry() {
       npcs: NPCS,
       monsters: MONSTERS,
       effects: EFFECTS,
-      martials: [...MARTIALS, ...MENTALS, ...MARTIALS_ENTRY],
+      martials: [...MARTIALS, ...MENTALS, ...DRIFT_FIXTURES],
     },
     {
       character: CHARACTER,
