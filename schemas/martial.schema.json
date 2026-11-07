@@ -14,7 +14,7 @@
     "kind": {
       "type": "string",
       "enum": ["招式", "心法"],
-      "description": "条目种类（CONTEXT.md 词条）：「招式」＝主动出手、走轮盘与 perform；「心法」＝被动常驻修饰符、装配即生效不产手。引擎装配命令按本词分流到 martial／mental 槽（#59 D12）；未知词＝无槽可归、装配点大声失败。"
+      "description": "条目种类（CONTEXT.md 词条，enum 封闭两词——未知词在 content:check 即红）：「招式」＝主动出手、走轮盘与 perform；「心法」＝被动常驻修饰符、装配即生效不产手。引擎按条目形状分流（effects 在＝招式、modifiers 在＝心法——slotKindOf；本词只向 schema 的 if/then 分 required 与本 enum 承诺形状，引擎零词汇）。"
     },
     "name": {
       "type": "string",
@@ -67,6 +67,7 @@
       "items": {
         "type": "object",
         "required": ["stat"],
+        "anyOf": [{ "required": ["flat"] }, { "required": ["percent"] }],
         "properties": {
           "stat": {
             "type": "string",
@@ -84,7 +85,7 @@
         },
         "additionalProperties": false
       },
-      "description": "心法的常驻修饰符声明（#59 D10）：无条件、装配即生效；同 stat 多条目叠层、两层各聚后按最小核算式合成（下限 0）。心法必填（if/then）；招式不得携带。"
+      "description": "心法的常驻修饰符声明（#59 D10）：无条件、装配即生效；同 stat 多条目叠层、两层各聚后按最小核算式合成（下限 0）；每条 flat/percent 至少其一（anyOf——双带合法＝两层同条）。心法必填（if/then）；招式不得携带。"
     },
     "tags": { "$ref": "common.schema.json#/definitions/tags" },
     "flags": { "$ref": "common.schema.json#/definitions/flags" },

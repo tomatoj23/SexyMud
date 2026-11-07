@@ -497,24 +497,23 @@ export function regenResources(
   // (a mental since unequipped) heals itself the F6 way: the cap binds at
   // the read, the stored value is never rewritten down.
   const mental = equippedMentalModifiers(registry, state);
-  applyRegen(state, character.primaryResource.current, character.primaryResource.max, primaryRate, mental);
+  applyRegen(state, character.primaryResource.current, character.primaryResource.max, primaryRate);
   if (character.secondaryResource !== undefined) {
     applyRegen(
       state,
       character.secondaryResource.current,
       character.secondaryResource.max,
       readInternalForceTuning(registry.settings).regenPerTick,
-      mental,
     );
   }
 
-  /** One resource's compensation: rate × span, capped at the max, announced when owed. */
+  /** One resource's compensation: rate × span, capped at the max, announced when owed.
+   * Reads the outer `mental` supply (the caller built it once for both arms). */
   function applyRegen(
     entity: EntityState,
     currentKey: string,
     maxKey: string,
     rate: number,
-    mental: ReadonlyMap<string, readonly Modifier[]>,
   ): void {
     const current = entity.attrs[currentKey];
     const maxRaw = entity.attrs[maxKey];

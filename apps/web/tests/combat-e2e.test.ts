@@ -242,7 +242,8 @@ describe("the hand-played combat chains over the shipped pack (#56/#57)", () => 
     // The rhythm hand is the WHEEL's (#58 D6): the save carried the new
     // game's equipped slot, and the first castable martial is 透骨指 —
     // INTERNAL delivery against Sun Biao's 0 internal defense, so
-    // 30 × 1.5 × (1 − 0/10) → 45: the number only D9's routing produces
+    // (30 × 1.5 + 5) × (1 − 0/10) → 50 — the flat rides the post-multiplier
+    // base (#59): the number only D9's routing produces
     // (an external hand reads his 6 defense and lands 23).
     expect(produced).toContain("一招「透骨指」打向孙彪");
     expect(produced).toContain("孙彪受创50点");
